@@ -24,7 +24,7 @@ Vite 一次构建完整 dist，必须包含 admin、party、downloads 三个入�
 
 正式 GitHub Release 的标签必须为 v + 根 VERSION，例如 v0.1.0。CI 验证后发布完整静态包和校验文件；固定资产不覆盖不同内容。普通 push/PR 只验证。
 
-完整品牌源素材在 [assets/branding](assets/branding/README.md)，部署图片已在 public/assets/brand，不依赖 CDN 或跨仓库源码。契约快照及来源见 [contracts/SOURCE.json](contracts/SOURCE.json)，以 Go 仓库为权威。相关技能见 [skills/README.md](skills/README.md)。NAS、微信、真实手机和电视的可达性与安装兼容需要单独验收。
+完整品牌源素材在 [assets/branding](assets/branding/README.md)，部署图片已在 public/assets/brand，不依赖 CDN 或跨仓库源码。契约快照及来源见 [contracts/SOURCE.json](contracts/SOURCE.json)，以 Go 仓库为权威。相关技能从用户技能目录读取，仓库不内置副本。NAS、微信、真实手机和电视的可达性与安装兼容需要单独验收。
 
 ## 媒体库管理
 
