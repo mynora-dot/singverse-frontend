@@ -8,4 +8,4 @@
 
 详情保留头像/背景上传及删除、独立图片版本、候选明确确认、来源说明、关联歌曲分页、SingleSongScrapeDialog 订正和恢复扫描值。Cookie/CSRF、上传取消、并发版本保护与歌曲归属刷新继续生效，不提供人物建档或假对话能力。
 
-接口见 OpenAPI，业务及平台限制见 [歌手库说明](../../../../../../docs/artist-library.md)。
+接口见 OpenAPI，业务及平台限制见 [歌手库说明](https://github.com/mynora-dot/singverse-go-backend/blob/6d3b86f4c0ee18c5b1c1120a5ab884f3dbc3656a/docs/artist-library.md)。
