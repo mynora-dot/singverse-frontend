@@ -6,30 +6,33 @@ import TaskGuide from '../../shared/ui/TaskGuide.vue'
 import PageHeader from '../../shared/ui/PageHeader.vue'
 import { authRequest } from '../../core/auth/api'
 import { base, type Batch, type Node } from './api'
-import { failure, profileReady, readiness as evaluate } from './presentation'
+import { failure, isRecognition, profileReady, readiness as evaluate } from './presentation'
 import SongsTab from './components/SongsTab.vue'
 import BatchesTab from './components/BatchesTab.vue'
 import BatchConfirmDialog from './components/BatchConfirmDialog.vue'
 
-type Tab = 'songs' | 'tasks'
+type Tab = 'songs' | 'recognition' | 'tasks'
 const route = useRoute(), router = useRouter()
-const tabs: { id: Tab; name: string }[] = [{ id: 'songs', name: '歌曲' }, { id: 'tasks', name: '生成任务' }]
+const tabs: { id: Tab; name: string }[] = [{ id: 'songs', name: '歌曲' }, { id: 'recognition', name: '识别任务' }, { id: 'tasks', name: '生成任务' }]
 const tab = computed<Tab>(() => tabs.some(item => item.id === route.query.tab) ? route.query.tab as Tab : 'songs')
 const songId = computed(() => typeof route.query.song === 'string' ? route.query.song : '')
 const node = ref<Node>(), nodeError = ref(''), error = ref('')
-const batches = ref<Batch[]>([]), batchPage = ref(0), batchTotal = ref(0), focus = ref(typeof route.query.batch === 'string' ? route.query.batch : '')
+const batches = ref<Batch[]>([]), batchPage = ref(0), batchTotal = ref(0)
+const focus = computed(() => typeof route.query.batch === 'string' ? route.query.batch : '')
+const recognitionBatches = ref<Batch[]>([]), recognitionPage = ref(0), recognitionTotal = ref(0)
 const preview = ref<Batch>(), starting = ref(false)
 const songsTab = ref<InstanceType<typeof SongsTab>>(), batchesTab = ref<InstanceType<typeof BatchesTab>>()
+const recognitionTab = ref<InstanceType<typeof BatchesTab>>()
 const tabButtons = ref<HTMLButtonElement[]>([])
 const readiness = computed(() => evaluate(node.value, nodeError.value))
 const anyReady = computed(() => readiness.value.ready || node.value?.separation?.profiles.some(item => item.ready))
-const previewReady = computed(() => profileReady(node.value?.separation, preview.value?.separationProfile || 'LEGACY_DEMUCS', readiness.value.ready))
+const previewReady = computed(() => preview.value?.kind === 'FAST' ? readiness.value.connected : preview.value?.kind === 'ANALYZE' ? readiness.value.ready : profileReady(node.value?.separation, preview.value?.separationProfile || 'LEGACY_DEMUCS', readiness.value.ready))
 const activeBatches = computed(() => batches.value.filter(batch => ['PREPARING', 'QUEUED'].includes(batch.state)).length)
-let active = true, timer: ReturnType<typeof setTimeout> | undefined, batchRequest = 0, previewGeneration = 0
+const activeRecognitions = computed(() => recognitionBatches.value.filter(batch => ['PREPARING', 'QUEUED'].includes(batch.state)).length)
+let active = true, timer: ReturnType<typeof setTimeout> | undefined, batchRequest = 0, recognitionRequest = 0, previewGeneration = 0
 
 function setup() { void router.push('/system/compute#audio-models') }
 watch(() => route.query.tab, value => { if (value === 'setup') void router.replace('/system/compute#audio-models') }, { immediate: true })
-watch(() => route.query.batch, value => { focus.value = typeof value === 'string' ? value : '' })
 function navigate(next: Tab, extra: Record<string, string> = {}) {
   const query: Record<string, string> = { ...extra }
   if (next !== 'songs') query.tab = next
@@ -48,13 +51,18 @@ async function loadNode(refresh = false) {
 }
 async function loadBatches() {
   const turn = ++batchRequest
-  const value = await authRequest<{ items: Batch[]; totalElements: number }>(`${base}/batches?page=${batchPage.value}`)
+  const value = await authRequest<{ items: Batch[]; totalElements: number }>(`${base}/batches?kind=SEPARATE&page=${batchPage.value}`)
   if (active && turn === batchRequest) { batches.value = value.items; batchTotal.value = value.totalElements }
 }
+async function loadRecognitions() {
+  const turn = ++recognitionRequest
+  const value = await authRequest<{ items: Batch[]; totalElements: number }>(`${base}/batches?kind=RECOGNIZE&page=${recognitionPage.value}`)
+  if (active && turn === recognitionRequest) { recognitionBatches.value = value.items; recognitionTotal.value = value.totalElements }
+}
 async function refresh(first = false) {
-  const work: Promise<unknown>[] = [loadNode(), loadBatches()]
+  const work: Promise<unknown>[] = [loadNode(), loadBatches(), loadRecognitions()]
   if (preview.value?.state === 'PREPARING' && !starting.value) work.push(loadPreview())
-  if (!first) work.push(tab.value === 'songs' ? songsTab.value?.refresh() ?? Promise.resolve() : tab.value === 'tasks' ? batchesTab.value?.refresh() ?? Promise.resolve() : Promise.resolve())
+  if (!first) work.push(tab.value === 'songs' ? songsTab.value?.refresh() ?? Promise.resolve() : tab.value === 'tasks' ? batchesTab.value?.refresh() ?? Promise.resolve() : recognitionTab.value?.refresh() ?? Promise.resolve())
   const results = await Promise.allSettled(work)
   if (!active) return
   const rejected = results.find(result => result.status === 'rejected') as PromiseRejectedResult | undefined
@@ -62,6 +70,7 @@ async function refresh(first = false) {
 }
 async function poll(first = false) { await refresh(first); if (active) timer = setTimeout(() => { void poll() }, 4000) }
 function changeBatchPage(next: number) { batchPage.value = next; void loadBatches().catch(failed => { if (active) error.value = failure(failed) }) }
+function changeRecognitionPage(next: number) { recognitionPage.value = next; void loadRecognitions().catch(failed => { if (active) error.value = failure(failed) }) }
 function showPreview(value: Batch) { previewGeneration++; preview.value = value }
 async function start() {
   if (!active || starting.value || preview.value?.state !== 'PREVIEW') return
@@ -70,12 +79,16 @@ async function start() {
   try {
     const value = await authRequest<Batch>(`${base}/batches/${encodeURIComponent(id)}/submit`, 'POST')
     if (!active || turn !== previewGeneration) return
-    preview.value = undefined; songsTab.value?.clear(); batchPage.value = 0
-    await loadBatches(); if (!active) return; focus.value = ''; await nextTick(); if (active) { focus.value = value.id; navigate('tasks') }
-  } catch (failed) { if (active) error.value = failure(failed, '无法开始生成') }
+    preview.value = undefined; songsTab.value?.clear()
+    const recognizing = isRecognition(value)
+    if (recognizing) recognitionPage.value = 0
+    else batchPage.value = 0
+    await (recognizing ? loadRecognitions() : loadBatches()); if (!active) return
+    navigate(recognizing ? 'recognition' : 'tasks', { batch: value.id })
+  } catch (failed) { if (active) error.value = failure(failed, isRecognition(preview.value) ? '无法开始识别' : '无法开始生成') }
   finally { if (active) starting.value = false }
 }
-async function closePreview() { if (starting.value) return; previewGeneration++; preview.value = undefined; await loadBatches().catch(() => undefined) }
+async function closePreview() { if (starting.value) return; previewGeneration++; const recognizing = isRecognition(preview.value); preview.value = undefined; await (recognizing ? loadRecognitions() : loadBatches()).catch(() => undefined) }
 async function loadPreview() {
   const id = preview.value?.id, turn = previewGeneration
   if (!id) return
@@ -90,7 +103,7 @@ async function cancelPreparation() {
   try {
     const value = await authRequest<Batch>(`${base}/batches/${encodeURIComponent(id)}/cancel`, 'POST')
     if (!active || turn !== previewGeneration || preview.value?.id !== id) return
-    preview.value = value; await loadBatches()
+    preview.value = value; await (isRecognition(value) ? loadRecognitions() : loadBatches())
   } catch (failed) { if (active) error.value = failure(failed, '取消准备失败') }
   finally { if (active) starting.value = false }
 }
@@ -105,20 +118,21 @@ onBeforeUnmount(() => { active = false; clearTimeout(timer) })
         <button type="button" class="ready-pill" :class="anyReady ? 'is-ready' : 'is-pending'" @click="setup()"><span class="sv-status-dot" :class="anyReady ? 'ok' : 'warn'" aria-hidden="true" />{{ readiness.ready ? readiness.title : anyReady ? '极速档已就绪' : '伴奏生成未就绪' }}</button>
       </template>
       <template #description>
-        <p>自带伴奏的歌曲先试听标记；普通立体声可选极速中心抵消或轻量 AI 分离，试听后生成整曲。原始文件保持只读。</p>
+        <p>扫描未完成的歌曲可批量重新识别原唱与伴奏；没有自带伴奏时，再按需要生成独立伴奏。</p>
         <TaskGuide v-if="tab === 'songs'" label="原唱与伴奏准备流程" :steps="[{ title: '先检查音轨', description: '识别已有原唱与伴奏，试听后标记。' }, { title: '按需要生成', description: '没有伴奏时，先试片段再生成整曲。' }, { title: '核对成果版本', description: '试听处理结果，保留原始媒体。' }]" />
       </template>
     </PageHeader>
     <div class="tabs" role="tablist" aria-label="原唱与伴奏功能">
       <button v-for="(item, index) in tabs" :id="'audio-tab-' + item.id" :key="item.id" ref="tabButtons" type="button" role="tab" class="tab" :class="{ 'is-active': tab === item.id }" :aria-selected="tab === item.id" :aria-controls="'audio-panel-' + item.id" :tabindex="tab === item.id ? 0 : -1" @click="navigate(item.id)" @keydown="keyNav($event, index)">
-        {{ item.name }}<span v-if="item.id === 'tasks' && activeBatches" class="sv-count-pill" :aria-label="`${activeBatches} 个进行中`">{{ activeBatches }}</span>
+        {{ item.name }}<span v-if="(item.id === 'tasks' && activeBatches) || (item.id === 'recognition' && activeRecognitions)" class="sv-count-pill" :aria-label="`${item.id === 'recognition' ? activeRecognitions : activeBatches} 个进行中`">{{ item.id === 'recognition' ? activeRecognitions : activeBatches }}</span>
       </button>
     </div>
     <ElAlert v-if="error" :title="error" type="error" show-icon :closable="false" role="alert" class="page-error" />
     <section :id="'audio-panel-' + tab" role="tabpanel" :aria-labelledby="'audio-tab-' + tab" class="panel">
       <KeepAlive>
-        <SongsTab v-if="tab === 'songs'" ref="songsTab" :song-id="songId" :readiness="readiness" :backends="node?.backends || []" :separation="node?.separation" @preview="showPreview" @setup="setup()" @show-all="navigate('songs')" />
-        <BatchesTab v-else-if="tab === 'tasks'" ref="batchesTab" :batches="batches" :total="batchTotal" :page="batchPage" :focus="focus" :backends="node?.backends || []" @preview="showPreview" @page="changeBatchPage" @changed="loadBatches" @songs="navigate('songs')" />
+        <SongsTab v-if="tab === 'songs'" ref="songsTab" :song-id="songId" :readiness="readiness" :backends="node?.backends || []" :separation="node?.separation" :recognition-ready="readiness.connected" :fast-ready="node?.fastClassifier?.ready" @preview="showPreview" @setup="setup()" @show-all="navigate('songs')" />
+        <BatchesTab v-else-if="tab === 'recognition'" key="recognition" ref="recognitionTab" recognition :can-analyze="readiness.ready" :batches="recognitionBatches" :total="recognitionTotal" :page="recognitionPage" :focus="focus" :backends="node?.backends || []" @preview="showPreview" @page="changeRecognitionPage" @changed="loadRecognitions" @songs="navigate('songs')" @song="navigate('songs', { song: $event })" />
+        <BatchesTab v-else-if="tab === 'tasks'" key="generation" ref="batchesTab" :batches="batches" :total="batchTotal" :page="batchPage" :focus="focus" :backends="node?.backends || []" @preview="showPreview" @page="changeBatchPage" @changed="loadBatches" @songs="navigate('songs')" />
       </KeepAlive>
     </section>
     <BatchConfirmDialog :batch="preview" :ready="previewReady" :busy="starting" @start="start" @close="closePreview" @cancel="cancelPreparation" />

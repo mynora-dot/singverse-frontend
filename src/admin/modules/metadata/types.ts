@@ -1,4 +1,5 @@
 export type MusicProvider = 'NETEASE' | 'QQ' | 'KUGOU' | 'KUWO' | 'QISHUI'
+export const metadataDefaults = { threshold: .8, minIntervalSeconds: 1, maxIntervalSeconds: 2 } as const
 export interface MetadataSettings { enabled: boolean; providers: MusicProvider[]; autoApply: boolean; threshold: number; minIntervalSeconds?: number; maxIntervalSeconds?: number }
 export interface ExternalTrack {
   provider: MusicProvider; externalId: string; title: string; artists: string[]; album: string | null

@@ -51,6 +51,16 @@ it('显示音视频缓存、容量、命中和租约状态，格式标明请求�
   expect(wrapper!.get('button[aria-label="删除合唱歌曲的缓存"]').attributes('disabled')).toBeUndefined()
 })
 
+it('磁盘满导致自动预算为零时容量进度仍有效，不自动保存设置', async () => {
+  vi.mocked(songCache.list).mockResolvedValue({ ...structuredClone(original), settings: { ...original.settings, maxBytes: 0, revision: 0 }, usageBytes: 0, entryCount: 0, totalElements: 0, items: [] })
+  await page()
+  expect(wrapper!.get('progress[aria-label="缓存容量使用比例"]').attributes('value')).toBe('0')
+  expect(wrapper!.get('input[aria-label="最大缓存容量"]').element).toHaveProperty('value', '0')
+  expect(wrapper!.text()).toContain('默认 50 GiB')
+  expect(wrapper!.text()).not.toContain('NaN')
+  expect(songCache.save).not.toHaveBeenCalled()
+})
+
 it('原片部分缓存显示实际容量和完整度，使用中的预缓存不能删除', async () => {
   const value = structuredClone(original)
   value.items = [

@@ -2,7 +2,7 @@ import type { BackgroundTask, TaskExecution } from './api'
 
 export const typeNames: Record<string, string> = {
   SHARE_IMPORT: '曲库资料导入', SOURCE_INGEST: '来源入库', ARTIST_ARTWORK: '歌手封面获取', LX_DOWNLOAD: '歌曲下载', LOCAL_SCAN: '本地扫描', WEBDAV_SCAN: 'WebDAV 扫描', METADATA: '元数据整理', CLASSIFICATION: 'AI 分类',
-  AUDIO_DISCOVERY: '自动音轨识别', AUDIO_BATCH: '批量伴奏生成', AUDIO_JOB: '单曲音频处理', TRANSCODE: '离线转码', CACHE_CLEANUP: '缓存清理', SHARE_EXPORT: '分享包导出',
+  AUDIO_DISCOVERY: '自动音轨识别', AUDIO_BATCH: '批量音轨处理', AUDIO_JOB: '单曲音频处理', TRANSCODE: '离线转码', CACHE_CLEANUP: '缓存清理', SHARE_EXPORT: '分享包导出',
 }
 export const statusNames: Record<string, string> = {
   QUEUED: '排队中', RUNNING: '运行中', PAUSED: '已暂停', CANCELLING: '取消中', AWAITING_CONFIRMATION: '等待开始',

@@ -42,6 +42,18 @@ it('五个平台直接可见并展示服务端默认状态，自动应用保持�
   expect(button('保存设置').attributes('disabled')).toBeDefined()
   expect(metadata.saveSettings).not.toHaveBeenCalled()
 })
+it('旧响应省略请求间隔时使用 1～2 秒，80% 阈值可直接编辑保存', async () => {
+  vi.mocked(metadata.settings).mockResolvedValue({ enabled: true, providers: platforms, autoApply: false, threshold: .8 })
+  await page()
+  expect((wrapper!.get('input[aria-label="自动应用阈值百分比"]').element as HTMLInputElement).value).toBe('80')
+  expect((wrapper!.get('input[aria-label="批量最小间隔秒"]').element as HTMLInputElement).value).toBe('1')
+  expect((wrapper!.get('input[aria-label="批量最大间隔秒"]').element as HTMLInputElement).value).toBe('2')
+  expect(wrapper!.text()).toContain('默认 1～2 秒')
+  expect(button('保存设置').attributes('disabled')).toBeDefined()
+  await wrapper!.get('input[aria-label="自动应用阈值百分比"]').setValue('90')
+  await save()
+  expect(metadata.saveSettings).toHaveBeenCalledWith({ enabled: true, providers: platforms, autoApply: false, threshold: .9, minIntervalSeconds: 1, maxIntervalSeconds: 2 })
+})
 it('启用全部平台后明确保存，保留原自动应用、阈值与间隔', async () => {
   vi.mocked(metadata.settings).mockResolvedValue({ ...initial, enabled: false, providers: ['NETEASE'], autoApply: true, threshold: .96, minIntervalSeconds: 1, maxIntervalSeconds: 3 })
   await page(); await button('启用全部平台').trigger('click')

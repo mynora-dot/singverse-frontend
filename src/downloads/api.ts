@@ -10,7 +10,7 @@ export async function readRelease(platform: Platform): Promise<ClientRelease> {
       typeof release.versionName !== 'string' || !release.versionName.trim() ||
       release.packageName !== `com.mynora.singverse.${platform}` ||
       !Number.isSafeInteger(release.size) || release.size! < 1 || release.size! > 268435456 ||
-      !Number.isSafeInteger(release.minSdk) || release.minSdk! < (platform === 'tv' ? 23 : 24) ||
+      !Number.isSafeInteger(release.minSdk) || release.minSdk! < (platform === 'tv' ? 21 : 24) ||
       !Array.isArray(release.abis) || !release.abis.length || release.abis.some(abi => typeof abi !== 'string') ||
       !/^[a-f0-9]{64}$/.test(release.sha256 ?? '') || !/^[a-f0-9]{64}$/.test(release.certificateSha256 ?? '') ||
       (release.notes !== undefined && typeof release.notes !== 'string') ||

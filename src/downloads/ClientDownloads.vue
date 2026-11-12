@@ -6,7 +6,7 @@ const origin = window.location.origin
 const canShare = reachableOrigin(origin)
 const platforms: { id: Platform; title: string; description: string; minimum: string }[] = [
   { id: 'mobile', title: '手机端', description: '连接家庭曲库，在手机上练唱、录音和管理作品。', minimum: 'Android 7.0 / API 24' },
-  { id: 'tv', title: '电视端', description: '安装到 Android 电视，连接 NAS 后点歌和播放。', minimum: 'Android 6.0 / API 23' },
+  { id: 'tv', title: '电视端', description: '安装到 Android 电视，连接 NAS 后点歌和播放。', minimum: 'Android 5.0 / API 21' },
 ]
 const states = reactive<Record<Platform, { release: ClientRelease | null; loading: boolean; error: string }>>({
   mobile: { release: null, loading: false, error: '' }, tv: { release: null, loading: false, error: '' },

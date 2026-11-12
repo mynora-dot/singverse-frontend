@@ -6,14 +6,14 @@ import { Search } from '@element-plus/icons-vue'
 import AudioRolesPanel from '../../song-management/components/AudioRolesPanel.vue'
 import { authRequest } from '../../../core/auth/api'
 import { base, payload, query, type AudioRow, type Backend, type Batch, type Filter, type SeparationCapabilities, type SeparationProfile } from '../api'
-import { backendName, failure, profileBackends, profileReady, rolesSummary, type Readiness } from '../presentation'
+import { backendName, failure, latestAnalysis, jobStates, profileBackends, profileReady, rolesSummary, type Readiness } from '../presentation'
 import SeparationControls from './SeparationControls.vue'
 
-const props = defineProps<{ songId: string; readiness: Readiness; backends: Backend[]; separation?: SeparationCapabilities }>()
+const props = defineProps<{ songId: string; readiness: Readiness; backends: Backend[]; separation?: SeparationCapabilities; recognitionReady?: boolean; fastReady?: boolean }>()
 const emit = defineEmits<{ preview: [batch: Batch]; setup: []; showAll: [] }>()
 const pageSize = ref(30)
 const states = [
-  { value: '', label: '全部' }, { value: 'ELIGIBLE', label: '可生成伴奏' }, { value: 'UNCONFIRMED', label: '待标记原唱' }, { value: 'UNPROBED', label: '待识别' },
+  { value: '', label: '全部' }, { value: 'UNRECOGNIZED', label: '识别未完成' }, { value: 'ELIGIBLE', label: '可生成伴奏' }, { value: 'UNCONFIRMED', label: '待标记原唱' }, { value: 'UNPROBED', label: '待识别' },
   { value: 'READY', label: '已有伴奏' }, { value: 'PROCESSING', label: '生成中' }, { value: 'FAILED', label: '生成失败' }, { value: 'INAPPLICABLE', label: '多音轨/无音轨' },
 ]
 const filter = reactive<Filter>({ title: '', artist: '', sourceId: '', streams: '', state: '', songId: props.songId })
@@ -26,6 +26,8 @@ let active = true, visible = true, sequence = 0
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 const indexPreparing = ref(false), indexBuilding = ref(false)
 const profile = ref<SeparationProfile>('LEGACY_DEMUCS')
+const recognitionKind = ref<'FAST' | 'ANALYZE'>('FAST')
+const canRecognize = computed(() => recognitionKind.value === 'ANALYZE' ? props.readiness.ready : (props.recognitionReady ?? props.readiness.connected))
 let profileInitialized = false
 watch(() => props.separation, value => { if (value && !profileInitialized) { profile.value = 'DSP_FAST'; profileInitialized = true } }, { immediate: true })
 const available = computed(() => profileBackends(props.separation, profile.value, props.backends))
@@ -83,6 +85,21 @@ async function makePreview(ids?: string[]) {
   } catch (failed) { if (active) error.value = failure(failed, '无法准备生成任务') }
   finally { if (active) busy.value = false }
 }
+async function recognize(ids?: string[]) {
+  if (busy.value || !canRecognize.value) return
+  busy.value = true; error.value = ''
+  try {
+    const value = await authRequest<Batch>(`${base}/batches/preview`, 'POST', {
+      kind: recognitionKind.value, ids: ids || [...selected], all: !ids && all.value, filter: payload(applied.value),
+    }, 120000)
+    if (active) emit('preview', value)
+  } catch (failed) { if (active) error.value = failure(failed, '无法准备批量识别任务') }
+  finally { if (active) busy.value = false }
+}
+function showUnrecognized() { filter.state = 'UNRECOGNIZED'; filter.streams = ''; search() }
+function canRetryRecognition(row: AudioRow) {
+  return !row.audio.streams || (row.audio.streams.length === 2 && row.audio.state !== 'CONFIRMED')
+}
 async function loadSources() {
   sourcesError.value = ''
   try {
@@ -113,7 +130,7 @@ defineExpose({ refresh: loadRows, clear })
 <template>
   <div class="songs-tab">
     <ElAlert v-if="!ready" type="warning" :closable="false" show-icon class="ready-alert" :title="separation ? '当前伴奏方案尚未就绪' : readiness.title">
-      <p>{{ readiness.hint || '准备好之后才能生成伴奏。' }}人工标记原唱不受影响。</p>
+      <p>{{ readiness.hint || '准备好之后才能生成伴奏。' }}快速识别可单独使用，人工标记原唱不受影响。</p>
       <ElButton type="warning" plain size="small" @click="emit('setup')">去准备环境</ElButton>
     </ElAlert>
 
@@ -138,16 +155,33 @@ defineExpose({ refresh: loadRows, clear })
       <p v-if="sourcesError" class="inline-error">{{ sourcesError }} <ElButton link @click="loadSources">重试</ElButton></p>
     </section>
 
-    <div class="selection-bar" role="region" aria-label="批量生成伴奏" :class="{ 'has-selection': selectedCount }">
+    <div class="selection-bar" role="region" aria-label="选择批量处理的歌曲" :class="{ 'has-selection': selectedCount }">
       <label class="page-check"><input type="checkbox" aria-label="选择本页歌曲" :checked="pageChecked" :indeterminate.prop="pageMixed" :disabled="!rows.length" @change="pageSelect(($event.target as HTMLInputElement).checked)"><span>{{ selectedCount ? `已选 ${selectedCount} 首` : `共 ${total} 首` }}</span></label>
       <span v-if="all" class="muted">已选择全部筛选结果</span>
       <ElButton v-else-if="total > rows.length && total > 0" link type="primary" :disabled="loading" @click="all = true; selected.clear()">选择全部 {{ total }} 首</ElButton>
       <ElButton v-if="selectedCount" link @click="clear">清空</ElButton>
       <span class="spacer" />
-      <SeparationControls v-if="separation" v-model:profile="profile" v-model:backend="preferred" :backends="available" :disabled="busy" />
-      <label v-else-if="available.length > 1" class="device">使用<select v-model="preferred" class="native-select" aria-label="生成伴奏使用的设备"><option value="">自动选择</option><option v-for="backend in available" :key="backend.id" :value="backend.id">{{ backendName(backend.id) }}</option></select></label>
-      <ElButton type="primary" :loading="busy" :disabled="busy || !ready || !selectedCount || loading" @click="makePreview()">为所选歌曲生成伴奏</ElButton>
+      <ElButton link type="primary" :disabled="loading || busy" @click="showUnrecognized">筛选识别未完成的歌曲</ElButton>
     </div>
+    <section class="bulk-tools" aria-label="批量处理所选歌曲">
+      <div class="bulk-action">
+        <div class="bulk-copy"><strong>识别已有音轨</strong><p>扫描失败或未能确定原唱、伴奏时，勾选歌曲重新识别。</p></div>
+        <div class="bulk-controls">
+          <label class="device">识别方式<select v-model="recognitionKind" class="native-select" aria-label="批量识别方式" :disabled="busy"><option value="FAST">快速识别（推荐）</option><option value="ANALYZE" :disabled="!readiness.ready">深度识别 · 耗时较长</option></select></label>
+          <ElButton type="primary" plain :loading="busy" :disabled="busy || !canRecognize || !selectedCount || loading" @click="recognize()">批量自动识别</ElButton>
+        </div>
+        <p v-if="!canRecognize" class="bulk-note">{{ recognitionKind === 'ANALYZE' ? '深度识别需要先准备好分离环境。' : '请先连接可用的计算节点。' }}<ElButton link type="primary" @click="emit('setup')">去设置</ElButton></p>
+        <p v-else-if="recognitionKind === 'FAST' && fastReady === false" class="bulk-note">快速识别模型未就绪，本次仅按音轨标签判断；无明确标签的歌曲会保留待人工确认。</p>
+      </div>
+      <div class="bulk-action">
+        <div class="bulk-copy"><strong>生成独立伴奏</strong><p>只有一条原唱音轨时，可选择伴奏方案进行分离。</p></div>
+        <div class="bulk-controls">
+          <SeparationControls v-if="separation" v-model:profile="profile" v-model:backend="preferred" :backends="available" :disabled="busy" />
+          <label v-else-if="available.length > 1" class="device">使用<select v-model="preferred" class="native-select" aria-label="生成伴奏使用的设备"><option value="">自动选择</option><option v-for="backend in available" :key="backend.id" :value="backend.id">{{ backendName(backend.id) }}</option></select></label>
+          <ElButton type="primary" :loading="busy" :disabled="busy || !ready || !selectedCount || loading" @click="makePreview()">为所选歌曲生成伴奏</ElButton>
+        </div>
+      </div>
+    </section>
 
     <p v-if="indexPreparing" role="status">正在准备歌曲列表，稍后自动重试…</p>
     <p v-else-if="indexBuilding" role="status">正在更新歌曲状态…</p>
@@ -163,7 +197,7 @@ defineExpose({ refresh: loadRows, clear })
         </td>
         <td class="song-location"><strong>{{ row.sourceName }}</strong><p :title="row.relativePath">{{ row.relativePath }}</p></td>
         <td class="song-tracks">{{ tracks(row) }}<p v-for="stream in row.audio.streams" :key="stream.id">{{ stream.codec?.toUpperCase() || '编码待识别' }} · {{ stream.channels ? `${stream.channels} 声道` : '声道待识别' }}</p></td>
-        <td class="song-state"><ElTag :type="rolesSummary(row.audio).tone" effect="light" round size="small">{{ rolesSummary(row.audio).tag }}</ElTag><p v-if="rolesSummary(row.audio).tone === 'danger'" class="inline-error">{{ rolesSummary(row.audio).hint }}</p></td>
+        <td class="song-state"><ElTag :type="rolesSummary(row.audio).tone" effect="light" round size="small">{{ rolesSummary(row.audio).tag }}</ElTag><p v-if="latestAnalysis(row.audio) && row.audio.state !== 'CONFIRMED'">{{ latestAnalysis(row.audio)!.state === 'SUCCEEDED' ? '识别后仍待确认' : '识别' + (jobStates[latestAnalysis(row.audio)!.state] || latestAnalysis(row.audio)!.state) }}</p><p v-if="rolesSummary(row.audio).tone === 'danger'" class="inline-error">{{ rolesSummary(row.audio).hint }}</p></td>
         <td class="song-task"><template v-if="latest(row)"><span>{{ taskLabels[latest(row)!.state] || latest(row)!.state }}</span><p v-if="latest(row)!.backend">{{ backendName(latest(row)!.backend!) }}</p><p v-if="latest(row)!.fallbackReason">已自动降级到 CPU</p><p v-if="latest(row)!.error" class="task-error" :title="latest(row)!.error">{{ latest(row)!.error }}</p></template><span v-else>暂无生成任务</span></td>
         <td class="song-actions">
           <ElButton v-if="action(row) === 'generate'" size="small" :aria-label="'为' + row.title + '生成伴奏'" :disabled="busy || !ready" @click="makePreview([row.id])">生成伴奏</ElButton>
@@ -171,6 +205,7 @@ defineExpose({ refresh: loadRows, clear })
           <ElButton v-else-if="action(row) === 'relabel'" size="small" @click="editor = row">修改标记</ElButton>
           <ElButton v-else-if="action(row) === 'listen'" size="small" @click="editor = row">试听伴奏</ElButton>
           <ElButton v-else size="small" @click="editor = row">查看详情</ElButton>
+          <ElButton v-if="canRetryRecognition(row)" size="small" link type="primary" :disabled="busy || !canRecognize" @click="recognize([row.id])">自动识别</ElButton>
         </td>
       </tr></tbody>
     </table></div>
@@ -187,10 +222,11 @@ defineExpose({ refresh: loadRows, clear })
 
 <style scoped>
 .songs-tab{display:grid;gap:16px;min-width:0}.ready-alert p{margin:2px 0 8px}.single-banner{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:12px 16px;border-radius:var(--sv-radius-md);background:var(--sv-accent-soft);color:var(--sv-text-primary);font-size:var(--sv-font-body)}
+.bulk-tools{display:grid;border-block:1px solid var(--sv-border-subtle)}.bulk-action{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:14px 0}.bulk-action+.bulk-action{border-top:1px solid var(--sv-border-subtle)}.bulk-copy{flex:1;min-width:220px}.bulk-copy strong{font-size:var(--sv-font-body);font-weight:600}.bulk-copy p,.bulk-note{margin:4px 0 0;font-size:var(--sv-font-meta);line-height:1.6;color:var(--sv-text-secondary)}.bulk-controls{display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:100%;min-width:0}.bulk-controls :deep(.el-button){margin:0}.bulk-note{flex-basis:100%}.bulk-controls :deep(.separation-controls){max-width:100%}
 .filter-panel{padding:0;display:grid;gap:12px}.filters{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,.9fr) minmax(0,.8fr) auto;gap:12px;align-items:center}.filters :deep(.el-button){margin:0}.native-select{min-height:40px;padding:4px 8px;border:1px solid var(--sv-border-default);border-radius:var(--sv-radius-sm);background:var(--sv-surface-1);color:var(--sv-text-primary);font:inherit;font-size:var(--sv-font-body);min-width:0;max-width:100%}
 .state-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0;padding:0;border:0;min-width:0}.state-chips legend{float:left;margin-right:4px;padding:0;font-size:var(--sv-font-meta);color:var(--sv-text-secondary)}.chip{position:relative;display:inline-flex;align-items:center;min-height:30px;padding:0 12px;border:1px solid var(--sv-border-default);border-radius:var(--sv-radius-full);font-size:var(--sv-font-meta);color:var(--sv-text-secondary);cursor:pointer;background:var(--sv-surface-1)}.chip input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}.chip:hover{border-color:var(--sv-accent-primary);color:var(--sv-text-primary)}.chip.is-active{border-color:var(--sv-accent-primary);background:var(--sv-accent-soft);color:var(--sv-accent-primary);font-weight:600}.chip:focus-within{outline:2px solid var(--sv-accent-primary);outline-offset:2px}.reset{margin-left:4px}
 .selection-bar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;padding:0 0 12px;border-bottom:1px solid var(--sv-border-subtle)}.selection-bar.has-selection{padding:12px;border-radius:8px;background:var(--sv-accent-soft)}.selection-bar :deep(.el-button){margin:0}.page-check{display:inline-flex;gap:8px;align-items:center;font-size:var(--sv-font-body);font-weight:600;color:var(--sv-text-primary)}.page-check input,.row-check{width:16px;height:16px;margin:0;accent-color:var(--sv-accent-primary)}.spacer{flex:1}.device{display:inline-flex;gap:8px;align-items:center;font-size:var(--sv-font-meta);color:var(--sv-text-secondary)}
-.song-list{margin:0;padding:0;list-style:none;border:1px solid var(--sv-border-subtle);border-radius:var(--sv-radius-lg);background:transparent;overflow:hidden}.song-row{display:grid;grid-template-columns:24px minmax(0,1fr) 110px 150px 120px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--sv-border-subtle)}.song-row:last-child{border-bottom:0}.song-row.is-selected{background:var(--sv-accent-soft)}.song-main{min-width:0}.song-title{display:block;max-width:100%;padding:0;border:0;background:none;color:var(--sv-text-primary);font:inherit;font-size:var(--sv-font-body);font-weight:600;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.song-title:hover{color:var(--sv-accent-primary);text-decoration:underline}.song-main p{margin:2px 0 0;font-size:var(--sv-font-meta);color:var(--sv-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.song-tracks{font-size:var(--sv-font-meta);color:var(--sv-text-secondary)}.song-state{min-width:0}.song-state p{margin:4px 0 0}.song-actions{display:flex;justify-content:flex-end}.song-actions :deep(.el-button){margin:0}
+.song-list{margin:0;padding:0;list-style:none;border:1px solid var(--sv-border-subtle);border-radius:var(--sv-radius-lg);background:transparent;overflow:hidden}.song-row{display:grid;grid-template-columns:24px minmax(0,1fr) 110px 150px 120px;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--sv-border-subtle)}.song-row:last-child{border-bottom:0}.song-row.is-selected{background:var(--sv-accent-soft)}.song-main{min-width:0}.song-title{display:block;max-width:100%;padding:0;border:0;background:none;color:var(--sv-text-primary);font:inherit;font-size:var(--sv-font-body);font-weight:600;text-align:left;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.song-title:hover{color:var(--sv-accent-primary);text-decoration:underline}.song-main p{margin:2px 0 0;font-size:var(--sv-font-meta);color:var(--sv-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.song-tracks{font-size:var(--sv-font-meta);color:var(--sv-text-secondary)}.song-state{min-width:0}.song-state p{margin:4px 0 0}.song-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}.song-actions :deep(.el-button){margin:0}
 .pagination{display:flex;justify-content:center}.muted{font-size:var(--sv-font-meta);color:var(--sv-text-secondary)}.inline-error{margin:0;font-size:var(--sv-font-meta);color:var(--sv-semantic-danger);overflow-wrap:anywhere}.drawer-sub{margin:-8px 0 16px;font-size:var(--sv-font-meta);color:var(--sv-text-secondary)}
 @media(max-width:960px){.filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.filters>:first-child{grid-column:1/-1}.song-row{grid-template-columns:24px minmax(0,1fr) auto}.song-tracks{display:none}.song-state{grid-column:2}.song-actions{grid-column:3;grid-row:1/3}}
 @media(max-width:560px){.filters{grid-template-columns:minmax(0,1fr)}.filters :deep(.el-button){width:100%}.song-row{grid-template-columns:24px minmax(0,1fr);padding:12px}.song-state{grid-column:2}.song-actions{grid-column:2;grid-row:auto;justify-content:flex-start}.selection-bar{padding:0 0 12px}.selection-bar.has-selection{padding:12px}.selection-bar>.el-button--primary:last-child{width:100%}.spacer{display:none}}

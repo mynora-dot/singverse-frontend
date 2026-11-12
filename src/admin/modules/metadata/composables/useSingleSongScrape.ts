@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { metadata } from '../api/metadata'
 import { singleReview } from '../api/single-review'
 import { highSimilarityCandidate } from '../candidate-selection'
-import { providerNames } from '../types'
+import { metadataDefaults, providerNames } from '../types'
 import { coverValue } from '../cover-quality'
 import type { MetadataCandidate, MusicProvider } from '../types'
 import { reviewFields } from '../single-types'
@@ -18,7 +18,7 @@ export function candidateValues(candidate: MetadataCandidate): Values {
 export function useSingleSongScrape() {
   const review = ref<SingleReview | null>(null), keyword = ref(''), providers = ref<MusicProvider[]>([]), available = ref<MusicProvider[]>([])
   const settingsStatus = ref<'loading' | 'ready' | 'error'>('loading'), searched = ref(false)
-  const selectionThreshold = ref(.95), autoSelected = ref(false)
+  const selectionThreshold = ref<number>(metadataDefaults.threshold), autoSelected = ref(false)
   const enabled = ref(false), loading = ref(false), searching = ref(false), applying = ref(false)
   const error = ref(''), searchError = ref(''), warning = ref(''), candidates = ref<MetadataCandidate[]>([])
   const selected = ref<MetadataCandidate | null>(null), draft = ref<Values | null>(null), fields = ref<ReviewField[]>([])

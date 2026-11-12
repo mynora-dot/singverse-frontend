@@ -9,7 +9,7 @@ const route = useRoute()
 
 <template>
   <ElConfigProvider :locale="zhCn">
-    <RouterView v-if="route.path === '/login'" />
-    <AdminLayout v-else />
+    <RouterView v-if="route.meta.public" />
+    <AdminLayout v-else-if="route.matched.length" />
   </ElConfigProvider>
 </template>

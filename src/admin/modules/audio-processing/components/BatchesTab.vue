@@ -4,18 +4,19 @@ import { ElAlert, ElButton, ElDrawer, ElEmpty, ElPagination, ElProgress, ElTag }
 import { authRequest } from '../../../core/auth/api'
 import { confirmDanger } from '../../../shared/ui/confirm'
 import { base, type Backend, type Batch, type BatchItem } from '../api'
-import { backendName, batchProgress, batchStates, batchTones, executionStage, failure, itemStates, itemTones, profileName, time } from '../presentation'
+import { backendName, batchProgress, batchStates, batchTones, executionStage, failure, isRecognition, itemStates, itemTones, profileName, recognitionName, time } from '../presentation'
 
-const props = defineProps<{ batches: Batch[]; total: number; page: number; focus: string; backends: Backend[] }>()
-const emit = defineEmits<{ preview: [batch: Batch]; page: [page: number]; changed: []; songs: [] }>()
+const props = defineProps<{ batches: Batch[]; total: number; page: number; focus: string; backends: Backend[]; recognition?: boolean; canAnalyze?: boolean }>()
+const emit = defineEmits<{ preview: [batch: Batch]; page: [page: number]; changed: []; songs: []; song: [id: string] }>()
 const itemSize = 50
 const current = ref<Batch>(), itemPage = ref(0), busy = ref(false), error = ref('')
 let active = true, visible = true, sequence = 0
-function headline(batch: Batch) { return `${batch.total} 首歌曲${batch.separationProfile ? ' · ' + profileName(batch.separationProfile) : ''}` }
+function headline(batch: Batch) { return `${batch.total} 首歌曲${isRecognition(batch) ? ' · ' + recognitionName(batch.kind) : batch.separationProfile ? ' · ' + profileName(batch.separationProfile) : ''}` }
 function summary(batch: Batch) {
   if (batch.state === 'PREPARING') return `正在准备 ${batch.prepared || 0} / ${batch.selectionTotal ?? batch.total} 首歌曲`
   if (batch.state === 'FAILED') return batch.error || '准备失败，请重新选择歌曲'
-  const c = batch.counts, parts = [`已生成 ${c.SUCCEEDED || 0}`]
+  const c = batch.counts, parts = [`${isRecognition(batch) ? '已识别并标记' : '已生成'} ${c.SUCCEEDED || 0}`]
+  if (c.REVIEW) parts.push(`待人工确认 ${c.REVIEW}`)
   if (c.SKIPPED) parts.push(`跳过 ${c.SKIPPED}`)
   if (c.FAILED) parts.push(`失败 ${c.FAILED}`)
   if (c.CANCELLED) parts.push(`取消 ${c.CANCELLED}`)
@@ -25,6 +26,8 @@ function summary(batch: Batch) {
 }
 function itemState(item: BatchItem) {
   if (item.state === 'PROCESSING' && item.job_state === 'QUEUED') return '排队中'
+  if (props.recognition && item.state === 'PROCESSING') return '识别中'
+  if (props.recognition && item.state === 'SUCCEEDED') return '已识别并标记'
   if (item.state === 'PROCESSING' && item.job_state === 'RUNNING') return executionStage(item.execution) || '生成中'
   return itemStates[item.state] || item.state
 }
@@ -44,7 +47,7 @@ function open(batch: Batch) { current.value = batch; itemPage.value = 0; void ru
 function itemsPage(next: number) { itemPage.value = next; void run(loadCurrent) }
 async function cancelBatch(batch: Batch) {
   await run(async () => {
-    if (batch.state === 'QUEUED' && !await confirmDanger('停止这次生成？', '还没开始的歌曲不再处理，正在生成的会被中止；已经生成好的伴奏会保留。', '停止生成', '继续生成')) return
+    if (batch.state === 'QUEUED' && !await confirmDanger(isRecognition(batch) ? '停止这次识别？' : '停止这次生成？', isRecognition(batch) ? '尚未处理的歌曲不再识别，正在识别的会被中止；已保存的标记会保留。' : '还没开始的歌曲不再处理，正在生成的会被中止；已经生成好的伴奏会保留。', '停止任务', '继续处理')) return
     if (!active || !visible) return
     await authRequest(`${base}/batches/${encodeURIComponent(batch.id)}/cancel`, 'POST')
     if (active && visible) { emit('changed'); await loadCurrent() }
@@ -54,36 +57,38 @@ async function cancelItem(item: BatchItem) {
   if (!current.value) return
   const id = current.value.id
   await run(async () => {
-    if (item.state === 'PROCESSING' && !await confirmDanger('停止生成这首歌？', `“${item.title}”正在生成的伴奏会被中止，之后可以重新生成。`, '停止这首', '继续')) return
+    if (item.state === 'PROCESSING' && !await confirmDanger(props.recognition ? '停止识别这首歌？' : '停止生成这首歌？', props.recognition ? `“${item.title}”的识别会被中止，之后可以重新识别。` : `“${item.title}”正在生成的伴奏会被中止，之后可以重新生成。`, '停止这首', '继续')) return
     if (!active || !visible) return
     await authRequest(`${base}/batches/${encodeURIComponent(id)}/items/${encodeURIComponent(item.song_id)}/cancel`, 'POST')
     if (active && visible) { emit('changed'); await loadCurrent() }
   })
 }
-function retry(batch: Batch, backend = '') {
-  return run(async () => { const value = await authRequest<Batch>(`${base}/batches/${encodeURIComponent(batch.id)}/retry`, 'POST', { backend }); if (active && visible) emit('preview', value) })
+function retry(batch: Batch, kind?: 'ANALYZE') {
+  return run(async () => { const value = await authRequest<Batch>(`${base}/batches/${encodeURIComponent(batch.id)}/retry`, 'POST', { backend: '', ...(kind ? { kind } : {}) }); if (active && visible) emit('preview', value) })
 }
 onActivated(() => { visible = true; if (current.value) void run(loadCurrent) })
 onDeactivated(() => { visible = false; sequence++ })
 onBeforeUnmount(() => { active = false; sequence++ })
-watch(() => props.focus, id => { if (id) open(props.batches.find(item => item.id === id) ?? { id, state: 'QUEUED', backend: '', total: 0, counts: {}, categories: {} }) }, { immediate: true })
+watch(() => props.focus, id => { if (id) open(props.batches.find(item => item.id === id) ?? { id, kind: props.recognition ? 'FAST' : 'SEPARATE', state: 'QUEUED', backend: '', total: 0, counts: {}, categories: {} }) }, { immediate: true })
 defineExpose({ refresh: () => busy.value ? Promise.resolve() : loadCurrent() })
 </script>
 
 <template>
   <div class="batches-tab">
     <ElAlert v-if="error" :title="error" type="error" show-icon :closable="false" />
-    <ElEmpty v-if="!batches.length" description="还没有生成过伴奏"><p class="muted">在“歌曲”中勾选要处理的歌曲，再点“为所选歌曲生成伴奏”。</p><ElButton type="primary" @click="emit('songs')">去选择歌曲</ElButton></ElEmpty>
-    <ul v-else class="batch-list" aria-label="生成任务">
+    <p v-if="recognition" class="muted">查看重新识别的结果。无法确定的歌曲会显示“待人工确认”，可试听标记，也可改用深度识别。</p>
+    <ElEmpty v-if="!batches.length" :description="recognition ? '还没有批量识别任务' : '还没有生成过伴奏'"><p class="muted">{{ recognition ? '在“歌曲”中筛选识别未完成的歌曲，勾选后点击“批量自动识别”。' : '在“歌曲”中勾选要处理的歌曲，再点“为所选歌曲生成伴奏”。' }}</p><ElButton type="primary" @click="emit('songs')">去选择歌曲</ElButton></ElEmpty>
+    <ul v-else class="batch-list" :aria-label="recognition ? '识别任务' : '生成任务'">
       <li v-for="batch in batches" :key="batch.id" class="batch-row">
         <div class="batch-main">
           <div class="batch-title"><ElTag :type="batchTones[batch.state] || 'info'" effect="light" round size="small">{{ batchStates[batch.state] || batch.state }}</ElTag><h3>{{ headline(batch) }}</h3><span class="muted">{{ time(batch.createdAt) }}<template v-if="batch.backend"> · {{ backendName(batch.backend) }}</template></span></div>
-          <ElProgress v-if="batch.state !== 'PREVIEW' && batch.total" :percentage="batchProgress(batch).percent" :stroke-width="6" :status="batch.state === 'COMPLETED' && !batch.counts.FAILED ? 'success' : undefined" :aria-label="`${headline(batch)} 处理进度`" />
+          <ElProgress v-if="batch.state !== 'PREVIEW' && batch.total" :percentage="batchProgress(batch).percent" :stroke-width="6" :status="batch.state === 'COMPLETED' ? batch.counts.FAILED || batch.counts.REVIEW ? 'warning' : 'success' : undefined" :aria-label="`${headline(batch)} 处理进度`" />
           <p class="muted">{{ batch.state === 'PREVIEW' ? '已选好歌曲，尚未开始。确认后才会处理。' : summary(batch) }}</p>
         </div>
         <div class="batch-actions">
           <ElButton v-if="batch.state === 'PREVIEW'" type="primary" size="small" :disabled="busy" @click="emit('preview', batch)">确认开始</ElButton>
-          <ElButton v-if="batch.counts.FAILED" size="small" :disabled="busy" @click="retry(batch)">重试失败的歌曲</ElButton>
+          <ElButton v-if="batch.counts.FAILED || batch.counts.REVIEW" size="small" :disabled="busy" @click="retry(batch)">{{ recognition ? '重试未识别的歌曲' : '重试失败的歌曲' }}</ElButton>
+          <ElButton v-if="recognition && batch.kind === 'FAST' && (batch.counts.REVIEW || batch.counts.FAILED)" size="small" :disabled="busy || !canAnalyze" @click="retry(batch, 'ANALYZE')">改用深度识别</ElButton>
           <ElButton size="small" @click="open(batch)">查看详情</ElButton>
           <ElButton v-if="['PREPARING', 'QUEUED'].includes(batch.state)" size="small" type="danger" plain :disabled="busy" @click="cancelBatch(batch)">停止</ElButton>
           <ElButton v-if="batch.state === 'PREVIEW'" size="small" link :disabled="busy" @click="cancelBatch(batch)">放弃</ElButton>
@@ -96,7 +101,7 @@ defineExpose({ refresh: () => busy.value ? Promise.resolve() : loadCurrent() })
       <template v-if="current">
         <div class="detail-head">
           <ElTag :type="batchTones[current.state] || 'info'" effect="light" round>{{ batchStates[current.state] || current.state }}</ElTag>
-          <span>{{ headline(current) }}</span><span class="muted">{{ time(current.createdAt) }} · {{ current.backend ? backendName(current.backend) : '自动选择设备' }}</span>
+          <span>{{ headline(current) }}</span><span class="muted">{{ time(current.createdAt) }}<template v-if="current.kind !== 'FAST'"> · {{ current.backend ? backendName(current.backend) : '自动选择设备' }}</template></span>
         </div>
         <ElProgress v-if="current.total && current.state !== 'PREVIEW'" :percentage="batchProgress(current).percent" :stroke-width="8" aria-label="任务处理进度" />
         <p class="muted">{{ summary(current) }}</p>
@@ -105,6 +110,7 @@ defineExpose({ refresh: () => busy.value ? Promise.resolve() : loadCurrent() })
             <div class="item-main"><strong>{{ item.title }}</strong><p v-if="item.error" :class="item.state === 'FAILED' ? 'inline-error' : 'muted'">{{ item.error }}</p></div>
             <span v-if="item.execution?.backend" class="muted">{{ backendName(item.execution.backend) }}</span>
             <ElTag :type="itemTones[item.state] || 'info'" effect="light" size="small">{{ itemState(item) }}</ElTag>
+            <ElButton v-if="recognition && item.state === 'REVIEW'" link type="primary" :disabled="busy" @click="emit('song', item.song_id)">去确认</ElButton>
             <ElButton v-if="['PENDING', 'PROBING', 'PROCESSING'].includes(item.state)" link :disabled="busy" :aria-label="'停止' + item.title" @click="cancelItem(item)">停止</ElButton>
           </li>
         </ul>

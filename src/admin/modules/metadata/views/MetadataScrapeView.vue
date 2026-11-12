@@ -7,12 +7,12 @@ import { ElAlert, ElButton, ElMessage, ElMessageBox, ElPagination, ElProgress } 
 import { ArrowLeft, RefreshRight } from '@element-plus/icons-vue'
 import { metadata } from '../api/metadata'
 import { media, type MediaSource } from '../../media-library/api/media'
-import { providerNames, itemStatusNames } from '../types'
+import { metadataDefaults, providerNames, itemStatusNames } from '../types'
 import type { MetadataBatch, MetadataItem, MetadataSettings } from '../types'
 import SingleSongScrapeDialog from '../components/SingleSongScrapeDialog.vue'
 import BatchSongTable from '../components/BatchSongTable.vue'
 const route = useRoute(), router = useRouter()
-const config = ref<MetadataSettings>({ enabled: false, providers: [], autoApply: false, threshold: .95, minIntervalSeconds: 3, maxIntervalSeconds: 8 })
+const config = ref<MetadataSettings>({ enabled: false, providers: [], autoApply: false, ...metadataDefaults })
 const saved = ref(false), busy = ref(false), loading = ref(false), refreshing = ref(false)
 const error = ref(''), progressError = ref(''), lastRefresh = ref('')
 const batch = ref<MetadataBatch | null>(null), page = ref(1), filter = ref(route.meta.review ? 'REVIEW' : ''), reviewItem = ref<MetadataItem | null>(null)
@@ -36,7 +36,7 @@ const stats = computed(() => batch.value ? [
   { status: 'FAILED', label: '失败', value: batch.value.failed },
   { status: 'SKIPPED_EXISTING', label: '已跳过', value: batch.value.skippedExisting },
 ] : [])
-const settingsSummary = computed(() => `${config.value.enabled ? config.value.providers.map(p => providerNames[p]).join(' / ') || '未选平台' : '平台未启用'} · 自动写入${config.value.autoApply ? '开启' : '关闭'} · 间隔 ${config.value.minIntervalSeconds ?? 3}～${config.value.maxIntervalSeconds ?? 8} 秒`)
+const settingsSummary = computed(() => `${config.value.enabled ? config.value.providers.map(p => providerNames[p]).join(' / ') || '未选平台' : '平台未启用'} · 自动写入${config.value.autoApply ? '开启' : '关闭'} · 间隔 ${config.value.minIntervalSeconds ?? metadataDefaults.minIntervalSeconds}～${config.value.maxIntervalSeconds ?? metadataDefaults.maxIntervalSeconds} 秒`)
 let active = true, generation = 0, loadGeneration = 0, timer: ReturnType<typeof setTimeout> | undefined
 function schedule() {
   if (timer) clearTimeout(timer)

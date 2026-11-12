@@ -31,7 +31,7 @@ const validation = computed(() => !Number.isSafeInteger(maxBytes.value) || maxBy
   ? '缓存容量应在 0.0625～1048576 GiB 之间。'
   : !Number.isInteger(Number(draft.high)) || !Number.isInteger(Number(draft.low)) || Number(draft.low) < 1 || Number(draft.high) > 100 || Number(draft.low) >= Number(draft.high)
     ? '水位应为 1～100 的整数，低水位必须小于高水位。' : '')
-const usedPercent = computed(() => result.value ? Math.min(100, result.value.usageBytes / result.value.settings.maxBytes * 100) : 0)
+const usedPercent = computed(() => result.value && result.value.settings.maxBytes > 0 ? Math.min(100, result.value.usageBytes / result.value.settings.maxBytes * 100) : 0)
 const runningJob = computed(() => !!job.value && ['QUEUED', 'RUNNING', 'CANCELLING'].includes(job.value.state))
 const jobStates: Record<string, string> = { QUEUED: '等待清理', RUNNING: '正在清理', CANCELLING: '正在取消', SUCCEEDED: '清理完成', PARTIAL: '部分清理完成', BLOCKED: '受保护数据阻止继续清理', FAILED: '清理失败', CANCELLED: '清理已取消', INTERRUPTED: '清理被服务重启中断' }
 const reasons: Record<string, string> = { PLAYING: '正在播放', DOWNLOADING: '正在下载', PINNED: '已固定', RECENT_PLAY: '近 24 小时播放保护', PREFETCH: '正在预取', DELETING: '正在删除', BUILDING: '正在接收', CHANGED: '缓存状态已变化', STATISTICS_OR_MANUAL: '统计未就绪或当前采用手动策略' }
@@ -189,7 +189,7 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
       <form v-if="settings" class="sv-panel sv-content-section cache-settings" @submit.prevent="save">
         <div class="cache-section-heading"><div><h2>缓存设置</h2><p>自动回收和批量清理保护固定、近 24 小时实际播放、正在播放及下载的缓存。近 3 天播放有软保留加分。</p></div><span v-if="dirty" class="cache-draft">尚未保存</span></div>
         <div class="cache-fields">
-          <label>最大缓存容量 <span class="cache-unit">GiB</span><input v-model="draft.capacityGiB" type="number" min="0.0625" max="1048576" step="any" required aria-label="最大缓存容量" :disabled="busy || loading"/><small>按 NAS 可用空间设置，1 GiB = 1024 MiB。</small></label>
+          <label>最大缓存容量 <span class="cache-unit">GiB</span><input v-model="draft.capacityGiB" type="number" min="0.0625" max="1048576" step="any" required aria-label="最大缓存容量" :disabled="busy || loading"/><small>默认 50 GiB；启动时空间不足则按剩余空间的 80% 设置。手动保存后保留设置。</small></label>
           <label>缓存策略<select v-model="draft.policy" aria-label="缓存策略" :disabled="busy || loading"><option v-for="policy in policies" :key="policy.value" :value="policy.value">{{ policy.label }}</option></select><small>{{ selectedPolicy.description }}</small></label>
           <label>高水位 <span class="cache-unit">%</span><input v-model="draft.high" type="number" min="2" max="100" step="1" required aria-label="缓存高水位" :disabled="busy || loading || runningJob"/><small>混合策略达到此占用比例时触发回收，默认 90%。</small></label>
           <label>低水位 <span class="cache-unit">%</span><input v-model="draft.low" type="number" min="1" max="99" step="1" required aria-label="缓存低水位" :disabled="busy || loading || runningJob"/><small>回收目标，默认 75%；受保护数据可能使目标无法达到。</small></label>

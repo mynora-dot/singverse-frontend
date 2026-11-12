@@ -4,12 +4,12 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElMessage, ElMessageBox, ElSwitch, ElTag } from 'element-plus'
 import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { metadata } from '../api/metadata'
-import { providerNames, type MetadataBatch, type MetadataSettings, type MusicProvider } from '../types'
+import { metadataDefaults, providerNames, type MetadataBatch, type MetadataSettings, type MusicProvider } from '../types'
 
 const route = useRoute(), router = useRouter()
 const platforms = Object.keys(providerNames) as MusicProvider[]
 const marks: Record<MusicProvider, string> = { NETEASE: '云', QQ: 'Q', KUGOU: '酷', KUWO: '我', QISHUI: '汽' }
-const config = ref<MetadataSettings>({ enabled: true, providers: [...platforms], autoApply: false, threshold: .95, minIntervalSeconds: 3, maxIntervalSeconds: 8 })
+const config = ref<MetadataSettings>({ enabled: true, providers: [...platforms], autoApply: false, ...metadataDefaults })
 const ready = ref(false), loading = ref(false), busy = ref(false), error = ref(''), baseline = ref('')
 const latest = ref<MetadataBatch | null>(null), taskUnknown = ref(false)
 const dirty = computed(() => ready.value && JSON.stringify(config.value) !== baseline.value)
@@ -25,7 +25,7 @@ async function load() {
   const [settings, batch] = await Promise.allSettled([metadata.settings(), metadata.latest()])
   if (!active || token !== generation) return
   if (settings.status === 'fulfilled') {
-    config.value = { ...settings.value, providers: [...settings.value.providers], minIntervalSeconds: settings.value.minIntervalSeconds ?? 3, maxIntervalSeconds: settings.value.maxIntervalSeconds ?? 8 }
+    config.value = { ...settings.value, providers: [...settings.value.providers], minIntervalSeconds: settings.value.minIntervalSeconds ?? metadataDefaults.minIntervalSeconds, maxIntervalSeconds: settings.value.maxIntervalSeconds ?? metadataDefaults.maxIntervalSeconds }
     baseline.value = JSON.stringify(config.value); ready.value = true
   } else { ready.value = false; error.value = settings.reason instanceof Error ? settings.reason.message : '音乐平台读取失败，请重试。' }
   latest.value = batch.status === 'fulfilled' ? batch.value ?? null : null
@@ -43,7 +43,7 @@ async function save() {
     if (!active) return
     const result = await metadata.saveSettings({ ...config.value, providers: [...config.value.providers] })
     if (!active) return
-    config.value = { ...result, providers: [...result.providers], minIntervalSeconds: result.minIntervalSeconds ?? 3, maxIntervalSeconds: result.maxIntervalSeconds ?? 8 }
+    config.value = { ...result, providers: [...result.providers], minIntervalSeconds: result.minIntervalSeconds ?? metadataDefaults.minIntervalSeconds, maxIntervalSeconds: result.maxIntervalSeconds ?? metadataDefaults.maxIntervalSeconds }
     baseline.value = JSON.stringify(config.value)
     if (latest.value?.status === 'RUNNING') latest.value = { ...latest.value, status: 'PAUSED' }
     ElMessage.success('音乐平台设置已保存')
@@ -79,7 +79,7 @@ onBeforeUnmount(() => { active = false; generation++; window.removeEventListener
         <section class="platform-panel" aria-labelledby="automation-heading">
           <div class="platform-heading"><div><h2 id="automation-heading">批量匹配后的应用方式</h2><p>单曲搜索始终需要核对后确认。批量匹配可按以下规则处理。</p></div><ElTag :type="config.autoApply ? 'warning' : 'info'">{{ config.autoApply ? '自动应用已开启' : '逐曲审核' }}</ElTag></div>
           <label class="platform-switch-row"><span><strong>高相似度时自动应用</strong><small>默认关闭；开启后，批量匹配的第一候选达到阈值时可直接写入。</small></span><ElSwitch v-model="config.autoApply" :disabled="busy || loading" aria-label="高相似度时自动应用" /></label>
-          <details class="platform-advanced"><summary>匹配阈值与请求节奏</summary><div class="platform-fields"><label>自动应用阈值<span class="platform-number"><input v-model.number="thresholdPercent" aria-label="自动应用阈值百分比" type="number" min="80" max="100" step="1" required /><span>%</span></span><small>相似度是匹配参考，不代表正确率；版本接近时请人工核对。</small></label><label>每首歌曲完成后等待<span class="platform-interval"><input v-model.number="config.minIntervalSeconds" aria-label="批量最小间隔秒" type="number" min="0" max="300" step="1" required /><span>至</span><input v-model.number="config.maxIntervalSeconds" aria-label="批量最大间隔秒" type="number" min="0" max="300" step="1" required /><span>秒</span></span><small>默认 3～8 秒，可设为 0；平台限流时仍会暂停请求并提示重试。</small></label></div></details>
+          <details class="platform-advanced"><summary>匹配阈值与请求节奏</summary><div class="platform-fields"><label>自动应用阈值<span class="platform-number"><input v-model.number="thresholdPercent" aria-label="自动应用阈值百分比" type="number" min="80" max="100" step="1" required /><span>%</span></span><small>相似度是匹配参考，不代表正确率；版本接近时请人工核对。</small></label><label>每首歌曲完成后等待<span class="platform-interval"><input v-model.number="config.minIntervalSeconds" aria-label="批量最小间隔秒" type="number" min="0" max="300" step="1" required /><span>至</span><input v-model.number="config.maxIntervalSeconds" aria-label="批量最大间隔秒" type="number" min="0" max="300" step="1" required /><span>秒</span></span><small>默认 1～2 秒，可设为 0；平台限流时仍会暂停请求并提示重试。</small></label></div></details>
         </section>
       </fieldset>
       <ElAlert v-if="taskUnknown" title="暂时无法读取匹配任务状态；保存设置仍会暂停正在运行的批次。" type="warning" :closable="false" />

@@ -5,7 +5,7 @@ import ClientDownloads from '../src/downloads/ClientDownloads.vue'
 import { getJson } from '../src/admin/shared/http/client'
 import { readRelease, reachableOrigin } from '../src/downloads/api'
 vi.mock('../src/admin/shared/http/client', () => ({ getJson: vi.fn() }))
-function release(platform = 'mobile') { return { available: true, versionCode: 1000, versionName: '0.1.0', packageName: `com.mynora.singverse.${platform}`, minSdk: platform === 'tv' ? 23 : 24, abis: ['arm64-v8a'], size: 1024, sha256: 'a'.repeat(64), certificateSha256: 'b'.repeat(64), url: `/api/v1/client-releases/${platform}/apk` } }
+function release(platform = 'mobile') { return { available: true, versionCode: 1000, versionName: '0.1.0', packageName: `com.mynora.singverse.${platform}`, minSdk: platform === 'tv' ? 21 : 24, abis: ['arm64-v8a', 'armeabi-v7a'], size: 1024, sha256: 'a'.repeat(64), certificateSha256: 'b'.repeat(64), url: `/api/v1/client-releases/${platform}/apk` } }
 beforeEach(() => { vi.clearAllMocks() })
 afterEach(() => { vi.restoreAllMocks() })
 it('仅接受同源固定下载地址与完整的包信息', async () => {
@@ -22,6 +22,19 @@ it('回环地址不生成跨设备二维码，局域网域名和IP可以分享',
   for (const origin of ['http://localhost:8080', 'http://127.0.0.2', 'http://[::1]', 'http://a.localhost']) expect(reachableOrigin(origin)).toBe(false)
   expect(reachableOrigin('http://192.168.1.9:18080')).toBe(true)
   expect(reachableOrigin('https://nas.local')).toBe(true)
+})
+it('电视下载接受 Android 5 和 ARM32，手机端保留 API 24 门槛', async () => {
+  vi.mocked(getJson).mockResolvedValue(release('tv'))
+  expect(await readRelease('tv')).toMatchObject({ minSdk: 21, abis: expect.arrayContaining(['armeabi-v7a']) })
+  vi.mocked(getJson).mockResolvedValue({ ...release('tv'), minSdk: 20 })
+  await expect(readRelease('tv')).rejects.toThrow('信息不完整')
+  vi.mocked(getJson).mockResolvedValue({ ...release(), minSdk: 21 })
+  await expect(readRelease('mobile')).rejects.toThrow('信息不完整')
+  vi.mocked(getJson).mockResolvedValue({ available: false })
+  const wrapper = mount(ClientDownloads)
+  await flushPromises()
+  expect(wrapper.text()).toContain('Android 5.0 / API 21')
+  wrapper.unmount()
 })
 it('两端独立展示，缺包保持真实空态并允许失败后重试', async () => {
   vi.mocked(getJson).mockImplementation(async path => {

@@ -80,16 +80,20 @@ export const jobKinds: Record<string, string> = { PROBE: '读取音轨', FAST: '
 export const jobStates: Record<string, string> = { QUEUED: '排队中', RUNNING: '进行中', SUCCEEDED: '已完成', FAILED: '失败', CANCELLED: '已取消' }
 export const batchStates: Record<string, string> = { PREPARING: '准备中', FAILED: '准备失败', PREVIEW: '待确认', QUEUED: '进行中', COMPLETED: '已结束', CANCELLED: '已取消' }
 export const itemStates: Record<string, string> = { PENDING: '等待中', PROBING: '读取音轨', PROCESSING: '生成中', SUCCEEDED: '已完成', SKIPPED: '已跳过', FAILED: '失败', CANCELLED: '已取消' }
+itemStates.REVIEW = '待人工确认'
 export const batchTones: Record<string, Tone> = { PREPARING: 'primary', FAILED: 'danger', PREVIEW: 'warning', QUEUED: 'primary', COMPLETED: 'success', CANCELLED: 'info' }
 export const itemTones: Record<string, Tone> = { PENDING: 'info', PROBING: 'primary', PROCESSING: 'primary', SUCCEEDED: 'success', SKIPPED: 'info', FAILED: 'danger', CANCELLED: 'info' }
+itemTones.REVIEW = 'warning'
+export function isRecognition(batch?: Pick<Batch, 'kind'>) { return batch?.kind === 'FAST' || batch?.kind === 'ANALYZE' }
+export function recognitionName(kind?: string) { return kind === 'ANALYZE' ? '深度识别' : '快速识别' }
 export const backendStates: Record<string, string> = { AVAILABLE: '可用', UNVERIFIED: '待试跑', FAILED: '试跑失败', TESTING: '试跑中', IMAGE_MISSING: '当前镜像未包含', RUNTIME_MISSING: '缺少运行环境', MODEL_MISSING: '缺少模型或固定版本依赖', MODEL_UNSUPPORTED: '当前模型未适配' }
 export const operationStates: Record<string, string> = { IDLE: '空闲', DOWNLOADING: '下载中', IMPORTING: '导入中', VERIFYING: '校验中', TESTING: '试跑中', SUCCEEDED: '已完成', FAILED: '失败', CANCELLED: '已取消' }
-const backendNames: Record<string, string> = { cpu: 'CPU', cuda: 'NVIDIA 显卡 (CUDA)', tensorrt: 'NVIDIA 显卡 (TensorRT)', rocm: 'AMD 显卡 (ROCm)', migraphx: 'AMD 显卡 (MIGraphX)', mps: 'Apple 芯片 (MPS)', coreml: 'Apple 芯片 (Core ML)', mlx: 'Apple 芯片 (MLX)', directml: '显卡 (DirectML)', openvino: 'Intel 核显 (OpenVINO)', 'openvino-cpu': 'CPU (OpenVINO)', rknn: '瑞芯微 NPU (RKNN)' }
+const backendNames: Record<string, string> = { cpu: 'CPU', cuda: 'NVIDIA 显卡 (CUDA)', tensorrt: 'NVIDIA 显卡 (TensorRT)', rocm: 'AMD 显卡 (ROCm)', migraphx: 'AMD 显卡 (MIGraphX)', mps: 'Mac (MPS)', coreml: 'Mac (Core ML)', mlx: 'Apple 芯片 (MLX)', directml: 'Windows 显卡 (DirectML)', openvino: 'Intel 显卡 (OpenVINO)', 'openvino-cpu': 'CPU (OpenVINO)', rknn: '瑞芯微 NPU (RKNN)' }
 export function backendName(id?: string | null) { return id ? backendNames[id] || id.toUpperCase() : '' }
 export const modelNames: Record<string, { name: string; hint: string }> = {
   'panns-cnn6': { name: '快速人声分类模型', hint: '扫描时识别双音轨，不分离人声，无需 GPU' },
   htdemucs: { name: '标准分离模型', hint: '适用于 CPU、NVIDIA、AMD 和 Apple 芯片' },
-  'htdemucs-openvino': { name: 'Intel 优化模型', hint: '用于 Intel 核显的 OpenVINO 转换版本' },
+  'htdemucs-openvino': { name: 'Intel 优化模型', hint: '用于 Intel 显卡的 OpenVINO 转换版本' },
   'uvr-mdxnet-9482-rknn': { name: '瑞芯微 NPU 分离模型', hint: '仅适用于 RKNN，需在节点本地部署转换模型' },
   'uvr-mdxnet-9482': { name: '轻量两轨分离模型', hint: '干净档；先验证独立 CPU，再启用对应加速设备' },
 }
@@ -106,7 +110,7 @@ export function profileBackends(capabilities: SeparationCapabilities | undefined
 /** 批次进度：已完成/跳过/失败/取消都算处理完毕。 */
 export function batchProgress(batch: Batch) {
   if (batch.state === 'PREPARING') return { done: batch.prepared || 0, pending: Math.max(0, (batch.selectionTotal || 0) - (batch.prepared || 0)), percent: batch.selectionTotal ? Math.round((batch.prepared || 0) / batch.selectionTotal * 100) : 0 }
-  const c = batch.counts, done = (c.SUCCEEDED || 0) + (c.SKIPPED || 0) + (c.FAILED || 0) + (c.CANCELLED || 0)
+  const c = batch.counts, done = (c.SUCCEEDED || 0) + (c.REVIEW || 0) + (c.SKIPPED || 0) + (c.FAILED || 0) + (c.CANCELLED || 0)
   return { done, pending: (c.PENDING || 0) + (c.PROBING || 0) + (c.PROCESSING || 0), percent: batch.total ? Math.round(done / batch.total * 100) : 0 }
 }
 

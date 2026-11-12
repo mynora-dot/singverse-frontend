@@ -1,12 +1,13 @@
 {
   "repository": "mynora-dot/singverse-go-backend",
-  "revision": "0d500b37eb322c27d51510fefe3fd2c5746e0b77",
+  "revision": "dc3efba8deeac4d11322823545bef2c95a49bb33",
   "files": {
     "contracts/background-tasks.md": {
       "sha256": "a7e4c0e825a6e84e8b5c6668b0f9828e86e6316ca7eb50767b8728316f4307f2"
     },
     "contracts/client-updates.md": {
-      "sha256": "f35857e399ff06036bdb7db6e40f792b6f2fbdd5bece55ef9d384d4c0af60c97"
+      "sha256": "ed360d78f2e81d479adc9388790e91a07947390d2bceda09c51004567a300bfe",
+      "revision": "dc3efba8deeac4d11322823545bef2c95a49bb33"
     },
     "contracts/frontend-hosting.md": {
       "sha256": "af1d30e1ebbabd766df669302609c6129245befb7ec875452c384acc2d2474ba"
@@ -66,7 +67,8 @@
       "sha256": "69043de4096f7df473cca354364b9e6ae4451780d9ece54b15e5ffc7e6d6733d"
     },
     "contracts/openapi/README.md": {
-      "sha256": "8827f11c2557f425a0d64833ac4ec7e2ddea82cd668aaed4744d9eb0bba85fd9"
+      "sha256": "9af63efbefd7911e8fd71775fe53476bc5347d2b0ddf3139415dadc9ed74fde0",
+      "revision": "dc3efba8deeac4d11322823545bef2c95a49bb33"
     },
     "contracts/openapi/auth-test-vectors.json": {
       "sha256": "d1d9cca13627c3c54cbb97a3cc57c8e592721ac50db1390ccd54977912109e04"
@@ -75,13 +77,19 @@
       "sha256": "791094bcbdce4e7adad9a76e92e270e0cdca1e57d2d3a649388836816ad0776c"
     },
     "contracts/openapi/singverse.openapi.json": {
-      "sha256": "b7c8132ecb2a421637be5950a2ae3b0cc6af6dd21d6d89015d758f768082eeae"
+      "sha256": "1795cb1b2f7a2e754cbbfecefda4094163fd67327ef4bd1fe8ca1d252ad8cf3a",
+      "revision": "dc3efba8deeac4d11322823545bef2c95a49bb33"
     },
     "contracts/song-activity.md": {
       "sha256": "ec2b7ded6f3d84993231321f0ef611c8b25a288efbda6d99e3cf8febffb6ba30"
     },
     "contracts/song-cache.md": {
-      "sha256": "6525f9349ad80cac8a14d55d8261a8b227c83f1c94724484c9acfebf34565db1"
+      "sha256": "c707b82b94ab88e92c09db79b6199dc1ac5d2d4ed824e49c5080caf18efbc892",
+      "revision": "dc3efba8deeac4d11322823545bef2c95a49bb33"
+    },
+    "contracts/auth-login.md": {
+      "sha256": "03c6af74cf910cce62536cf814588ca8800ffdc334eb6081d29005951dcaab80"
     }
-  }
+  },
+  "workingTree": true
 }

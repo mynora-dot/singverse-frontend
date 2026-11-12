@@ -5,7 +5,7 @@ import { authRequest } from '../../../core/auth/api'
 import { base, importModel, type Model, type Node } from '../api'
 import { backendName, backendStates, bytes, failure, modelNames, operationStates, type Readiness } from '../presentation'
 
-const props = defineProps<{ node?: Node; nodeError: string; readiness: Readiness; reload: (refresh?: boolean) => Promise<void> }>()
+const props = defineProps<{ node?: Node; nodeError: string; readiness: Readiness; reload: (refresh?: boolean) => Promise<void>; modelsOnly?: boolean }>()
 const busy = ref(false), error = ref('')
 const detected = computed(() => props.node?.backends.filter(item => !['cpu', 'xpu'].includes(item.id) && (item.detected || item.device)) || [])
 const visibleBackends = computed(() => props.node?.backends.filter(item => item.id === 'cpu' || detected.value.some(found => found.id === item.id)) || [])
@@ -13,7 +13,7 @@ const modelBackends: Record<string, string[]> = { htdemucs: ['cpu', 'cuda', 'roc
 const localOnly = (model: Model) => model.localOnly || model.id === 'uvr-mdxnet-9482-rknn'
 const catalog = computed<Model[]>(() => [
   ...(props.node?.fastClassifier ? [props.node.fastClassifier] : []),
-  ...(props.node?.models || (props.node ? [{ ...props.node.model, id: props.node.model.id || 'htdemucs' }] : [])).filter(model => model.id === 'uvr-mdxnet-9482' || (model.backends || modelBackends[model.id] || []).some(id => visibleBackends.value.some(backend => backend.id === id))),
+  ...(props.node?.models || (props.node ? [{ ...props.node.model, id: props.node.model.id || 'htdemucs' }] : [])).filter(model => props.modelsOnly || model.id === 'uvr-mdxnet-9482' || (model.backends || modelBackends[model.id] || []).some(id => visibleBackends.value.some(backend => backend.id === id))),
 ])
 const modelBusy = computed(() => ['DOWNLOADING', 'IMPORTING', 'VERIFYING', 'TESTING'].includes(props.node?.operation.state || ''))
 const auto = computed(() => props.node?.selection === 'auto')
@@ -47,8 +47,8 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
 </script>
 
 <template>
-  <div class="node-tab">
-    <section class="overview" :class="readiness.ready ? 'is-ready' : 'is-pending'" aria-label="准备情况">
+  <div class="node-tab" :class="{ 'models-only': modelsOnly }">
+    <section v-if="!modelsOnly" class="overview" :class="readiness.ready ? 'is-ready' : 'is-pending'" aria-label="准备情况">
       <span class="sv-status-dot" :class="readiness.ready ? 'ok' : 'warn'" aria-hidden="true" />
       <div class="overview-copy"><h2>{{ readiness.title }}</h2><p>{{ readiness.ready ? '已经可以在“歌曲”中为单音轨歌曲生成独立伴奏。' : readiness.hint }}</p></div>
       <div class="overview-actions"><ElButton :loading="busy" @click="recheck">重新检测</ElButton></div>
@@ -57,8 +57,8 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
 
     <ol v-if="node" class="steps">
       <li class="step">
-        <header><h3>准备模型</h3><ElTag :type="readiness.modelInstalled ? 'success' : 'warning'" effect="light" size="small">{{ readiness.modelInstalled ? '已安装' : '未安装' }}</ElTag></header>
-        <p class="muted">下载一个适合当前设备的模型即可。已安装的模型可直接使用。</p>
+        <header><h3>{{ modelsOnly ? '模型文件' : '准备模型' }}</h3><ElTag v-if="!modelsOnly" :type="readiness.modelInstalled ? 'success' : 'warning'" effect="light" size="small">{{ readiness.modelInstalled ? '已安装' : '未安装' }}</ElTag></header>
+        <p class="muted">按伴奏方案和设备准备模型。文件安装完成后，仍需验证对应的运行环境。</p>
         <p v-if="modelBusy || node.operation.state === 'FAILED'" class="operation" role="status">{{ operationStates[node.operation.state] || node.operation.state }} · 已处理 {{ (node.operation.bytes / 1024 ** 2).toFixed(1) }} MiB<ElButton v-if="modelBusy" link type="primary" :disabled="busy" @click="run(() => call('cancel'))">取消</ElButton></p>
         <p v-if="node.operation.error" class="inline-error">{{ node.operation.error }}</p>
         <div v-for="model in catalog" :key="model.id" class="model-row" :data-model="model.id">
@@ -83,7 +83,7 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
         </div>
       </li>
 
-      <li class="step">
+      <li v-if="!modelsOnly" class="step">
         <header><h3>处理设备</h3><ElTag :type="readiness.backendSelected ? 'success' : 'warning'" effect="light" size="small">{{ readiness.backendSelected ? `正在使用 ${backendName(node.selected)}` : '尚未通过试跑' }}</ElTag></header>
         <p class="muted">优先自动使用已通过试跑的加速设备。首次使用或更换模型后，请先试跑。</p>
         <label class="fallback-toggle"><input type="checkbox" :checked="node.cpuFallback !== false" :disabled="busy || modelBusy" @change="setFallback($event)"> 加速不可用时自动降级到 CPU</label>
@@ -100,7 +100,7 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
         <p v-if="detected.length && node.selected === 'cpu'" class="muted">加速设备暂不可用，已自动降级到 CPU。</p><p class="selection">{{ auto ? '自动选择可用设备' : '当前使用固定设备设置' }}<ElButton v-if="!auto" link type="primary" :disabled="busy" @click="backendAction('select', 'auto')">改为自动选择</ElButton></p>
       </li>
     </ol>
-    <section v-if="node?.separation" class="step" aria-label="极速与轻量伴奏">
+    <section v-if="node?.separation && !modelsOnly" class="step" aria-label="极速与轻量伴奏">
       <header><h3>极速与轻量伴奏</h3></header>
       <p class="muted">极速档只需要 FFmpeg。干净档需在节点配置独立 CPU 环境并安装轻量模型，先试跑 CPU，再试跑加速设备。高级模型沿用上方配置。</p>
       <p v-if="node.separation.operation?.state === 'TESTING' || node.separation.operation?.state === 'WAITING'" role="status" class="muted">轻量模型正在等待或进行试跑…</p>
@@ -117,6 +117,7 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
 </template>
 
 <style scoped>
+.models-only .model-copy .muted{font-size:14px;line-height:1.7}.models-only .step:first-child{padding-top:0}.models-only .step p{font-size:14px}.models-only .model-row{padding:18px 0}.models-only :deep(.el-button){min-height:44px}@media(max-width:640px){.models-only .step p,.models-only .model-copy .muted{font-size:16px}}
 .fallback-toggle{display:flex;align-items:center;gap:8px;font-size:14px;line-height:1.8}.resource-details{font-size:12px;color:var(--sv-text-secondary)}.node-tab{display:grid;gap:16px}.overview{display:flex;gap:12px;align-items:center;padding:0 0 20px;border-bottom:1px solid var(--sv-border-subtle)}.overview .sv-status-dot{width:12px;height:12px}.overview-copy{flex:1;min-width:0}.overview-copy h2{margin:0;font-size:15px}.overview-copy p{margin:4px 0 0;font-size:var(--sv-font-meta);color:var(--sv-text-secondary)}.overview-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.text-link{font-size:var(--sv-font-meta);color:var(--sv-accent-primary)}
 .steps{display:grid;gap:0;margin:0;padding:0;list-style:none}.step{padding:20px 0;border-bottom:1px solid var(--sv-border-subtle);display:grid;gap:8px;min-width:0}.step header{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.step h3{margin:0;font-size:var(--sv-font-body);font-weight:600}.step p{margin:0;font-size:var(--sv-font-body);line-height:1.6}
 .model-row,.backend-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px 12px;align-items:center;padding:12px 0;border-top:1px solid var(--sv-border-subtle)}.model-copy,.backend-copy{display:grid;gap:2px;min-width:0}.model-copy strong,.backend-copy strong{font-size:var(--sv-font-body);font-weight:600}.model-actions,.backend-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.model-actions :deep(.el-button),.backend-actions :deep(.el-button){margin:0}.model-files{grid-column:1/-1;font-size:var(--sv-font-meta)}.model-files summary{cursor:pointer;color:var(--sv-text-secondary)}.model-files a{color:var(--sv-accent-primary)}

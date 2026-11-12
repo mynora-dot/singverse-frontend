@@ -10,6 +10,7 @@ import { shareImports, type ShareImportJob } from '../src/admin/modules/media-li
 import { parserProfiles } from '../src/admin/modules/filename-parser/api/rules'
 import type { MediaSource } from '../src/admin/modules/media-library/types'
 import { workspace } from './fixtures/filename-workspace'
+import { dropdownStubs } from './fixtures/dropdown-stubs'
 
 vi.mock('../src/admin/modules/media-library/api/media', () => ({ media: { list: vi.fn(), save: vi.fn(), get: vi.fn(), latestTask: vi.fn(), latestIngest: vi.fn(), scan: vi.fn(), createTask: vi.fn() } }))
 vi.mock('../src/admin/modules/media-library/api/embeddedMetadata', async original => ({
@@ -41,14 +42,18 @@ beforeEach(async () => {
     { path: '/library/songs', component: { template: '<p>歌曲</p>' } },
   ] })
   await router.push('/library/media')
-  wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router], stubs: { teleport: true } } })
+  wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router], stubs: { teleport: true, ...dropdownStubs } } })
   await flushPromises()
 })
 afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; vi.restoreAllMocks() })
 const button = (text: string) => wrapper.findAll('button').find(item => item.text() === text)!
 const checkbox = (text: string) => wrapper.findAll('label.el-checkbox').find(item => item.text() === text)!.get('input')
 async function openWebDAV(fromPackage = false) {
-  await button(fromPackage ? '导入资料包' : '添加来源').trigger('click'); await flushPromises()
+  if (fromPackage) {
+    await wrapper.get('button[aria-label="歌曲来源的更多操作"]').trigger('click'); await flushPromises()
+    await wrapper.findAll('[role="menuitem"]').find(item => item.text() === '导入资料包')!.trigger('click')
+  } else await button('添加来源').trigger('click')
+  await flushPromises()
   if (!fromPackage) { await button('WebDAV').trigger('click'); await flushPromises() }
   await wrapper.get('input[placeholder="https://nas.example/dav/歌曲目录/"]').setValue(source.location)
 }

@@ -1,23 +1,14 @@
 <script setup lang="ts">
 import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElInput, ElMessageBox, ElSkeleton, ElTag, ElTabs, ElTabPane, ElDialog, ElSwitch, ElDrawer } from 'element-plus'
+import { onBeforeRouteLeave } from 'vue-router'
+import { ElAlert, ElButton, ElInput, ElMessageBox, ElSkeleton, ElTag, ElDialog, ElSwitch, ElDrawer } from 'element-plus'
 import { RefreshRight, Check, ArrowRight } from '@element-plus/icons-vue'
-import AudioModelSettings from '../AudioModelSettings.vue'
-import HardwareSettings from '../HardwareSettings.vue'
+import ComputeOverview from '../ComputeOverview.vue'
 import { ApiError } from '../../../core/auth/api'
 import { computeNode } from '../api'
 import type { NodeSettings, NodeInput, NodeCheck, NodeMode, DiscoveredNode, NodeDiscoveryInput } from '../types'
 
-const route = useRoute(), router = useRouter()
-const taskTab = ref(route.hash === '#audio-models' || route.query.tab === 'audio' ? 'audio' : 'video')
-watch(() => [route.query.tab, route.hash], () => {
-  taskTab.value = route.hash === '#audio-models' || route.query.tab === 'audio' ? 'audio' : 'video'
-})
-function selectTask(name: string | number) {
-  void router.replace({ query: { ...route.query, tab: String(name) }, hash: '' })
-}
 const settings = ref<NodeSettings | null>(null)
 const helpVisible = ref(false)
 const editorHeading = ref<HTMLElement | null>(null)
@@ -39,11 +30,10 @@ const usesDeployment = computed(() => draft.mode === 'AUTO')
 const hasDeploymentToken = computed(() => usesDeployment.value && !!settings.value?.automaticHasToken)
 const connected = computed(() => currentCheck.value?.status === 'AVAILABLE')
 const effectiveEndpoint = computed(() => settings.value?.mode === 'AUTO' ? settings.value.automaticEndpoint : settings.value?.endpoint)
-function supports(...capabilities: string[]) { return connected.value && capabilities.some(item => currentCheck.value?.capabilities.includes(item)) }
 const headline = computed(() => {
   if (settings.value?.mode === 'DISABLED') return '暂未启用计算服务'
   if (checking.value) return '正在检查连接…'
-  if (connected.value) return currentCheck.value?.capabilities.length ? '计算服务已就绪' : '已连接，暂无可用功能'
+  if (connected.value) return '计算服务已连接'
   if (settings.value?.mode === 'AUTO' && !settings.value.automaticEndpoint) return '还没有连接计算服务'
   if (currentCheck.value?.status === 'MISSING_TOKEN') return '需要连接密钥'
   if (currentCheck.value?.status === 'AUTH_FAILED') return '连接密钥不匹配'
@@ -209,17 +199,17 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
 
 <template>
   <section class="compute-settings">
-    <PageHeader title="计算与模型" description="让 NAS 处理音轨识别、伴奏和兼容播放。先连接计算服务，再按需要准备硬件与模型。" />
+    <PageHeader title="计算与模型" description="按功能准备模型与设备。硬件信息来自当前连接的计算节点；Mac、NVIDIA、Intel、AMD 的视频和伴奏能力分别检测与验证。"><template #meta><p class="overview-description">播放与伴奏，各自查看准备情况。</p></template></PageHeader>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton text @click="load">重新读取</ElButton></ElAlert>
     <ElSkeleton v-if="loading && !settings" :rows="5" animated />
     <template v-if="settings">
       <section class="connection-card" :class="{ ready: connected, inactive: settings.mode === 'DISABLED' }" aria-label="当前计算服务">
         <div class="connection-copy">
           <div class="connection-title"><span class="sv-status-dot" :class="connected ? 'ok' : checking ? '' : 'warn'" aria-hidden="true" /><h2 aria-live="polite">{{ headline }}</h2><span v-if="connected && !checking" class="connection-time">{{ currentCheck?.elapsedMs }} ms</span></div>
-          <code v-if="effectiveEndpoint && settings.mode !== 'DISABLED'" class="connection-address">{{ effectiveEndpoint }}</code>
+          <p v-if="connected && !checking" class="connection-note">连接正常；功能可用性分别确认。</p>
           <p v-if="!connected && !checking && effectiveEndpoint && settings.mode !== 'DISABLED'" class="connection-error" role="status">{{ currentError || currentCheck?.message || '请检查服务是否已启动。' }}</p>
         </div>
-        <div class="connection-actions"><ElButton v-if="!editing" :type="connected ? 'default' : 'primary'" :icon="connected ? undefined : ArrowRight" :disabled="checking" @click="openEditor()">{{ nextAction }}</ElButton><ElButton v-if="settings.mode !== 'DISABLED'" text :icon="RefreshRight" :loading="checking" :disabled="loading || busy" @click="checkCurrent">重新检查</ElButton><span v-if="saved" role="status" class="saved-note"><Check />配置已保存</span></div>
+        <div class="connection-actions"><ElButton v-if="!editing" :type="connected ? 'default' : 'primary'" :icon="connected ? undefined : ArrowRight" :disabled="checking" @click="openEditor()">{{ nextAction }}</ElButton><ElButton v-if="settings.mode !== 'DISABLED'" class="connection-recheck" aria-label="重新检查连接" text :icon="RefreshRight" :loading="checking" :disabled="loading || busy" @click="checkCurrent">重新检查</ElButton><span v-if="saved" role="status" class="saved-note"><Check />配置已保存</span></div>
       </section>
 
       <ElDrawer :model-value="editing" class="connection-drawer" size="min(520px, 100vw)" :append-to-body="false" :close-on-click-modal="false" :show-close="!busy" :before-close="closeEditor" destroy-on-close @opened="editorHeading?.focus()">
@@ -271,29 +261,17 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
         <div class="setup-help"><p>填写主服务可访问的计算设备地址。内网可用 HTTP，公网需用 HTTPS；独立部署默认端口为 18090。</p><p>在计算设备上执行以下命令获取密钥：</p><code>docker compose --project-directory . -f infra/docker/compose/compose.compute.yaml exec -T singverse-compute cat /run/singverse-compute/token</code></div>
         <template #footer><ElButton @click="helpVisible = false">关闭</ElButton></template>
       </ElDialog>
-      <section class="task-settings" aria-label="功能设置">
-        <ElTabs v-model="taskTab" @tab-change="selectTask">
-          <ElTabPane label="视频播放加速" name="video" lazy>
-            <HardwareSettings v-if="supports('transcode-hls', 'transcode-offline')" :key="`${settings?.mode}:${settings?.revision}`" />
-            <div v-else class="task-empty"><h2>{{ connected ? '此服务暂未提供视频转码' : '连接后设置视频播放加速' }}</h2><p>{{ connected ? '请确认计算服务已安装媒体工具并配置转码缓存目录，完成后重新检查连接。' : '先完成上方的服务连接，才能读取可用硬件和转码设置。' }}</p></div>
-          </ElTabPane>
-          <ElTabPane label="伴奏生成" name="audio" lazy>
-            <AudioModelSettings v-if="supports('media-probe', 'audio-role-fast', 'audio-separation')" :key="`audio:${settings?.mode}:${settings?.revision}`" />
-            <div v-else id="audio-models" class="task-empty"><h2>{{ connected ? '此服务暂未提供伴奏处理' : '连接后准备伴奏模型' }}</h2><p>{{ connected ? '请确认计算服务已启用音频处理并配置工作目录，完成后重新检查连接。' : '先完成上方的服务连接，再下载模型、选择设备并试跑。' }}</p></div>
-          </ElTabPane>
-        </ElTabs>
-      </section>
+      <ComputeOverview :key="`${settings?.mode}:${settings?.revision}:${connected}:${currentCheck?.capabilities.join(',')}`" :connected="connected" :capabilities="currentCheck?.capabilities || []" @connect="openEditor()" />
     </template>
   </section>
 </template>
 
 <style scoped>
-.compute-settings { max-width: 1120px; }
-.task-settings { margin-top: 20px; }
-.task-settings :deep(.hardware-settings), .task-settings :deep(#audio-models) { margin-top: 0 !important; }
-.task-empty { padding: 24px 0; border-bottom: 1px solid var(--sv-border-subtle); }
-.task-empty h2 { margin: 0; font-size: 16px; }
-.task-empty p { margin: 8px 0 0; color: var(--sv-text-secondary); font-size: 13px; line-height: 1.8; }
+.compute-settings :deep(.sv-page-header-copy){display:block;min-width:0}.compute-settings :deep(.sv-page-header h1){font-size:28px;line-height:1.4}.compute-settings :deep(.sv-page-header){align-items:flex-start;flex-wrap:nowrap;margin-bottom:18px}.compute-settings :deep(.sv-page-header-actions){flex:none}
+@media(max-width:720px){.compute-settings :deep(.sv-page-header h1){font-size:24px}.compute-settings :deep(.sv-page-header){gap:8px}.compute-settings :deep(.sv-page-header-actions){width:auto;margin:0}.compute-settings .connection-card{flex-direction:row;align-items:center}.compute-settings .connection-actions{flex-wrap:nowrap;gap:4px}.connection-actions :deep(.el-button){font-size:12px;padding:0 10px}.compute-settings .connection-time{display:none}.connection-recheck :deep(span){display:none}.connection-recheck{min-width:44px;padding:0!important}.compute-settings .connection-note{font-size:12px}.compute-settings .saved-note{display:none}}
+
+.compute-settings { max-width: 1280px; margin-inline: auto; }
+.overview-description{margin:7px 0 0;color:var(--sv-text-secondary);font-size:14px;line-height:1.7}.connection-note{margin:3px 0 0;color:var(--sv-text-secondary);font-size:12px;line-height:1.7}
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 
@@ -302,10 +280,10 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
 .connection-drawer :deep(.el-drawer__body) { padding: 28px 20px; }
 .connection-drawer :deep(.el-drawer__footer) { padding: 20px 28px; border-top: 1px solid var(--sv-border-subtle); }
 .action-spacer { flex: 1; }
-.connection-card { display: flex; align-items: center; gap: 20px; padding: 0 0 20px; border-bottom: 1px solid var(--sv-border-subtle); }
+.connection-card { display: flex; align-items: center; gap: 20px; padding: 14px 20px; border: 1px solid var(--sv-border-subtle); border-radius: 10px; background:var(--sv-surface-2); }
 .connection-copy { flex: 1; min-width: 0; }
 .connection-title { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.connection-title h2 { margin: 0; font-size: 15px; line-height: 1.6; }
+.connection-title h2 { margin: 0; font-size: 14px; line-height: 1.6; }
 .connection-address { display: block; margin-top: 8px; overflow-wrap: anywhere; font: 12px/1.6 var(--sv-font-mono); color: var(--sv-text-secondary); }
 .connection-time { color: var(--sv-text-secondary); font-size: 12px; }
 .connection-error { margin: 8px 0 0; font-size: 13px; color: var(--sv-semantic-warn); }
@@ -363,12 +341,12 @@ summary span { color: var(--sv-text-secondary); margin-left: 8px; font-size: 12p
 .editor-actions { max-width: 640px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 0; padding: 0; }
 .editor-actions small { margin-left: auto; color: var(--sv-text-secondary); font-size: 12px; }
 @media(max-width: 720px) {
-  .connection-card { padding: 0 0 20px; }
+  .connection-card { padding: 16px; }
   .editor-actions small { width: 100%; margin: 2px 0 0; }
 }
 @media(max-width: 480px) {
 
-  .connection-card { padding: 0 0 20px; }
+  .connection-card { padding: 16px; }
   .node-mapping { grid-template-columns: minmax(0,1fr) 34px; }
   .node-mapping > span { display: none; }
   .node-mapping label { grid-column: 1; }
@@ -376,6 +354,7 @@ summary span { color: var(--sv-text-secondary); margin-left: 8px; font-size: 12p
 }
 
 @media(max-width:768px) {
+  .overview-description{font-size:16px}.connection-note{font-size:12px}.connection-card{gap:10px}.connection-actions{justify-content:flex-start}.connection-title h2{font-size:14px}
   .node-clear-token, .compute-settings :deep(.el-button), .compute-settings :deep(.el-input__wrapper), .compute-settings :deep(.el-input__inner), .compute-settings :deep(.el-switch), .compute-settings summary, .task-settings :deep(.el-tabs__item) { min-height:44px; }
   .compute-settings summary { align-content:center; }
 }

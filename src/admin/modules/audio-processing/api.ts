@@ -14,6 +14,7 @@ export interface AudioExecution {
   inference?: { modelReused?: boolean; sampledPeakRssBytes?: number; timingsMs?: Record<string, number> }
 }
 export type SeparationProfile = 'DSP_FAST' | 'AI_CLEAN' | 'LEGACY_DEMUCS'
+export type AudioBatchKind = 'SEPARATE' | 'FAST' | 'ANALYZE'
 export interface SeparationRecipe { separationProfile?: SeparationProfile; modelId?: string; outputFormat?: 'aac' | 'flac'; preview?: boolean }
 export interface AudioVersion extends SeparationRecipe { jobId: string; mediaType?: string; duration?: number; active?: boolean }
 export interface AudioJob extends AudioExecution, SeparationRecipe { id: string; kind: string; state: string; error?: string; resultState?: string; reason?: string; evidence?: AnalysisEvidence }
@@ -31,6 +32,7 @@ export interface AudioRow {
 export interface Filter { title: string; artist: string; sourceId: string; streams: string; state: string; songId: string }
 export interface BatchItem { batch_id: string; song_id: string; title: string; state: string; category: string; job_id?: string; job_state?: string; execution?: AudioExecution; error: string }
 export interface Batch extends SeparationRecipe {
+  kind?: AudioBatchKind
   id: string; state: string; backend: string; createdAt?: number; total: number; counts: Record<string, number>; categories: Record<string, number>
   items?: BatchItem[]
   prepared?: number; selectionTotal?: number; error?: string

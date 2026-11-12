@@ -7,6 +7,7 @@ import ThemeSwitcher from '../../shared/ui/ThemeSwitcher.vue'
 import { navigationContext, navigationGroups, overviewEntry, taskEntry } from '../navigation'
 import { useActiveTaskCount } from '../composables/use-active-task-count'
 import { auth, authRequest } from '../../core/auth/api'
+import { disableAutomaticLogin } from '../../core/auth/login-preferences'
 import { useRouter, useRoute } from 'vue-router'
 
 const route = useRoute(), router = useRouter()
@@ -60,7 +61,7 @@ function trapNavigation(event: KeyboardEvent) {
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
 }
 async function logout() {
-  try { await authRequest('/api/v1/auth/logout', 'POST'); auth.account = null; await router.replace('/login') }
+  try { await authRequest('/api/v1/auth/logout', 'POST'); disableAutomaticLogin(); auth.account = null; await router.replace('/login') }
   catch (error) { ElMessage.error(error instanceof Error ? error.message : '退出失败，请重试') }
 }
 function focusMainContent() { document.getElementById('main-content')?.focus() }
@@ -70,7 +71,7 @@ function focusMainContent() { document.getElementById('main-content')?.focus() }
   <div class="admin-shell">
     <header class="app-masthead" :inert="navigationOpen || undefined">
       <div class="masthead-inner">
-        <RouterLink to="/overview" class="brand" aria-label="SingVerse 家庭音乐中心首页"><img class="brand-mark" src="/assets/brand/logo-mark.png" width="34" height="34" alt=""><span><strong>SingVerse<span class="brand-dot">.</span></strong><small>家庭音乐资料室</small></span></RouterLink>
+        <RouterLink to="/overview" class="brand" aria-label="SingVerse 家庭音乐中心首页"><img class="brand-mark" src="/assets/brand/logo-mark.svg" width="34" height="34" alt=""><span><strong>SingVerse<span class="brand-dot">.</span></strong><small>家庭音乐资料室</small></span></RouterLink>
         <nav class="primary-navigation" aria-label="主导航">
           <RouterLink :to="overviewEntry.path" :aria-current="activePath === overviewEntry.path ? 'page' : undefined">{{ overviewEntry.label }}</RouterLink>
           <RouterLink v-for="group in primaryGroups" :key="group.id" :to="group.path" :aria-current="currentNavigation.group?.id === group.id ? 'page' : undefined">{{ group.label }}</RouterLink>

@@ -10,6 +10,7 @@ import NotFoundView from '../views/NotFoundView.vue'
 import { authRoutes } from '../../modules/auth/routes'
 import { systemParametersRoutes } from '../../modules/system-parameters/routes'
 import { refreshAccount } from '../../core/auth/api'
+import { readLoginPreferences, safeLoginRedirect } from '../../core/auth/login-preferences'
 import { adminBasePath } from '../../core/hosting/mount-path'
 
 export const router = createRouter({
@@ -29,7 +30,6 @@ export const router = createRouter({
     ...systemParametersRoutes,
     ...aiSettingsRoutes,
     ...computeSettingsRoutes,
-    { path: '/', redirect: '/overview' },
     ...overviewRoutes,
     ...systemStatusRoutes,
     { path: '/:pathMatch(.*)*', component: NotFoundView, meta: { title: '页面不存在' } },
@@ -38,7 +38,13 @@ export const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  if (to.path === '/login') return true
+  if (to.meta.public) {
+    if (readLoginPreferences().autoLogin) {
+      try { if (await refreshAccount()) return safeLoginRedirect(to.query.redirect) }
+      catch { /* The public page and manual login remain available offline. */ }
+    }
+    return true
+  }
   try {
     if (await refreshAccount()) return true
   } catch { /* 登录页提供网络错误与重试入口。 */ }

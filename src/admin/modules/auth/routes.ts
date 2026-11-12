@@ -1,6 +1,8 @@
 import type { RouteRecordRaw } from 'vue-router'
-import LoginView from './views/LoginView.vue'
+
+const HomeView = () => import('../home/views/HomeView.vue')
 
 export const authRoutes: RouteRecordRaw[] = [
-  { path: '/login', component: LoginView, meta: { title: '登录' } },
+  { path: '/', component: HomeView, meta: { title: '家庭曲库，自家主场', public: true } },
+  { path: '/login', component: HomeView, meta: { title: '登录', public: true } },
 ]
