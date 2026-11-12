@@ -14,6 +14,33 @@ let wrapper: VueWrapper
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(shareImports.latest).mockResolvedValue({} as ShareImportJob) })
 afterEach(() => { wrapper?.unmount(); vi.useRealTimers() })
 const button = (text: string) => wrapper.findAll('button').find(item => item.text() === text)!
+it('业务结束后继续观察独立清理，不重新导入，并说明仅路径核验', async () => {
+  vi.useFakeTimers()
+  vi.mocked(shareImports.latest).mockResolvedValue({ ...job('SUCCEEDED'), inputState: 'PENDING', pathOnlyCount: 1 })
+  vi.mocked(shareImports.get).mockResolvedValue({ ...job('SUCCEEDED'), inputState: 'RELEASED', pathOnlyCount: 1 })
+  wrapper = mount(ShareImportPanel, { props: { source } }); await flushPromises()
+  expect(wrapper.text()).toContain('临时资料包待清理')
+  expect(wrapper.text()).toContain('文件大小未知')
+  await vi.advanceTimersByTimeAsync(2000); await flushPromises()
+  expect(wrapper.text()).toContain('临时资料包已清理')
+  expect(shareImports.action).not.toHaveBeenCalled()
+  const calls = vi.mocked(shareImports.get).mock.calls.length
+  await vi.advanceTimersByTimeAsync(6000); await flushPromises()
+  expect(shareImports.get).toHaveBeenCalledTimes(calls)
+})
+it('切换媒体源后忽略迟到的确认响应，不覆盖新任务', async () => {
+  let finish!: (value: ShareImportJob) => void
+  vi.mocked(shareImports.latest).mockResolvedValue(job('PREVIEW'))
+  vi.mocked(shareImports.action).mockReturnValue(new Promise(resolve => { finish = resolve }))
+  wrapper = mount(ShareImportPanel, { props: { source } }); await flushPromises()
+  await button('确认导入资料').trigger('click')
+  vi.mocked(shareImports.latest).mockResolvedValue({ ...job('PREVIEW'), id: 'new-job', totalCount: 9 })
+  await wrapper.setProps({ source: { ...source, id: 'other' } }); await flushPromises()
+  finish(job('VERIFYING')); await flushPromises()
+  expect(wrapper.text()).toContain('共 9 首')
+  expect(wrapper.text()).not.toContain('正在核对媒体路径')
+  expect(shareImports.get).not.toHaveBeenCalledWith('other', 'job')
+})
 it('上传完成后台解析，预览自己的地址后显式确认，不自动应用资料', async () => {
   vi.mocked(shareImports.upload).mockResolvedValue(job('PARSING'))
   vi.mocked(shareImports.get).mockResolvedValue(job('PREVIEW'))

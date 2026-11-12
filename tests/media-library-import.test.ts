@@ -11,6 +11,7 @@ import { parserProfiles } from '../src/admin/modules/filename-parser/api/rules'
 import type { MediaSource } from '../src/admin/modules/media-library/types'
 import { workspace } from './fixtures/filename-workspace'
 import { dropdownStubs } from './fixtures/dropdown-stubs'
+import { authRequest } from '../src/admin/core/auth/api'
 
 vi.mock('../src/admin/modules/media-library/api/media', () => ({ media: { list: vi.fn(), save: vi.fn(), get: vi.fn(), latestTask: vi.fn(), latestIngest: vi.fn(), scan: vi.fn(), createTask: vi.fn() } }))
 vi.mock('../src/admin/modules/media-library/api/embeddedMetadata', async original => ({
@@ -42,12 +43,21 @@ beforeEach(async () => {
     { path: '/library/songs', component: { template: '<p>歌曲</p>' } },
   ] })
   await router.push('/library/media')
-  wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router], stubs: { teleport: true, ...dropdownStubs } } })
+  wrapper = mount({ template: '<RouterView />' }, { attachTo: document.body, global: { plugins: [router], stubs: { teleport: true, ...dropdownStubs } } })
   await flushPromises()
 })
 afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; vi.restoreAllMocks() })
 const button = (text: string) => wrapper.findAll('button').find(item => item.text() === text)!
 const checkbox = (text: string) => wrapper.findAll('label.el-checkbox').find(item => item.text() === text)!.get('input')
+function sourceStep(step: 1 | 2 | 3) {
+  const screen = wrapper.get(`[data-source-step="${step}"]`)
+  expect(screen.isVisible()).toBe(true)
+  return screen
+}
+async function nextStep(step: 2 | 3) {
+  await button('下一步').trigger('click'); await flushPromises()
+  sourceStep(step)
+}
 async function openWebDAV(fromPackage = false) {
   if (fromPackage) {
     await wrapper.get('button[aria-label="歌曲来源的更多操作"]').trigger('click'); await flushPromises()
@@ -55,7 +65,11 @@ async function openWebDAV(fromPackage = false) {
   } else await button('添加来源').trigger('click')
   await flushPromises()
   if (!fromPackage) { await button('WebDAV').trigger('click'); await flushPromises() }
+  sourceStep(1)
   await wrapper.get('input[placeholder="https://nas.example/dav/歌曲目录/"]').setValue(source.location)
+  expect(media.save).not.toHaveBeenCalled()
+  expect(shareImports.upload).not.toHaveBeenCalled()
+  await nextStep(2)
 }
 async function selectPackage(file = new File(['zip'], '曲库资料.zip')) {
   const input = wrapper.get('input[aria-label="新媒体库资料包"]')
@@ -63,7 +77,14 @@ async function selectPackage(file = new File(['zip'], '曲库资料.zip')) {
   await input.trigger('change'); await flushPromises()
   return file
 }
-async function submit() { await wrapper.get('.media-dialog form').trigger('submit'); await flushPromises() }
+async function submit(startScan = true) {
+  const method = wrapper.find('[data-source-step="2"]')
+  if (method.exists() && method.isVisible()) await nextStep(3)
+  sourceStep(3)
+  const action = button('保存并导入资料包') || button(startScan ? '保存并扫描' : '仅保存')
+  expect(action.isVisible()).toBe(true)
+  await action.trigger('click'); await flushPromises()
+}
 function noMediaParsing() {
   expect(media.scan).not.toHaveBeenCalled()
   expect(media.createTask).not.toHaveBeenCalled()
@@ -71,15 +92,35 @@ function noMediaParsing() {
   expect(embeddedMetadata.refresh).not.toHaveBeenCalled()
 }
 
+it('相同根地址更换账号后切换到新核验任务，不再显示旧完成任务', async () => {
+  wrapper.unmount()
+  vi.mocked(shareImports.get).mockImplementation(async (_source, id) => ({ ...job(id === 'new-verification' ? 'VERIFYING' : 'SUCCEEDED'), id }))
+  vi.mocked(authRequest).mockImplementation(async path => path.endsWith('/rebind') ? { id: 'new-verification' } as never : {} as never)
+  wrapper = mount(WebDavMetadataDialog, { attachTo: document.body, props: { source, importJobId: 'old-completed' }, global: { stubs: { teleport: true } } })
+  await flushPromises()
+  const advanced = wrapper.get('.advanced-options')
+  ;(advanced.element as HTMLDetailsElement).open = true
+  await advanced.trigger('toggle'); await flushPromises()
+  await button('保留资料并重新核验').trigger('click'); await flushPromises()
+  expect(authRequest).toHaveBeenCalledWith(`/api/v1/media-sources/${source.id}/rebind`, 'POST', expect.objectContaining({ location: source.location }))
+  expect(shareImports.get).toHaveBeenCalledWith(source.id, 'new-verification')
+  expect(wrapper.text()).toContain('资料已保存，正在核对媒体路径')
+  expect(wrapper.emitted('updated')).toContainEqual(['new-verification'])
+})
+
 it('新建 WebDAV 选择资料包后自动上传，只预览不自动确认，并关闭所有自动解析入口', async () => {
   await openWebDAV()
   await checkbox('自动读取文件内的歌曲信息').setValue(true)
+  await wrapper.get('.source-advanced > summary').trigger('click'); await flushPromises()
   await checkbox('启用定时扫描').setValue(true); await flushPromises()
   await checkbox('从已导出的资料包入库').setValue(true); await flushPromises()
   expect(checkbox('启用定时扫描').element).toHaveProperty('disabled', true)
   expect(checkbox('启用定时扫描').element).toHaveProperty('checked', false)
   const file = await selectPackage()
   expect(wrapper.get('.source-package').text()).toContain(file.name)
+  expect(media.save).not.toHaveBeenCalled()
+  expect(shareImports.upload).not.toHaveBeenCalled()
+  await nextStep(3)
   expect(button('保存并导入资料包')).toBeDefined()
   expect(button('仅保存')).toBeUndefined()
   await submit()
@@ -153,7 +194,8 @@ it('保存来源失败时保留选中的资料包，再次保存成功后才上�
   await openWebDAV(true)
   const file = await selectPackage(); await submit()
   expect(wrapper.text()).toContain('地址无效')
-  expect(wrapper.get('.source-package').text()).toContain(file.name)
+  sourceStep(3)
+  expect(sourceStep(3).text()).toContain(file.name)
   expect(shareImports.upload).not.toHaveBeenCalled()
   await submit()
   expect(shareImports.upload).toHaveBeenCalledExactlyOnceWith(source.id, file, expect.any(AbortSignal))
@@ -161,7 +203,8 @@ it('保存来源失败时保留选中的资料包，再次保存成功后才上�
 })
 
 it('未选包、空文件、非 ZIP 及超限资料包在新建来源前给出错误', async () => {
-  await openWebDAV(true); await submit()
+  await openWebDAV(true); await button('下一步').trigger('click'); await flushPromises()
+  sourceStep(2)
   expect(wrapper.text()).toContain('请先选择导出的 ZIP 资料包')
   await selectPackage(new File(['json'], 'metadata.json'))
   expect(wrapper.text()).toContain('请选择 ZIP 格式的资料包')
@@ -170,18 +213,89 @@ it('未选包、空文件、非 ZIP 及超限资料包在新建来源前给出�
   const large = new File(['zip'], 'large.zip'); Object.defineProperty(large, 'size', { value: 8 * 1024 ** 3 + 1 })
   await selectPackage(large)
   expect(wrapper.text()).toContain('分享包不能超过 8 GiB')
-  await submit()
+  await button('下一步').trigger('click'); await flushPromises()
+  sourceStep(2)
   expect(media.save).not.toHaveBeenCalled()
   expect(shareImports.upload).not.toHaveBeenCalled()
 })
 
+it.each([true, false])('新建 WebDAV 不提供资料包也可保存，startScan=%s', async startScan => {
+  await openWebDAV()
+  expect(wrapper.find('input[type="file"]').exists()).toBe(false)
+  expect(wrapper.text()).toContain('无需资料包，可直接保存并扫描目录')
+  await submit(startScan)
+  expect(media.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'WEBDAV', location: source.location, startScan }), undefined)
+  expect(shareImports.upload).not.toHaveBeenCalled()
+  expect(shareImports.action).not.toHaveBeenCalled()
+})
+
+it('明确选用资料包但未选 ZIP 时可主动改为直接扫描，无需重新连接', async () => {
+  await openWebDAV(true)
+  await button('下一步').trigger('click'); await flushPromises()
+  sourceStep(2)
+  expect(wrapper.text()).toContain('请先选择导出的 ZIP 资料包')
+  expect(media.save).not.toHaveBeenCalled()
+  await button('改为直接扫描').trigger('click'); await flushPromises()
+  expect(checkbox('从已导出的资料包入库').element).toHaveProperty('checked', false)
+  expect(wrapper.find('input[aria-label="新媒体库资料包"]').exists()).toBe(false)
+  await submit()
+  expect(media.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'WEBDAV', location: source.location, startScan: true, autoExtractEmbedded: false }), undefined)
+  expect(shareImports.upload).not.toHaveBeenCalled()
+})
+
+it('移除选中的资料包会回到扫描方式，前后步骤不保留失效包或伪造包统计', async () => {
+  await openWebDAV(true)
+  const file = await selectPackage()
+  await button('移除资料包').trigger('click'); await flushPromises()
+  sourceStep(2)
+  expect(checkbox('从已导出的资料包入库').element).toHaveProperty('checked', false)
+  expect(wrapper.text()).not.toContain(file.name)
+  expect(wrapper.find('input[aria-label="新媒体库资料包"]').exists()).toBe(false)
+  await nextStep(3)
+  const confirmation = sourceStep(3)
+  expect(confirmation.text()).not.toContain(file.name)
+  expect(confirmation.text()).not.toContain('126')
+  expect(button('保存并扫描')).toBeDefined()
+  expect(button('保存并导入资料包')).toBeUndefined()
+  await button('上一步').trigger('click'); await flushPromises(); sourceStep(2)
+  expect(wrapper.find('input[aria-label="新媒体库资料包"]').exists()).toBe(false)
+  await submit(false)
+  expect(media.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ startScan: false, autoExtractEmbedded: false }), undefined)
+  expect(shareImports.upload).not.toHaveBeenCalled()
+})
+
+it('资料包在确认与返回修改之间保留，但确认前不保存、不上传', async () => {
+  await openWebDAV(true)
+  const file = await selectPackage()
+  await nextStep(3)
+  expect(sourceStep(3).text()).toContain(file.name)
+  expect(media.save).not.toHaveBeenCalled()
+  expect(shareImports.upload).not.toHaveBeenCalled()
+  await button('上一步').trigger('click'); await flushPromises(); sourceStep(2)
+  expect(wrapper.get('.source-package').text()).toContain(file.name)
+  await button('上一步').trigger('click'); await flushPromises(); sourceStep(1)
+  expect(wrapper.get('input[placeholder="https://nas.example/dav/歌曲目录/"]').element).toHaveProperty('value', source.location)
+  await wrapper.get('input#source-name').setValue('接收的曲库')
+  await nextStep(2)
+  expect(wrapper.get('.source-package').text()).toContain(file.name)
+  await submit()
+  expect(media.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: '接收的曲库', startScan: false }), undefined)
+  expect(shareImports.upload).toHaveBeenCalledExactlyOnceWith(source.id, file, expect.any(AbortSignal))
+  expect(shareImports.action).not.toHaveBeenCalled()
+  noMediaParsing()
+})
+
 it('切换来源类型会清除资料包选择，普通 WebDAV 保留默认保存并扫描', async () => {
   await openWebDAV(true); await selectPackage()
+  await button('上一步').trigger('click'); await flushPromises(); sourceStep(1)
   await button('本地目录').trigger('click'); await flushPromises()
-  expect(button('保存并扫描')).toBeDefined()
+  expect(wrapper.find('input[aria-label="新媒体库资料包"]').exists()).toBe(false)
+  expect(button('下一步')).toBeDefined()
   await button('WebDAV').trigger('click'); await flushPromises()
   expect(wrapper.find('input[type="file"]').exists()).toBe(false)
   await wrapper.get('input[placeholder="https://nas.example/dav/歌曲目录/"]').setValue(source.location)
+  await nextStep(2)
+  expect(checkbox('从已导出的资料包入库').element).toHaveProperty('checked', false)
   await submit()
   expect(media.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ startScan: true, autoExtractEmbedded: false }), undefined)
   expect(shareImports.upload).not.toHaveBeenCalled()

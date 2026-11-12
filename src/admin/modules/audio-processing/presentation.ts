@@ -39,25 +39,26 @@ export function latestAnalysis(roles: AudioRoles | undefined) {
 export function rolesSummary(roles: AudioRoles | undefined): RolesSummary {
   if (!roles) return { tag: '读取中', title: '正在读取音轨信息', hint: '', tone: 'info' }
   const streams = roles.streams, separate = latestJob(roles, 'SEPARATE'), analyze = latestAnalysis(roles), probe = latestJob(roles, 'PROBE')
-  if (!streams) {
+  const uniqueOriginal = roles.state === 'CONFIRMED' && roles.originalSelection?.kind === 'UNIQUE_AUDIO'
+  if (!streams && !uniqueOriginal) {
     const reading = [analyze, probe].some(job => job && active(job.state))
     return reading
       ? { tag: '识别中', title: '正在读取音轨', hint: '读取完成后会显示这首歌有几条音轨。', tone: 'primary' }
       : { tag: '待识别', title: '还没有读取音轨', hint: '读取后才能知道它自带伴奏轨，还是需要用 AI 生成伴奏。', tone: 'info' }
   }
-  if (!streams.length) return { tag: '无音轨', title: '文件里没有音频', hint: '这个文件没有可用的音频，无法设置原唱或伴奏。', tone: 'info' }
-  if (streams.length === 1) {
+  if (!streams?.length && !uniqueOriginal) return { tag: '无音轨', title: '文件里没有音频', hint: '这个文件没有可用的音频，无法设置原唱或伴奏。', tone: 'info' }
+  if (uniqueOriginal || streams?.length === 1) {
     if (roles.backingResource) return { tag: '已有伴奏', title: '已生成独立伴奏', hint: '点歌时可以在原唱和伴奏之间切换。', tone: 'success' }
     if (separate && active(separate.state)) return { tag: '生成中', title: separate.state === 'QUEUED' ? '等待生成伴奏' : executionStage(separate) || '正在生成伴奏', hint: '由计算节点在后台分离人声，完成后自动可用。', tone: 'primary' }
     if (separate?.state === 'FAILED') return { tag: '生成失败', title: '上次生成伴奏失败', hint: separate.error || '可以检查节点后重新生成。', tone: 'danger' }
-    return { tag: '可生成伴奏', title: '只有一条原唱音轨', hint: '可以用 AI 分离人声，生成一份独立伴奏。', tone: 'warning' }
+    return { tag: '可生成伴奏', title: '只有一条原唱音轨', hint: uniqueOriginal ? '唯一音频直接作为原唱，无需先读取音轨；需要伴奏时可显式生成。' : '可以用 AI 分离人声，生成一份独立伴奏。', tone: 'warning' }
   }
-  if (streams.length === 2) {
+  if (streams?.length === 2) {
     if (roles.state === 'CONFIRMED') return { tag: '自带伴奏', title: '自带原唱和伴奏两条音轨', hint: `已${originLabel(roles.origin)}原唱和伴奏，点歌时可以直接切换。`, tone: 'success' }
     if (analyze && active(analyze.state)) return { tag: '识别中', title: '正在识别哪条是原唱', hint: '识别完成后会自动标记；不确定时需要你来确认。', tone: 'primary' }
     return { tag: '待标记', title: '有两条音轨，需要确认哪条是原唱', hint: analyze?.state === 'SUCCEEDED' ? analysisReason(analyze.reason) : analyze?.state === 'FAILED' ? analyze.error || '音轨识别失败，可以检查节点后重试。' : '选出原唱，另一条会作为伴奏。', tone: 'warning' }
   }
-  return { tag: '多条音轨', title: `有 ${streams.length} 条音轨`, hint: '请先试听确认可用的源伴奏音轨。混合音乐分离仅支持单音轨，共享原唱/伴奏标记仅支持双音轨。', tone: 'info' }
+  return { tag: '多条音轨', title: `有 ${streams?.length ?? 0} 条音轨`, hint: '请先试听确认可用的源伴奏音轨。混合音乐分离仅支持单音轨，共享原唱/伴奏标记仅支持双音轨。', tone: 'info' }
 }
 
 export function originLabel(origin?: string) {

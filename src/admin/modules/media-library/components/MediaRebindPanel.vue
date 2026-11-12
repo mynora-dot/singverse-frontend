@@ -4,14 +4,14 @@ import { ElAlert, ElButton, ElInput } from 'element-plus'
 import { authRequest } from '../../../core/auth/api'
 import type { MediaSource } from '../types'
 const props = defineProps<{ source: MediaSource }>()
-const emit = defineEmits<{ updated: [] }>()
+const emit = defineEmits<{ updated: [jobId: string] }>()
 const location = ref(props.source.location), username = ref(props.source.username), password = ref(''), error = ref(''), busy = ref(false)
 async function rebind() {
   if (busy.value) return
   busy.value = true; error.value = ''
   try {
-    await authRequest(`/api/v1/media-sources/${encodeURIComponent(props.source.id)}/rebind`, 'POST', { location: location.value, username: username.value, password: password.value })
-    password.value = ''; emit('updated')
+    const job = await authRequest<{ id: string }>(`/api/v1/media-sources/${encodeURIComponent(props.source.id)}/rebind`, 'POST', { location: location.value, username: username.value, password: password.value })
+    password.value = ''; emit('updated', job.id)
   } catch (e) { error.value = e instanceof Error ? e.message : '重新绑定失败' }
   finally { busy.value = false }
 }

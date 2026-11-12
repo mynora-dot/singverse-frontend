@@ -9,6 +9,17 @@ const result = { state: 'UNKNOWN', revision: 0, streams: [{ id: 'stream:1' }, { 
 let wrapper: ReturnType<typeof mount> | undefined
 beforeEach(() => { mockMediaElements(); vi.useFakeTimers(); vi.mocked(authRequest).mockReset(); vi.mocked(authRequest).mockResolvedValue(result) })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks(); vi.useRealTimers() })
+it('唯一音频原唱无需探测，仍可显式生成独立伴奏且不编造流索引', async () => {
+  vi.mocked(authRequest).mockResolvedValue({ state: 'CONFIRMED', origin: 'SOURCE', revision: 0, originalSelection: { kind: 'UNIQUE_AUDIO' }, jobs: [{ id: 'done', kind: 'FAST', state: 'SUCCEEDED', cleanupState: 'PENDING' }] })
+  wrapper = mount(AudioRolesPanel, { props: { songId: 'single' } }); await flushPromises()
+  expect(wrapper.text()).toContain('唯一音频直接作为原唱')
+  expect(wrapper.text()).not.toContain('还没有读取音轨')
+  expect(wrapper.text()).toContain('临时采样文件待清理')
+  expect(wrapper.findAll('button').some(button => button.text() === '读取音轨')).toBe(false)
+  await wrapper.findAll('button').find(button => button.text() === '生成独立伴奏')!.trigger('click'); await flushPromises()
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/media-songs/single/audio-jobs', 'POST', { kind: 'SEPARATE' })
+  expect(vi.mocked(authRequest).mock.calls.some(call => (call[2] as { kind?: string } | undefined)?.kind === 'PROBE')).toBe(false)
+})
 it('旧版不确定结果可以重新分析，新版显示原因及折叠证据', async () => {
   vi.mocked(authRequest).mockResolvedValue({ ...result, jobs: [{ id: 'a', kind: 'ANALYZE', state: 'SUCCEEDED' }] })
   wrapper = mount(AudioRolesPanel, { props: { songId: 'song' } }); await flushPromises()

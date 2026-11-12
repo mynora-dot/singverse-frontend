@@ -5,14 +5,18 @@ export interface ShareImportJob {
   totalCount: number; processedCount: number; addedCount: number; updatedCount: number
   deletionCount?: number; preservedCount: number; unchangedCount: number; verifiedCount: number
   presentCount: number; missingCount: number; mismatchCount: number; unreachableCount: number
+  pathOnlyCount?: number
+  inputState?: 'RETAINED' | 'PENDING' | 'RELEASED'
+  inputCleanupError?: string | null; inputCleanupAfter?: string | null
   removePrefix: string; addPrefix: string
   collectionId?: string; collectionRevision?: number
-  samples?: { originalPath: string; relativePath: string; mediaURL: string; incoming?: Record<string, unknown>; local?: Record<string, unknown> }[]
+  samples?: { originalPath: string; relativePath: string; mediaURL: string; verification?: string; verificationLevel?: 'PATH_ONLY' | 'PATH_AND_SIZE'; incoming?: Record<string, unknown>; local?: Record<string, unknown> }[]
   preview?: { total: number; newSongs: number; existingSongs: number }
 }
 export interface ImportDifference {
   ordinal: number; relativePath: string; fields: string[]; outcome: string
   verification?: string; verificationError?: string
+  verificationLevel?: 'PATH_ONLY' | 'PATH_AND_SIZE'
   local?: Record<string, unknown>; incoming?: Record<string, unknown>
 }
 const base = (id: string) => `/api/v1/media-sources/${encodeURIComponent(id)}/embedded-metadata/import-jobs`

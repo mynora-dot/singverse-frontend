@@ -33,7 +33,7 @@ beforeEach(() => {
     if (path.endsWith('/batches/preview') || path.endsWith('/retry')) return preview as never
     if (path.endsWith('/submit')) return { ...preview, state: 'QUEUED' } as never
     if (path.endsWith('/batches/batch?page=0')) return { ...preview, state: 'QUEUED', items: [{ song_id: 'a', title: 'a', state: 'PROCESSING', job_state: 'RUNNING', execution: { backend: 'cpu' }, error: '' }] } as never
-    if (path.includes('/batches?page')) return { items: [{ ...preview, state: 'QUEUED' }], totalElements: 1 } as never
+    if (path.includes('/batches?')) return { items: [{ ...preview, state: 'QUEUED' }], totalElements: 1 } as never
     if (path.endsWith('/audio-roles')) return roles as never
     return {} as never
   })
@@ -199,11 +199,12 @@ it('从歌曲详情带入的歌曲会自动打开音轨面板，并可返回全�
 it('页签与地址同步，支持方向键切换', async () => {
   router.route.query = { tab: 'tasks' }; await open()
   const tabs = wrapper!.findAll('[role="tab"]')
-  expect(tabs[1]!.attributes('aria-selected')).toBe('true'); expect(tabs[0]!.attributes('tabindex')).toBe('-1')
+  const generationTab = tabs.find(tab => tab.text().includes('生成任务'))!
+  expect(generationTab.attributes('aria-selected')).toBe('true'); expect(tabs[0]!.attributes('tabindex')).toBe('-1')
   expect(wrapper!.text()).toContain('2 首歌曲')
-  await tabs[1]!.trigger('keydown', { key: 'ArrowRight' }); await flushPromises()
+  await generationTab.trigger('keydown', { key: 'ArrowRight' }); await flushPromises()
   expect(router.replace).toHaveBeenLastCalledWith({ path: '/library/audio-processing', query: {} })
-  expect(wrapper!.findAll('[role="tab"]')).toHaveLength(2)
+  expect(wrapper!.findAll('[role="tab"]')).toHaveLength(3)
 })
 it('停止进行中的任务需要确认，取消确认则不发送请求', async () => {
   router.route.query = { tab: 'tasks' }; await open()

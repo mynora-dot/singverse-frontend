@@ -8,13 +8,14 @@ import type { MediaSource, ScanTask } from '../types'
 import ShareImportPanel from './ShareImportPanel.vue'
 import MediaRebindPanel from './MediaRebindPanel.vue'
 const props = defineProps<{ source: MediaSource | null; importJobId?: string; initialImportFile?: File }>()
-const emit = defineEmits<{ close: []; songs: []; updated: []; uploading: [value: boolean]; fileConsumed: [] }>()
+const emit = defineEmits<{ close: []; songs: []; updated: [importJobId?: string]; uploading: [value: boolean]; fileConsumed: [] }>()
 interface ShareJob { id: string; state: string; total_count: number; processed_count: number; part_count: number; deletion_count?: number; error?: string }
 const summary = ref<EmbeddedSummary>(), shareJob = ref<ShareJob>(), scanTask = ref<ScanTask>()
 const advanced = ref(false), error = ref(''), busy = ref(false), loading = ref(false)
 const enabled = ref(false), paused = ref(false), accessGroup = ref(''), origins = ref('')
 const sampleId = ref(''), sample = ref<EmbeddedDetail>(), sampleName = ref('')
 const uploading = ref(false), importing = ref(false)
+const reboundImportId = ref<string>()
 watch(uploading, value => emit('uploading', value))
 const diagnosis = ref<{ directory: string; media: string; directoryMessage: string; mediaMessage: string; relativePath?: string }>()
 let generation = 0, timer: ReturnType<typeof setTimeout> | undefined
@@ -36,7 +37,7 @@ async function load(initial = false) {
   } catch (e) { if (token === generation) error.value = e instanceof Error ? e.message : '读取状态失败，请重试' }
   finally { if (token === generation) { loading.value = false; clearTimeout(timer); timer = setTimeout(() => void load(), activeShare.value || !!summary.value?.files?.pending || sample.value?.state === 'RUNNING' || sample.value?.state === 'PENDING' || ['QUEUED', 'RUNNING'].includes(scanTask.value?.status ?? '') ? 2000 : 10000) } }
 }
-watch(() => props.source?.id, () => { generation++; clearTimeout(timer); summary.value = undefined; shareJob.value = undefined; sample.value = undefined; sampleId.value = ''; advanced.value = false; error.value = ''; if (props.source) void load(true) }, { immediate: true })
+watch(() => props.source?.id, () => { generation++; clearTimeout(timer); reboundImportId.value = undefined; summary.value = undefined; shareJob.value = undefined; sample.value = undefined; sampleId.value = ''; advanced.value = false; error.value = ''; if (props.source) void load(true) }, { immediate: true })
 onBeforeUnmount(() => { generation++; clearTimeout(timer); emit('uploading', false) })
 function showAdvanced(event: Event) { advanced.value = (event.target as HTMLDetailsElement).open }
 async function toggleEnhance() { enabled.value = true; paused.value = !!summary.value?.enabled && !summary.value?.paused; await save() }
@@ -105,7 +106,10 @@ async function confirmEmpty() {
 }
 function close() { if (!uploading.value) emit('close') }
 function beforeClose(done: () => void) { if (!uploading.value) done() }
-async function updated() { clearTimeout(timer); await load(); emit('updated') }
+async function updated(importJobId?: string) {
+  if (importJobId) reboundImportId.value = importJobId
+  clearTimeout(timer); await load(); emit('updated', importJobId)
+}
 </script>
 <template>
   <ElDialog :model-value="!!source" :title="source ? source.name + ' · 整理与分享' : '整理与分享'" width="min(640px, calc(100vw - 24px))" class="library-workflow-dialog" :close-on-click-modal="false" :before-close="beforeClose" @update:model-value="value => { if (!value) close() }">
@@ -114,7 +118,7 @@ async function updated() { clearTimeout(timer); await load(); emit('updated') }
     <ElAlert v-if="error" :title="error" type="error" :closable="true" @close="error = ''" />
     <p v-if="summary?.quality" class="quality-result">{{ summary.quality.identityComplete.toLocaleString() }} 首具有歌名和歌手 · {{ summary.quality.informationMissing.toLocaleString() }} 首信息不足 · {{ summary.quality.pendingVerification.toLocaleString() }} 首待核验路径 · {{ summary.quality.mediaIssues.toLocaleString() }} 首媒体待处理</p>
     <p>歌曲资料已保存在本机。JSON、NFO 和 STRM 在后台自动生成，生成失败不影响已保存资料。</p>
-    <ShareImportPanel v-if="source?.type === 'WEBDAV'" :key="source.id + source.location" :source="source" :job-id="importJobId" :initial-file="initialImportFile" @file-consumed="emit('fileConsumed')" @uploading="uploading = $event" @active="importing = $event" @updated="updated" />
+    <ShareImportPanel v-if="source?.type === 'WEBDAV'" :key="source.id + source.location" :source="source" :job-id="reboundImportId || importJobId" :initial-file="initialImportFile" @file-consumed="emit('fileConsumed')" @uploading="uploading = $event" @active="importing = $event" @updated="updated" />
     <section class="action-row">
       <div><h3>歌曲信息</h3><p v-if="importing">正在处理资料包；资料保存后会核验媒体路径，无需先扫描或提取媒体。</p><p v-else-if="!total">扫描或导入资料后，歌曲会出现在曲库中。</p><p v-else>查看或编辑曲库中的歌曲。</p><p v-if="scanTask && ['QUEUED', 'RUNNING'].includes(scanTask.status)" role="status">正在扫描，已发现 {{ scanTask.totalSongs.toLocaleString() }} 首</p></div>
       <ElButton v-if="!total" type="primary" :loading="busy" :disabled="importing || loading || ['QUEUED', 'RUNNING'].includes(scanTask?.status ?? '')" @click="scan">扫描歌曲</ElButton>
@@ -134,7 +138,7 @@ async function updated() { clearTimeout(timer); await load(); emit('updated') }
       <div class="advanced-actions"><ElButton :disabled="importing || busy || ['QUEUED', 'RUNNING'].includes(scanTask?.status ?? '')" @click="scan">重新扫描歌曲</ElButton><ElButton v-if="shareJob?.state === 'SUCCEEDED'" :disabled="busy || activeShare" @click="createShare(true)">仅分享新增和变化</ElButton></div>
       <p v-if="summary?.files">衍生文件：{{ summary.files.pending ? '等待处理 ' + summary.files.pending + ' 首' : '已完成' }}<span v-if="summary.files.failed">，{{ summary.files.failed }} 首待重新生成，已保存的歌曲资料可正常使用</span><span v-if="summary.files.attachments">，封面正在后台补齐</span>。</p>
       <p>分享包自动按每包最多 5000 首处理。可直接导入整套 ZIP，无需自行解压或分包。</p>
-      <template v-if="source?.type === 'WEBDAV'"><p class="file-path">导入位置：{{ source.location }}</p><p>请先将对方的媒体挂载到自己的 OpenList，导入时核对相对路径；目录前缀可在预览中调整。</p><ElButton :loading="busy" @click="diagnose">诊断目录与分段读取</ElButton><p v-if="diagnosis" role="status">目录：{{ diagnosis.directoryMessage }}<br>媒体：{{ diagnosis.mediaMessage }}</p><MediaRebindPanel :source="source" @updated="emit('updated')" /><label>共享访问组<ElInput v-model="accessGroup" maxlength="64" /></label><label>私有下载代理（每行一个地址）<ElInput v-model="origins" type="textarea" :rows="2" /></label><ElButton :loading="busy" @click="save">保存高级设置</ElButton><p v-if="summary?.blockedReason">{{ embeddedState(summary.blockedReason) }}</p><p v-if="!summary?.remoteReady">{{ summary?.nodeMessage }}</p><p v-if="summary">今日已处理 {{ summary.budget.files_started }} 首，读取 {{ (summary.budget.bytes_read / 1048576).toFixed(1) }} MiB。</p><ElButton v-if="summary?.canConfirmEmpty" type="danger" :disabled="busy" @click="confirmEmpty">确认空库同步</ElButton></template>
+      <template v-if="source?.type === 'WEBDAV'"><p class="file-path">导入位置：{{ source.location }}</p><p>请先将对方的媒体挂载到自己的 OpenList，导入时核对相对路径；目录前缀可在预览中调整。</p><ElButton :loading="busy" @click="diagnose">诊断目录与分段读取</ElButton><p v-if="diagnosis" role="status">目录：{{ diagnosis.directoryMessage }}<br>媒体：{{ diagnosis.mediaMessage }}</p><MediaRebindPanel :source="source" @updated="updated" /><label>共享访问组<ElInput v-model="accessGroup" maxlength="64" /></label><label>私有下载代理（每行一个地址）<ElInput v-model="origins" type="textarea" :rows="2" /></label><ElButton :loading="busy" @click="save">保存高级设置</ElButton><p v-if="summary?.blockedReason">{{ embeddedState(summary.blockedReason) }}</p><p v-if="!summary?.remoteReady">{{ summary?.nodeMessage }}</p><p v-if="summary">今日已处理 {{ summary.budget.files_started }} 首，读取 {{ (summary.budget.bytes_read / 1048576).toFixed(1) }} MiB。</p><ElButton v-if="summary?.canConfirmEmpty" type="danger" :disabled="busy" @click="confirmEmpty">确认空库同步</ElButton></template>
       <details v-if="shareJob?.state === 'SUCCEEDED' && shareJob.part_count"><summary>单独下载分包</summary><div class="share-parts"><a v-for="part in shareJob.part_count" :key="part" :href="shareBase() + '/' + shareJob.id + '/parts/' + part" :download="'part-' + String(part).padStart(6, '0') + '.zip'">分包 {{ part }}</a></div></details>
     </div></details>
     <p>分享包用于资料复用。完整恢复系统还需备份数据库、密钥与持久附件。</p>

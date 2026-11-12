@@ -31,11 +31,11 @@ async function load(initial = false) {
     if (initial) { remove.value = value.removePrefix ?? ''; add.value = value.addPrefix ?? '' }
     error.value = ''
   } catch (e) { if (token === generation) error.value = e instanceof Error ? e.message : '读取导入任务失败' }
-  finally { if (token === generation) { clearTimeout(timer); if (job.value?.id && working.value && job.value.state !== 'PREVIEW') timer = setTimeout(() => void load(), 2000) } }
+  finally { if (token === generation) { clearTimeout(timer); if (job.value?.id && ((working.value && job.value.state !== 'PREVIEW') || job.value.inputState === 'PENDING')) timer = setTimeout(() => void load(), 2000) } }
 }
 watch([() => props.source.id, () => props.jobId], () => {
   generation++; controller?.abort(); clearTimeout(timer); uploading.value = false; emit('uploading', false)
-  job.value = undefined; pendingFile.value = undefined; differences.value = []; showingDifferences.value = false
+  busy.value = false; job.value = undefined; pendingFile.value = undefined; differences.value = []; showingDifferences.value = false
   if (props.initialFile) { void upload(props.initialFile); emit('fileConsumed') }
   else void load(true)
 }, { immediate: true })
@@ -60,28 +60,46 @@ async function upload(file: File) {
 }
 async function action(value: 'apply' | 'cancel' | 'retry') {
   if (!job.value?.id || busy.value) return
+  const token = ++generation
+  clearTimeout(timer)
   busy.value = true; error.value = ''
-  try { accept(await shareImports.action(props.source.id, job.value.id, value)); clearTimeout(timer); void load() }
-  catch (e) { error.value = e instanceof Error ? e.message : '操作失败' }
-  finally { busy.value = false }
+  try {
+    const result = await shareImports.action(props.source.id, job.value.id, value)
+    if (token !== generation) return
+    accept(result); void load()
+  }
+  catch (e) { if (token === generation) error.value = e instanceof Error ? e.message : '操作失败' }
+  finally {
+    if (token === generation) {
+      busy.value = false
+      if (error.value && (working.value || job.value?.inputState === 'PENDING')) timer = setTimeout(() => void load(), 2000)
+    }
+  }
 }
 async function map() {
-  if (!job.value?.id) return
+  if (!job.value?.id || busy.value) return
+  const token = ++generation
+  clearTimeout(timer)
   busy.value = true; error.value = ''
-  try { accept(await shareImports.mapping(props.source.id, job.value.id, remove.value.trim(), add.value.trim())) }
-  catch (e) { error.value = e instanceof Error ? e.message : '目录映射失败' }
-  finally { busy.value = false }
+  try {
+    const result = await shareImports.mapping(props.source.id, job.value.id, remove.value.trim(), add.value.trim())
+    if (token === generation) accept(result)
+  }
+  catch (e) { if (token === generation) error.value = e instanceof Error ? e.message : '目录映射失败' }
+  finally { if (token === generation) busy.value = false }
 }
 const mappingChanged = computed(() => remove.value.trim() !== (job.value?.removePrefix ?? '') || add.value.trim() !== (job.value?.addPrefix ?? ''))
 async function showDifferences(append = false) {
-  if (!job.value?.id) return
+  if (!job.value?.id || busy.value) return
+  const token = generation
   busy.value = true
   try {
     const value = await shareImports.differences(props.source.id, job.value.id, append ? cursor.value : 0)
+    if (token !== generation) return
     differences.value = append ? [...differences.value, ...value.items] : value.items
     more.value = value.hasMore; cursor.value = value.nextCursor; showingDifferences.value = true
-  } catch (e) { error.value = e instanceof Error ? e.message : '读取差异失败' }
-  finally { busy.value = false }
+  } catch (e) { if (token === generation) error.value = e instanceof Error ? e.message : '读取差异失败' }
+  finally { if (token === generation) busy.value = false }
 }
 const fieldName = (field: string) => ({ title: '歌名', artists: '歌手', album: '专辑', releaseDate: '发行日期', cover: '封面' }[field] ?? field)
 function display(value: unknown) { return Array.isArray(value) ? value.join('、') : typeof value === 'string' ? value : '—' }
@@ -112,6 +130,9 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
         <ElProgress v-if="working" :percentage="percent" :indeterminate="job.state === 'PARSING'" />
         <p>新增 {{ job.addedCount }} · 更新 {{ job.updatedCount }} · 保留本地修改 {{ job.preservedCount }} · 未变化 {{ job.unchangedCount }}</p>
         <p>已核对 {{ job.presentCount }} · 待核验 {{ Math.max(0, job.totalCount - job.verifiedCount) }} · 缺失 {{ job.missingCount }} · 大小不符 {{ job.mismatchCount }} · 连接问题 {{ job.unreachableCount }}</p>
+        <p v-if="job.pathOnlyCount">其中 {{ job.pathOnlyCount }} 条仅核对了路径，文件大小未知，尚未验证大小一致。</p>
+        <p v-if="job.inputState === 'PENDING'">临时资料包待清理，后台会独立重试，不影响已保存资料，也不会重新导入或识别。<span v-if="job.inputCleanupError"> {{ job.inputCleanupError }}</span></p>
+        <p v-else-if="job.inputState === 'RELEASED'">临时资料包已清理，核验记录与恢复检查点已保留。</p>
         <p v-if="working">上传已完成，可以关闭页面。稍后从任务中心返回。</p>
         <ElButton v-if="job.preservedCount || job.missingCount || job.mismatchCount || job.unreachableCount" :loading="busy" @click="showDifferences()">查看差异与待处理项</ElButton>
         <ElButton v-if="['FAILED', 'CANCELLED'].includes(job.state) || job.state === 'SUCCEEDED' && (job.missingCount || job.mismatchCount || job.unreachableCount)" :loading="busy" @click="action('retry')">{{ job.phase === 'VERIFYING' ? '重试未通过的核验' : '继续处理' }}</ElButton>

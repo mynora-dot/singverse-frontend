@@ -26,6 +26,7 @@ const base = () => songRoles(props.songId)
 const inFlight = (job?: AudioJob) => !!job && ['QUEUED', 'RUNNING'].includes(job.state)
 const summary = computed(() => rolesSummary(detail.value))
 const streams = computed(() => detail.value?.streams ?? [])
+const uniqueOriginal = computed(() => detail.value?.state === 'CONFIRMED' && detail.value.originalSelection?.kind === 'UNIQUE_AUDIO')
 const separate = computed(() => latestJob(detail.value, 'SEPARATE'))
 const deepAnalyze = computed(() => latestJob(detail.value, 'ANALYZE'))
 const analyze = computed(() => latestAnalysis(detail.value))
@@ -79,15 +80,16 @@ onBeforeUnmount(() => { generation++; clearTimeout(timer) })
   <section class="audio-roles-panel" aria-label="原唱与伴奏">
     <ElAlert v-if="error" :title="error" type="error" show-icon :closable="false" role="alert" />
     <p v-if="notice" class="roles-notice" role="status">{{ notice }}</p>
+    <p v-if="detail?.jobs.some(job => job.cleanupState === 'PENDING')" class="roles-notice" role="status">音轨处理结果已保留，临时采样文件待清理；后台会单独重试清理，不会重新识别。</p>
     <div class="roles-status" :class="'is-' + summary.tone">
       <ElTag :type="summary.tone" effect="light" round>{{ summary.tag }}</ElTag>
       <div><h3>{{ summary.title }}</h3><p v-if="summary.hint">{{ summary.hint }}</p></div>
     </div>
 
-    <div v-if="detail && !detail.streams" class="roles-actions">
+    <div v-if="detail && !detail.streams && !uniqueOriginal" class="roles-actions">
       <ElButton type="primary" :disabled="busy || reading" @click="submit('PROBE', '已开始读取音轨')">读取音轨</ElButton>
     </div>
-    <section v-else-if="streams.length === 1" class="roles-block" aria-label="伴奏">
+    <section v-else-if="streams.length === 1 || uniqueOriginal" class="roles-block" aria-label="伴奏">
       <template v-if="detail?.backingResource">
         <h4>试听伴奏</h4>
         <audio class="backing-player" :src="accompanimentUrl(songId, detail.backingResource.jobId)" controls preload="none" aria-label="试听生成的伴奏" />
@@ -113,7 +115,7 @@ onBeforeUnmount(() => { generation++; clearTimeout(timer) })
       <p class="muted">标记对手机、电视和亲友点歌通用，下次点这首歌时生效，不会打断正在播放的歌曲。<template v-if="detail?.state === 'CONFIRMED'">当前为{{ originLabel(detail.origin) }}。</template></p>
     </fieldset>
 
-    <section v-if="capabilities && streams.length" class="roles-block" aria-label="生成与试听伴奏">
+    <section v-if="capabilities && (streams.length || uniqueOriginal)" class="roles-block" aria-label="生成与试听伴奏">
       <h4>{{ detail?.state === 'CONFIRMED' && detail?.backingId ? '提取已确认的伴奏' : '选择伴奏方案' }}</h4>
       <p v-if="detail?.state === 'CONFIRMED' && detail?.backingId" class="muted">优先提取已确认的伴奏音轨，不再进行人声分离。</p>
       <label class="muted">已确认的源伴奏<select v-model="sourceAudio" aria-label="已确认的源伴奏" :disabled="busy || inFlight(separate)"><option value="">{{ detail?.backingId ? '使用已标记的伴奏音轨' : '没有源伴奏，按方案生成' }}</option><template v-for="(stream, index) in streams" :key="stream.id"><option :value="stream.id">{{ streamLabel(stream, index) }} · 整条</option><option v-if="stream.channels === 2" :value="stream.id + ':LEFT'">音轨 {{ index + 1 }} · 左声道</option><option v-if="stream.channels === 2" :value="stream.id + ':RIGHT'">音轨 {{ index + 1 }} · 右声道</option></template></select></label>
