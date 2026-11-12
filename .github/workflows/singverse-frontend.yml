@@ -1,0 +1,45 @@
+name: singverse-frontend
+on:
+  push:
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: make frontend-check test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: singverse-frontend
+          path: dist/
+          if-no-files-found: error
+  release:
+    if: github.event_name == 'release' && !github.event.release.prerelease && !github.event.release.draft
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: singverse-frontend
+          path: dist/
+      - run: python3 scripts/package-release.py
+      - name: Publish complete frontend without replacing existing assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/upload-release.py

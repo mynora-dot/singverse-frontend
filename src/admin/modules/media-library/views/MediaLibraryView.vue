@@ -1,0 +1,656 @@
+<script setup lang="ts">
+import { onMounted, onBeforeUnmount, reactive, ref, computed, watch, defineAsyncComponent, nextTick } from 'vue'
+import { ElIcon, ElLoading, ElAlert, ElButton, ElCard, ElDialog, ElEmpty, ElForm, ElFormItem, ElInput, ElMessage, ElMessageBox, ElTag, ElCheckbox } from 'element-plus'
+import { FolderOpened, Plus, RefreshRight } from '@element-plus/icons-vue'
+import { parserProfiles } from '../../filename-parser/api/rules'
+import type { ParserWorkspace } from '../../filename-parser/types'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import PageHeader from '../../../shared/ui/PageHeader.vue'
+import { media, type MediaSource, type SourceType, type ScanTask } from '../api/media'
+
+import WebDavMetadataDialog from '../components/WebDavMetadataDialog.vue'
+import LocalFolderPicker from '../components/LocalFolderPicker.vue'
+import { lx } from '../../lx-downloads/api'
+import { embeddedMetadata, type EmbeddedSummary } from '../api/embeddedMetadata'
+import { validateSharePackage } from '../api/shareImports'
+const FilenameProfilesView = defineAsyncComponent(() => import('../../filename-parser/views/FilenameProfilesView.vue'))
+const FilenameParserView = defineAsyncComponent(() => import('../../filename-parser/views/FilenameParserView.vue'))
+const metadataSource = ref<MediaSource | null>(null)
+const metadataImportFile = ref<File>()
+const metadataUploading = ref(false)
+const importMode = ref(false)
+const importFile = ref<File>()
+const summaries = reactive<Record<string, EmbeddedSummary | undefined>>({})
+const ingests = reactive<Record<string, { state: string; error?: string } | undefined>>({})
+const router = useRouter()
+const route = useRoute()
+const vLoading = ElLoading.directive
+const items = ref<MediaSource[]>([])
+function displayLocation(row: MediaSource) {
+  if (row.type !== 'WEBDAV') return row.location
+  try { return decodeURI(row.location) } catch { return row.location }
+}
+const moreSources = ref(false), sourcePage = ref(0)
+const advanced = ref(false), picker = ref(false)
+function chooseFolder() { picker.value = true }
+function confirmFolder(path: string) { draft.location = path; picker.value = false }
+function changeType(type: SourceType) {
+  if (editing.value || saving.value || draft.type === type) return
+  Object.assign(draft, { autoExtractEmbedded: false, type, location: '', username: '', password: '', useForLxDownloads: false }); clearPassword.value = false
+  importMode.value = false; importFile.value = undefined
+}
+function changeImportMode() {
+  importFile.value = undefined; formError.value = ''
+  if (importMode.value) { draft.autoExtractEmbedded = false; draft.scanEnabled = false }
+}
+function chooseImportFile(event: Event) {
+  const input = event.target as HTMLInputElement, file = input.files?.[0]; input.value = ''
+  if (!file || saving.value) return
+  try { validateSharePackage(file); importFile.value = file; formError.value = '' }
+  catch (e) { importFile.value = undefined; formError.value = e instanceof Error ? e.message : '无法读取资料包' }
+}
+const loading = ref(false), saving = ref(false), loaded = ref(false), dialog = ref(false)
+const error = ref(''), formError = ref(''), editing = ref<MediaSource | null>(null), clearPassword = ref(false)
+const draft = reactive({ autoExtractEmbedded: false, useForLxDownloads: false, scanEnabled: false, scanCron: '0 3 * * *', parserProfileId: 'default', name: '', type: 'LOCAL' as SourceType, location: '', username: '', password: '' })
+const editorPanel = ref<'source' | 'profiles' | 'rules'>('source')
+const workbenchProfileId = ref('default')
+const workbench = ref<{ canLeave: () => Promise<boolean> }>()
+const editorBack = ref<InstanceType<typeof ElButton>>()
+const formBaseline = ref('')
+const formSignature = computed(() => JSON.stringify({ ...draft, clearPassword: clearPassword.value, importMode: importMode.value, importFile: importFile.value ? [importFile.value.name, importFile.value.size, importFile.value.lastModified] : null }))
+const formDirty = computed(() => dialog.value && formSignature.value !== formBaseline.value)
+const profileWorkspace = ref<ParserWorkspace | null>(null), profilesLoading = ref(false), profilesError = ref('')
+const selectedProfile = computed(() => profileWorkspace.value?.profiles.find(p => p.id === draft.parserProfileId))
+const enabledEntries = computed(() => selectedProfile.value?.entries.filter(e => e.enabled) ?? [])
+const scanning = ref('')
+const localResults = reactive<Record<string, { totalSongs: number; needsReviewSongs: number }>>({})
+const tasks = reactive<Record<string, ScanTask | undefined>>({})
+const taskVersions: Record<string, number> = {}
+const taskErrors = reactive<Record<string, string>>({})
+const cancelling = reactive<Record<string, boolean>>({})
+let taskTimer: ReturnType<typeof setTimeout> | undefined, taskGeneration = 0, loadGeneration = 0
+function enhancing(id: string) { const s = summaries[id]; return !!s?.enabled && !s.paused && (s.counts.PENDING ?? 0) + (s.counts.QUEUED ?? 0) + (s.counts.RUNNING ?? 0) > 0 }
+function ingestActive(id: string) { return ['QUEUED', 'RUNNING'].includes(ingests[id]?.state ?? '') }
+function taskActive(task?: ScanTask) { return !!task && ['QUEUED', 'RUNNING'].includes(task.status) }
+function taskLabel(task: ScanTask) {
+  if (task.cancelRequested && taskActive(task)) return '正在取消'
+  if (taskActive(task) && task.phase === 'COMMITTING') return '正在提交索引'
+  return { QUEUED: '排队中', RUNNING: '正在扫描目录', SUCCEEDED: '扫描完成', FAILED: '扫描失败', CANCELLED: '已取消', INTERRUPTED: '已中断' }[task.status]
+}
+function scheduleTasks(token = taskGeneration) {
+  clearTimeout(taskTimer)
+  if (!active || token !== taskGeneration) return
+  if (items.value.some(item => ingestActive(item.id) || enhancing(item.id) || taskActive(tasks[item.id]) || taskErrors[item.id])) {
+    taskTimer = setTimeout(() => { void refreshTasks(false, token) }, 2000)
+  }
+}
+async function refreshTasks(latest: boolean, token = taskGeneration) {
+  const sources = items.value
+  await Promise.all(sources.map(async item => {
+    const previous = tasks[item.id], version = taskVersions[item.id] ?? 0
+    if (!latest && !ingestActive(item.id) && !enhancing(item.id) && !taskActive(previous) && !taskErrors[item.id]) return
+    try {
+      const [task, ingest, summary] = await Promise.all([item.type === 'WEBDAV' ? latest || !previous ? media.latestTask(item.id) : media.task(item.id, previous.id) : undefined, media.latestIngest(item.id), embeddedMetadata.summary(item.id)])
+      if (!active || token !== taskGeneration || version !== (taskVersions[item.id] ?? 0)) return
+      tasks[item.id] = task; ingests[item.id] = ingest; summaries[item.id] = summary; taskErrors[item.id] = ''
+    } catch (e) {
+      if (active && token === taskGeneration && version === (taskVersions[item.id] ?? 0)) taskErrors[item.id] = e instanceof Error ? e.message : '读取扫描状态失败'
+    }
+  }))
+  scheduleTasks(token)
+}
+async function cancelScan(item: MediaSource) {
+  const task = tasks[item.id]
+  if (!task || cancelling[item.id]) return
+  cancelling[item.id] = true
+  try {
+    const updated = await media.cancelTask(item.id, task.id)
+    if (active) { taskVersions[item.id] = (taskVersions[item.id] ?? 0) + 1; tasks[item.id] = updated; scheduleTasks() }
+  } catch (e) { if (active) error.value = e instanceof Error ? e.message : '取消失败' }
+  finally { if (active) cancelling[item.id] = false }
+}
+let active = true, profileGeneration = 0
+async function loadProfiles() {
+  const token = ++profileGeneration
+  profilesLoading.value = true; profilesError.value = ''
+  try { const result = await parserProfiles.load(); if (active && token === profileGeneration) profileWorkspace.value = result }
+  catch (e) { if (active && token === profileGeneration) profilesError.value = e instanceof Error ? e.message : '加载解析方案失败' }
+  finally { if (active && token === profileGeneration) profilesLoading.value = false }
+}
+function profileName(id: string) {
+  return profileWorkspace.value?.profiles.find(p => p.id === id)?.name ?? (profilesError.value ? '方案加载失败' : '方案不可用')
+}
+async function scan(item: MediaSource) {
+  if (scanning.value) return
+  try { await ElMessageBox.confirm('扫描会按已保存的解析方案更新歌曲索引。WebDAV 缺失文件需两次完整扫描确认后下架；已提取的内嵌元数据会复用。不会修改原始文件。', item.type === 'WEBDAV' ? '扫描 WebDAV 歌曲' : '扫描本地歌曲', { confirmButtonText: '开始扫描', cancelButtonText: '取消' }) }
+  catch { return }
+  scanning.value = item.id; error.value = ''
+  try {
+    if (item.type === 'WEBDAV') {
+      const task = await media.createTask(item.id)
+      if (!active) return
+      taskVersions[item.id] = (taskVersions[item.id] ?? 0) + 1
+      tasks[item.id] = task; taskErrors[item.id] = ''; scheduleTasks()
+      ElMessage.success('后台扫描已创建，可以离开页面，稍后查看结果')
+      return
+    }
+    const result = await media.scan(item.id)
+    if (!active) return
+    localResults[item.id] = result
+    ElMessage.success(`扫描完成：${result.totalSongs} 首，${result.needsReviewSongs} 首需复核`)
+    await load()
+
+  } catch (e) { if (active) error.value = e instanceof Error ? e.message : '扫描失败' }
+  finally { if (active) scanning.value = '' }
+}
+async function showSongs(item: MediaSource) {
+  await router.push({ path: '/library/songs', query: { sourceId: item.id } })
+}
+async function load(append = false, openLinkedSource = true) {
+  const token = ++loadGeneration
+  loading.value = true; error.value = ''
+  try {
+    const next = append ? sourcePage.value + 1 : 0
+    const result = await media.list(next, 100)
+    if (!active || token !== loadGeneration) return
+    items.value = append ? [...items.value, ...result.items] : result.items
+    const selectedSource = route.query.source
+    if (openLinkedSource && !append && typeof selectedSource === 'string') {
+      const selected = items.value.find(item => item.id === selectedSource) ?? await media.get(selectedSource)
+      if (!active || token !== loadGeneration) return
+      if (!items.value.some(item => item.id === selected.id)) items.value.unshift(selected)
+      metadataSource.value = selected
+    }
+    sourcePage.value = next; moreSources.value = (next + 1) * 100 < result.totalElements; loaded.value = true
+    clearTimeout(taskTimer); taskGeneration++; void refreshTasks(true)
+  } catch (e) { if (active && token === loadGeneration) error.value = e instanceof Error ? e.message : '读取媒体库失败' }
+  finally { if (active && token === loadGeneration) loading.value = false }
+}
+function open(type: SourceType, item?: MediaSource, forImport = false) {
+  importMode.value = forImport
+  importFile.value = undefined
+  editing.value = item ?? null
+  Object.assign(draft, { autoExtractEmbedded: false, scanEnabled: item?.scanEnabled ?? false, scanCron: item?.scanCron ?? '0 3 * * *', name: item?.name ?? '', type, location: item?.location ?? '', username: item?.username ?? '', password: '', parserProfileId: item?.parserProfileId ?? 'default' })
+  draft.useForLxDownloads = item?.useForLxDownloads ?? route.query.download === '1'
+  advanced.value = false; clearPassword.value = false; formError.value = ''; editorPanel.value = 'source'
+  formBaseline.value = formSignature.value; dialog.value = true; void loadProfiles()
+}
+function closed() { if (dialog.value) return; picker.value = false; draft.password = ''; importFile.value = undefined; formError.value = ''; editing.value = null; editorPanel.value = 'source' }
+async function canLeaveWorkbench() { return editorPanel.value === 'source' || !workbench.value || await workbench.value.canLeave() }
+async function canLeaveSource() {
+  if (metadataUploading.value) return false
+  if (!dialog.value) return true
+  if (saving.value || !await canLeaveWorkbench()) return false
+  if (!formDirty.value) return true
+  try {
+    await ElMessageBox.confirm('来源还有未保存修改，是否放弃？已保存的识别方案和规则会保留。', '未保存来源', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning' })
+    return true
+  } catch { return false }
+}
+async function closeSource(done?: () => void) {
+  if (!await canLeaveSource()) return
+  if (done) done()
+  else dialog.value = false
+}
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (formDirty.value) { event.preventDefault(); event.returnValue = '' }
+}
+onBeforeRouteLeave(canLeaveSource)
+async function showRecognition(item?: MediaSource) {
+  if (saving.value) return
+  if (item) open(item.type, item)
+  workbenchProfileId.value = draft.parserProfileId
+  editorPanel.value = 'profiles'
+  await nextTick(); (editorBack.value?.$el as HTMLElement | undefined)?.focus()
+}
+async function returnToSource(profileId?: string) {
+  if (!await canLeaveWorkbench()) return
+  if (profileId) draft.parserProfileId = profileId
+  editorPanel.value = 'source'; void loadProfiles()
+  await nextTick(); document.getElementById('source-parser-profile')?.focus()
+}
+function showRules(profileId: string) { workbenchProfileId.value = profileId; editorPanel.value = 'rules' }
+async function returnToProfiles(profileId = workbenchProfileId.value) {
+  if (!await canLeaveWorkbench()) return
+  workbenchProfileId.value = profileId; editorPanel.value = 'profiles'
+  await nextTick(); (editorBack.value?.$el as HTMLElement | undefined)?.focus()
+}
+async function save(startScan = !editing.value && !importMode.value) {
+  if (saving.value) return
+  const importing = !editing.value && draft.type === 'WEBDAV' && importMode.value, file = importFile.value
+  if (importing && !file) { formError.value = '请先选择导出的 ZIP 资料包'; return }
+  if (importing) { startScan = false; draft.autoExtractEmbedded = false; draft.scanEnabled = false }
+  if (!draft.location.trim()) { formError.value = draft.type === 'LOCAL' ? '请选择歌曲文件夹' : '请填写 WebDAV 目录地址'; return }
+  if (profilesLoading.value || profilesError.value || !selectedProfile.value) { formError.value = '请选择有效的解析方案，或重新加载方案列表'; return }
+  if (draft.scanEnabled && draft.scanCron.trim().split(/\s+/).length !== 5) { formError.value = '请输入五段 cron：分 时 日 月 周'; return }
+  saving.value = true; formError.value = ''
+  try {
+    if (draft.type === 'LOCAL' && draft.useForLxDownloads) {
+      const current = await lx.status()
+      if (!active) return
+      if (current.target.id && (current.target.id !== editing.value?.id || current.target.path !== draft.location)) {
+        try { await ElMessageBox.confirm(`原保存位置：${current.target.path}。新保存位置：${draft.location}。保存后，新下载会使用新位置。`, '更改下载保存位置', { confirmButtonText: '更改并保存', cancelButtonText: '返回', type: 'warning' }) }
+        catch { return }
+      }
+    }
+    const profileChanged = editing.value && editing.value.parserProfileId !== draft.parserProfileId
+    const saved = await media.save({ startScan, ...(!editing.value && draft.type === 'WEBDAV' ? { autoExtractEmbedded: !importMode.value && draft.autoExtractEmbedded } : {}), name: draft.name.trim() || (draft.type === 'LOCAL' ? draft.location.split(/[\\/]/).filter(Boolean).pop() || '本地歌曲' : 'WebDAV 歌曲').slice(0, 100), type: draft.type, location: draft.location, parserProfileId: draft.parserProfileId,
+      ...(draft.type === 'LOCAL' ? { useForLxDownloads: draft.useForLxDownloads } : {}),
+      ...(importing ? { scanEnabled: false } : draft.scanEnabled || editing.value?.scanEnabled || editing.value?.scanCron ? { scanEnabled: draft.scanEnabled, scanCron: draft.scanCron.trim() } : {}),
+      ...(draft.type === 'WEBDAV' ? { username: draft.username,
+        password: clearPassword.value ? '' : draft.password || (editing.value ? undefined : '') } : {}) }, editing.value?.id)
+    if (!active) return
+    dialog.value = false; draft.password = ''; ElMessage.success(importing ? '媒体库已保存，接下来上传资料包并核对路径' : startScan ? '已保存，后台将自动扫描入库，可以离开页面' : profileChanged ? '已保存解析方案，请重新扫描以更新文件名识别结果' : '媒体库配置已保存')
+    if (saved && importing) { metadataImportFile.value = file; metadataSource.value = saved }
+    await load(false, !importing)
+  } catch (e) { formError.value = e instanceof Error ? e.message : '保存失败' }
+  finally { saving.value = false }
+}
+async function reloadMetadataSource() {
+  const id = metadataSource.value?.id
+  if (id) {
+    const previous = metadataSource.value?.location, source = await media.get(id)
+    if (previous !== source.location && route.query.import) { const query = { ...route.query }; delete query.import; await router.replace({ query }) }
+    metadataSource.value = source
+  }
+  void refreshTasks(true)
+}
+async function remove(item: MediaSource) {
+  try {
+    await ElMessageBox.confirm(`移除“${item.name}”的媒体库配置？原始文件不会被删除。`, '移除媒体库', { confirmButtonText: '移除', cancelButtonText: '取消', type: 'warning' })
+  } catch { return }
+  try { await media.remove(item.id); ElMessage.success('已移除媒体库配置'); await load() }
+  catch (e) { error.value = e instanceof Error ? e.message : '移除失败' }
+}
+watch(() => route.query.source, id => { if (typeof id === 'string') void load() })
+onMounted(() => {
+  window.addEventListener('beforeunload', beforeUnload)
+  void load(); void loadProfiles()
+  // 概览等入口通过 ?add=LOCAL|WEBDAV 直接打开添加弹窗，打开后移除参数避免刷新重复弹出。
+  const add = route.query.add
+  if (add === 'LOCAL' || add === 'WEBDAV') { open(add); const query = { ...route.query }; delete query.add; delete query.download; void router.replace({ query }) }
+})
+onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; loadGeneration++; clearTimeout(taskTimer); draft.password = ''; window.removeEventListener('beforeunload', beforeUnload) })
+</script>
+
+<template>
+  <div class="media-library-page management-page">
+    <PageHeader class="media-heading" title="歌曲来源" description="添加后自动扫描入库，资料自动保存在本机。收到分享包时，先导入资料，再核对自己的媒体目录。">
+      <template #meta><span v-if="loaded" class="source-count" :aria-label="`已读取 ${items.length} 个歌曲来源${moreSources ? '，可继续读取' : ''}`">{{ items.length }}个</span></template>
+      <template #actions><div class="media-actions"><ElButton type="primary" :icon="Plus" @click="open('LOCAL')">添加来源</ElButton><details class="source-menu media-more"><summary aria-label="歌曲来源的更多操作" title="更多操作">⋯</summary><div><ElButton text :icon="RefreshRight" :loading="loading" @click="load()">刷新</ElButton><ElButton text @click="open('WEBDAV', undefined, true)">导入资料包</ElButton></div></details></div></template>
+    </PageHeader>
+    <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon class="media-error"><ElButton text @click="load()">重试</ElButton></ElAlert>
+    <section v-loading="loading" class="source-cards" aria-label="媒体库">
+      <ElEmpty v-if="loaded && !items.length && !error" description="添加本地目录或 WebDAV，开始整理你的歌曲。"><ElButton type="primary" @click="open('LOCAL')">添加第一个目录</ElButton></ElEmpty>
+      <ElCard v-for="row in items" :key="row.id" shadow="never" class="source-card">
+        <div class="source-content">
+          <span class="source-icon"><ElIcon><FolderOpened /></ElIcon></span>
+          <div class="source-info">
+            <div class="source-title"><h2>{{ row.name }}</h2><ElTag v-if="row.useForLxDownloads" type="success" effect="plain">下载保存位置</ElTag><ElTag type="info" effect="plain">{{ row.type === 'LOCAL' ? '本地目录' : 'WebDAV' }}</ElTag></div>
+            <p class="source-location">{{ displayLocation(row) }}</p>
+            <ElButton class="source-profile-link" text :disabled="profilesLoading" @click="showRecognition(row)">文件名识别：{{ profilesLoading ? '读取中…' : profileName(row.parserProfileId) }} →</ElButton>
+            <p v-if="summaries[row.id]?.quality" class="panel-description">已入库 {{ (summaries[row.id]!.quality!.songs ?? summaries[row.id]!.quality!.total).toLocaleString() }} 首 · {{ summaries[row.id]!.quality!.variants ?? summaries[row.id]!.quality!.total }} 个版本 · {{ summaries[row.id]!.quality!.files ?? summaries[row.id]!.quality!.total }} 个文件 · {{ summaries[row.id]!.quality!.identityComplete.toLocaleString() }} 首有歌名和歌手<br>正在完善 {{ (summaries[row.id]!.counts.RUNNING ?? 0) + (summaries[row.id]!.counts.QUEUED ?? 0) }} · 信息不足 {{ summaries[row.id]!.quality!.informationMissing }} · 待核验路径 {{ summaries[row.id]!.quality!.pendingVerification }} · 媒体待处理 {{ summaries[row.id]!.quality!.mediaIssues }}</p>
+            <p v-if="ingestActive(row.id)" class="panel-description" role="status">{{ ingests[row.id]?.state === 'QUEUED' ? '已保存，等待后台扫描入库' : '正在后台扫描入库，可以离开页面' }}</p>
+            <p v-if="ingests[row.id]?.error" class="scan-error">{{ ingests[row.id]?.error }}</p>
+            <div v-if="tasks[row.id]" class="scan-progress" aria-live="polite">
+              <strong>{{ taskLabel(tasks[row.id]!) }}</strong>
+              <span>已处理 {{ tasks[row.id]!.directories }} 个目录、{{ tasks[row.id]!.entries }} 个条目；{{ tasks[row.id]!.totalSongs }} 首，{{ tasks[row.id]!.needsReviewSongs }} 首需复核</span>
+              <span v-if="tasks[row.id]!.status === 'SUCCEEDED'">新增 {{ tasks[row.id]!.addedSongs ?? 0 }} · 复用 {{ tasks[row.id]!.reusedSongs ?? 0 }} · 待确认删除 {{ tasks[row.id]!.missingSongs ?? 0 }} · 下架 {{ tasks[row.id]!.removedSongs ?? 0 }}</span>
+              <span v-if="tasks[row.id]!.error" class="scan-error">{{ tasks[row.id]!.error }}</span>
+              <ElButton v-if="taskActive(tasks[row.id]) && tasks[row.id]!.phase === 'SCANNING'" link type="warning" :loading="cancelling[row.id]" :disabled="tasks[row.id]!.cancelRequested" @click="cancelScan(row)">取消扫描</ElButton>
+            </div>
+            <p v-else-if="localResults[row.id]" class="panel-description" aria-live="polite">扫描完成：{{ localResults[row.id]!.totalSongs }} 首，{{ localResults[row.id]!.needsReviewSongs }} 首需复核</p>
+            <p v-else class="panel-description">{{ row.type === 'WEBDAV' ? '已配置 · 按需连接' : '已配置 · 可扫描歌曲' }}</p>
+            <p v-if="taskErrors[row.id]" class="scan-error">状态读取失败：{{ taskErrors[row.id] }}，正在重试</p>
+            <p class="panel-description">{{ row.scanEnabled ? '自动扫描已开启' : '自动扫描未开启' }}<span v-if="row.nextScanAt"> · 下次：{{ new Date(row.nextScanAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) }}</span></p>
+            <p v-if="row.lastScanError" class="scan-error">{{ row.lastScanError }}</p>
+          </div>
+          <div class="source-actions">
+            <ElButton @click="showSongs(row)">查看歌曲</ElButton>
+            <ElButton @click="metadataSource = row">完善信息</ElButton>
+            <details class="source-menu"><summary :aria-label="`${row.name}的更多操作`">⋯</summary><div><ElButton text @click="metadataSource = row">分享资料</ElButton><ElButton text :disabled="!!scanning || ingestActive(row.id) || taskActive(tasks[row.id])" @click="scan(row)">扫描歌曲</ElButton><ElButton text @click="open(row.type, row)">编辑</ElButton><ElButton text type="danger" @click="remove(row)">移除</ElButton></div></details>
+          </div>
+        </div>
+      </ElCard>
+      <ElButton v-if="moreSources" :loading="loading" @click="load(true)">显示更多位置</ElButton>
+    </section>
+    <details class="media-notes"><summary>扫描与媒体说明</summary><p class="feature-note">本地目录优先读取音频与视频内嵌标签，缺失信息用文件名补充；WebDAV 可启用后台内嵌元数据提取，同路径复用缓存。扫描不会修改原文件，不代表已验证可播放。</p></details>
+    <WebDavMetadataDialog v-if="metadataSource" :source="metadataSource" :initial-import-file="metadataImportFile" :import-job-id="typeof route.query.import === 'string' ? route.query.import : undefined" @uploading="metadataUploading = $event" @file-consumed="metadataImportFile = undefined" @songs="showSongs(metadataSource!); metadataSource = null" @close="metadataSource = null; metadataImportFile = undefined" @updated="reloadMetadataSource" />
+    <ElDialog v-model="dialog" :title="editorPanel === 'source' ? (editing ? '编辑媒体库' : importMode ? '导入资料包 · 绑定自己的媒体目录' : '添加媒体库') : `${editing?.name || draft.name || '新来源'} · ${editorPanel === 'profiles' ? '文件名识别' : '自定义规则'}`" :width="editorPanel === 'source' ? 'min(560px, calc(100vw - 32px))' : 'min(1120px, calc(100vw - 32px))'" class="media-dialog" :class="{ 'source-workbench': editorPanel !== 'source' }" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving" :before-close="closeSource" @closed="closed">
+      <template v-if="editorPanel !== 'source'">
+        <div class="source-workbench-context"><ElButton ref="editorBack" @click="editorPanel === 'rules' ? returnToProfiles() : returnToSource()">{{ editorPanel === 'rules' ? '← 返回识别方案' : '← 返回来源设置' }}</ElButton><p>来源草稿已保留，选好方案后再保存来源。</p></div>
+        <FilenameProfilesView v-if="editorPanel === 'profiles'" ref="workbench" embedded :profile-id="workbenchProfileId" @use-profile="returnToSource" @rules="showRules" />
+        <FilenameParserView v-else ref="workbench" embedded @profile="returnToProfiles" />
+      </template>
+      <ElForm v-else label-position="top" @submit.prevent="save()">
+        <div v-if="!editing" class="source-types" aria-label="位置类型"><ElButton :type="draft.type === 'LOCAL' ? 'primary' : 'default'" :disabled="saving" @click="changeType('LOCAL')">本地目录</ElButton><ElButton :type="draft.type === 'WEBDAV' ? 'primary' : 'default'" :disabled="saving" @click="changeType('WEBDAV')">WebDAV</ElButton></div>
+        <template v-if="draft.type === 'LOCAL'">
+          <ElFormItem label="歌曲文件夹" required><div class="folder-selection"><span>{{ draft.location || '尚未选择文件夹' }}</span><ElButton :disabled="saving" @click="chooseFolder">选择文件夹</ElButton></div></ElFormItem>
+          <ElFormItem><ElCheckbox v-model="draft.useForLxDownloads" :disabled="saving">用于保存洛雪下载</ElCheckbox><p class="profile-help">仅能指定一个本地媒体库。启用后检查实际写入权限，下载完成自动加入曲库。有未完成任务时不能修改保存位置。</p></ElFormItem>
+          <p class="profile-help">选择后端可访问的目录。Docker 使用挂载后的路径，例如 /media；下载可使用可写的 /downloads。</p>
+        </template>
+        <template v-else>
+          <ElFormItem label="WebDAV 目录地址" required><ElInput v-model="draft.location" placeholder="https://nas.example/dav/歌曲目录/" maxlength="2048" :disabled="saving" /></ElFormItem>
+          <ElFormItem label="用户名（可选）"><ElInput v-model="draft.username" autocomplete="off" maxlength="256" :disabled="saving" /></ElFormItem>
+          <ElFormItem :label="editing?.passwordConfigured ? '密码 / 应用密码（留空保留）' : '密码 / 应用密码（可选）'"><ElInput v-model="draft.password" type="password" show-password autocomplete="new-password" maxlength="1024" :disabled="saving || clearPassword" /></ElFormItem>
+          <ElCheckbox v-if="editing?.passwordConfigured" v-model="clearPassword" :disabled="saving" @change="draft.password = ''">清除已保存密码</ElCheckbox>
+          <p class="muted">凭据仅加密保存在服务端，不会回显。修改地址或账号时需重新填写密码或明确清除。建议使用 HTTPS。OpenList 地址填写 /dav/ 加挂载目录，账号需开启 WebDAV 读取权限；扫描列目录并索引文件名；可按需开启文件内信息读取。目录连接成功不代表媒体可播放。</p>
+        </template>
+        <ElFormItem v-if="!editing && draft.type === 'WEBDAV'" label="入库方式" class="source-import">
+          <ElCheckbox v-model="importMode" :disabled="saving" @change="changeImportMode">从已导出的资料包入库</ElCheckbox>
+          <template v-if="importMode">
+            <div class="source-package"><label class="package-choice" :class="{ disabled: saving }">{{ importFile ? '更换资料包' : '选择资料包' }}<input type="file" accept=".zip,application/zip" aria-label="新媒体库资料包" :disabled="saving" @change="chooseImportFile"></label><span v-if="importFile" class="package-name">{{ importFile.name }}</span></div>
+            <p class="profile-help">填写自己的 WebDAV 媒体根目录，选择导出的完整 ZIP。保存后上传资料包，核对路径并确认导入；不会自动扫描或读取媒体内容。资料保存后只核验目录和文件大小。</p>
+          </template>
+          <ElCheckbox v-else v-model="draft.autoExtractEmbedded" :disabled="saving">自动读取文件内的歌曲信息</ElCheckbox>
+        </ElFormItem>
+        <p v-if="editing?.type === 'WEBDAV'" class="profile-help">迁移媒体目录并保留已整理资料，请从“完善信息 → 高级选项 → 重新绑定自己的媒体目录”操作。</p>
+        <ElFormItem label="名称（可选）"><ElInput v-model="draft.name" placeholder="留空使用文件夹名称" maxlength="100" :disabled="saving" /></ElFormItem>
+        <ElFormItem label="文件名识别" for="source-parser-profile" required class="profile-field">
+          <div class="source-profile-selection"><select id="source-parser-profile" v-model="draft.parserProfileId" aria-label="解析方案" :disabled="saving || profilesLoading || !!profilesError" class="profile-select">
+            <option v-for="profile in profileWorkspace?.profiles ?? []" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+          </select><ElButton :disabled="saving || profilesLoading || !!profilesError || !selectedProfile" @click="showRecognition()">试验与调整</ElButton></div>
+          <p v-if="selectedProfile" class="profile-help">{{ enabledEntries.length }} 条启用规则，按方案中的顺序匹配，第一条完整命中生效。</p>
+          <p v-if="selectedProfile && !enabledEntries.length" class="profile-help">此方案没有启用规则，扫描结果会标记为需复核，不会使用其他方案兜底。</p>
+          <p v-if="!profilesLoading && !profilesError && !selectedProfile" class="profile-help">所选方案已不可用，请重新选择。</p>
+          <p class="profile-help">{{ draft.type === 'LOCAL' ? '优先读取文件内的歌曲信息，缺失时按此方案从文件名补充。' : '扫描时按此方案从文件名提取歌名和歌手。' }}可在此试验命名格式，或进入高级配置编写自定义规则。</p>
+        </ElFormItem>
+        <details :open="advanced" class="source-advanced" @toggle="advanced = ($event.target as HTMLDetailsElement).open"><summary>更多设置 <span>定时扫描</span></summary>
+        <ElFormItem label="定时扫描"><ElCheckbox v-model="draft.scanEnabled" :disabled="saving || (!editing && importMode)">启用定时扫描</ElCheckbox><p v-if="!editing && importMode" class="profile-help">导入资料时关闭定时扫描。导入完成后，可在编辑媒体库时开启。</p></ElFormItem>
+        <ElFormItem v-if="draft.scanEnabled" label="Cron 表达式" required><ElInput v-model="draft.scanCron" aria-label="扫描 Cron 表达式" placeholder="0 3 * * *" maxlength="120" :disabled="saving" /><p class="profile-help">标准五段：分 时 日 月 周。例：0 3 * * * 每天 03:00；*/30 * * * * 每半小时。时区：Asia/Shanghai。同一来源扫描中跳过，停机期间不逐次补跑。</p></ElFormItem>
+        </details>
+        <ElAlert v-if="profilesError" :title="profilesError" type="error" :closable="false"><ElButton text @click="loadProfiles">重新加载解析方案</ElButton></ElAlert>
+        <ElAlert v-if="formError" :title="formError" type="error" :closable="false" show-icon />
+        <div class="dialog-actions"><ElButton :disabled="saving" @click="closeSource()">取消</ElButton><ElButton v-if="!editing && !importMode" :disabled="saving || profilesLoading || !!profilesError || !selectedProfile" @click="save(false)">仅保存</ElButton><ElButton type="primary" native-type="submit" :loading="saving" :disabled="profilesLoading || !!profilesError || !selectedProfile">{{ editing ? '保存修改' : importMode ? '保存并导入资料包' : '保存并扫描' }}</ElButton></div>
+      </ElForm>
+    </ElDialog>
+
+    <LocalFolderPicker v-if="picker" :initial-path="draft.location" :sources="items" :download="draft.useForLxDownloads" @select="confirmFolder" @close="picker = false" />
+  </div>
+</template>
+
+<style scoped>
+.scan-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.scan-progress .el-button {
+  align-self: flex-start;
+  margin-left: 0;
+}
+
+.scan-error {
+  display: block;
+  color: var(--el-color-danger);
+  overflow-wrap: anywhere;
+}
+
+.profile-select {
+  width: 100%;
+}
+
+.profile-field {
+  margin-top: 24px;
+}
+.source-package{display:flex;align-items:center;flex-wrap:wrap;gap:12px;width:100%;margin-top:8px}
+.package-choice{position:relative;display:inline-flex;padding:8px 12px;border:1px solid var(--sv-border-subtle);border-radius:8px;cursor:pointer;overflow:hidden}
+.package-choice input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.package-choice:focus-within{outline:2px solid var(--sv-accent-primary);outline-offset:2px}
+.package-choice.disabled{opacity:.5;cursor:default}
+.package-name{overflow-wrap:anywhere;min-width:0}
+.source-import :deep(.el-form-item__content){align-items:flex-start;flex-direction:column}
+.source-profile-selection { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; width: 100%; }
+.source-profile-selection .profile-select { flex: 1; min-width: 180px; width: auto; }
+.source-profile-selection .el-button { margin-left: 0; }
+.source-profile-link { max-width: 100%; height: auto; margin: 0 0 8px; padding: 8px 0; color: var(--el-color-primary); font-size: 12px; text-align: left; white-space: normal; }
+.source-profile-link :deep(span) { white-space: normal; overflow-wrap: anywhere; line-height: 1.8; }
+.media-library-page :deep(.source-workbench) { display: flex; flex-direction: column; max-height: 92dvh; margin-top: 4vh; }
+.media-library-page :deep(.source-workbench .el-dialog__header) { flex-shrink: 0; }
+.media-library-page :deep(.media-dialog .el-dialog__title) { display: block; padding-right: 28px; overflow-wrap: anywhere; line-height: 1.5; }
+.media-library-page :deep(.source-workbench .el-dialog__body) { overflow-y: auto; overscroll-behavior: contain; }
+.media-library-page :deep(.source-workbench .profiles-rail) { position: static; }
+.source-workbench-context { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--sv-border-subtle); }
+.source-workbench-context p { flex: 1; min-width: 180px; color: var(--sv-text-secondary); font-size: 12px; line-height: 1.9; }
+
+.profile-help {
+  width: 100%;
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--el-text-color-secondary);
+}
+
+.media-list-header h2 {
+  display: flex;
+  align-items: center;
+}
+
+.media-actions .el-button+.el-button {
+  margin-left: 0;
+}
+
+.source-card {
+  overflow: visible;
+}
+
+.folder-selection+.profile-help {
+  margin-bottom: 16px;
+}
+
+.source-menu summary:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+
+.source-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  min-height: 120px;
+}
+
+.source-cards>.el-empty {
+  grid-column: 1/-1;
+}
+
+.source-card :deep(.el-card__body) {
+  height: 100%;
+}
+
+.source-content {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 20px;
+  height: 100%;
+  align-items: start;
+}
+
+.source-icon {
+  background: var(--sv-surface-3);
+  color: var(--sv-text-secondary);
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  font-size: 26px;
+}
+
+.source-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.source-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.source-title h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.source-location {
+  overflow-wrap: anywhere;
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 8px 0;
+}
+
+.source-menu {
+  position: relative;
+}
+
+.source-menu summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 4px 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--sv-radius-sm);
+  list-style: none;
+}
+
+.source-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.source-menu>div {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  min-width: 156px;
+  gap: 4px;
+  padding: 8px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--sv-radius-sm);
+}
+
+.source-actions {
+  grid-column: 1/-1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--sv-border-subtle);
+  align-self: end;
+}
+
+.source-actions :deep(.el-button) {
+  font-size: 14px;
+}
+
+.source-actions .el-button {
+  margin-left: 0;
+}
+
+.source-types {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.source-types .el-button {
+  flex: 1;
+  margin-left: 0;
+}
+
+.folder-selection {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--sv-radius-sm);
+}
+
+.folder-selection span {
+  flex: 1;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.source-advanced {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--sv-radius-sm);
+}
+
+.source-advanced summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.source-advanced summary span {
+  font-weight: normal;
+  color: var(--el-text-color-secondary);
+  margin-left: 8px;
+}
+
+.source-advanced[open] summary {
+  margin-bottom: 20px;
+}
+
+@media(max-width:1000px) {
+  .source-cards {
+    grid-template-columns: minmax(0, 1fr)
+  }
+}
+
+@media(max-width:480px) {
+  .source-workbench-context { margin-bottom: 20px; padding-bottom: 16px; }
+  .source-workbench-context p { display: none; }
+  .source-content {
+    gap: 16px;
+    grid-template-columns: 44px minmax(0, 1fr)
+  }
+
+  .source-icon {
+    width: 44px;
+    height: 44px;
+    font-size: 22px
+  }
+
+  .source-title h2 {
+    font-size: 17px
+  }
+
+  .source-actions>.el-button {
+    margin: 0
+  }
+
+  .source-actions>.el-button:first-child {
+    flex-basis: 100%
+  }
+}
+.source-count { white-space: nowrap; color: var(--sv-text-secondary); font-size: 12px; font-weight: 400; }
+.media-actions { justify-content: flex-end; flex-wrap: nowrap; gap: 8px; }
+.media-more summary { border-color: transparent; font-size: 18px; }
+.source-menu > div .el-button { width: 100%; justify-content: flex-start; margin: 0; }
+.media-notes { margin-top: 16px; color: var(--sv-text-secondary); font-size: 12px; }
+.media-notes summary { display: inline-flex; align-items: center; min-height: 40px; cursor: pointer; }
+.media-notes .feature-note { margin: 4px 0 0; }
+@media(max-width:768px) {
+  .media-actions { gap: 4px; }
+  .source-menu summary, .media-notes summary { min-width: 44px; min-height: 44px; }
+  .source-menu > div .el-button, .source-actions :deep(.el-button), .source-profile-link, .source-advanced summary, .package-choice { min-height: 44px; }
+  .media-actions > .el-button { min-height: 44px; }
+}
+</style>

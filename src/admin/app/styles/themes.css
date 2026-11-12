@@ -1,0 +1,32 @@
+/* 浅色令牌在 tokens.css；两套主题共用相同的组件和布局。 */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --sv-surface-0: #141415;
+  --sv-surface-1: #171719;
+  --sv-surface-2: #19191b;
+  --sv-surface-3: #232325;
+  --sv-surface-4: #303034;
+  --sv-media-stage: #101011;
+  --sv-accent-primary: #60a5fa;
+  --sv-accent-muted: #93c5fd;
+  --sv-accent-soft: #1d293c;
+  --sv-on-accent: #111827;
+  --sv-semantic-ok: #74d6a1;
+  --sv-semantic-ok-soft: #192b22;
+  --sv-semantic-warn: #efbd67;
+  --sv-semantic-warn-soft: #30291d;
+  --sv-semantic-danger: #f18e97;
+  --sv-semantic-danger-soft: #321f24;
+  --sv-text-primary: #ededed;
+  --sv-text-secondary: #b0b0b5;
+  --sv-text-tertiary: #9898a0;
+  --sv-text-inverse: #ededed;
+  --sv-border-subtle: #2c2c30;
+  --sv-border-default: #414147;
+  --sv-border-strong: #68686f;
+  --sv-scrim: rgb(0 0 0 / 64%);
+  --sv-groove-ink: rgb(237 237 237 / 8%);
+  --sv-shadow-sm: none;
+  --sv-shadow-md: 0 8px 24px rgb(0 0 0 / 16%);
+  --sv-shadow-lg: 0 16px 48px rgb(0 0 0 / 24%);
+}
