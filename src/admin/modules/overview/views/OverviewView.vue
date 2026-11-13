@@ -49,7 +49,6 @@ type Stat = { key: string; label: string; to: string; tone: 'default' | 'highlig
 const stats = computed<Stat[]>(() => {
   const loading = data.state === 'loading'
   const lib = ok('library') ? ov.value!.library! : null
-  const tv = ok('tv') ? ov.value!.tv! : null
   const cell = (available: boolean, n: number | undefined, hint?: string) => ({
     value: loading ? '—' : available ? fmt(n ?? 0) : '—',
     hint: loading ? undefined : available ? hint : '读取失败',
@@ -58,7 +57,6 @@ const stats = computed<Stat[]>(() => {
     { key: 'total', label: '文件总数', to: '/library/songs?lens=songs', tone: 'default', ...cell(!!lib, lib?.totalSongs, lib ? `正式歌曲 ${fmt(lib.formalSongs)} 首` : undefined) },
     { key: 'formal', label: '正式歌曲', to: '/library/songs?lens=formal', tone: 'default', ...cell(!!lib, lib?.formalSongs, lib ? `${fmt(lib.formalVariants)} 个媒体版本` : undefined) },
     { key: 'review', label: '待复核', to: '/library/songs?status=REVIEW', tone: (lib?.reviewSongs ?? 0) > 0 ? 'warn' : 'default', ...cell(!!lib, lib?.reviewSongs) },
-    { key: 'tv', label: '已授权电视', to: '/system/tv-devices', tone: 'default', ...cell(!!tv, tv?.activeDevices, tv && tv.pending > 0 ? `${tv.pending} 台等待批准` : undefined) },
   ]
 })
 
@@ -67,8 +65,6 @@ const todos = computed<Todo[]>(() => {
   const list: Todo[] = []
   const d = ov.value
   if (auth.account?.defaultPassword) list.push({ key: 'password', level: 'danger', title: '仍在使用默认密码', detail: '任何知道默认密码的人都能登录管理中心。', action: '修改密码', to: '/system/parameters' })
-  const tv = ok('tv') ? d!.tv! : null
-  if (tv && tv.pending > 0) list.push({ key: 'tv', level: 'warn', title: `${tv.pending} 台电视等待授权`, detail: '核对电视上的六位授权码后批准，申请会在有效期后失效。', action: '去批准', to: '/system/tv-devices' })
   const src = ok('sources') ? d!.sources! : null
   if (src && src.total === 0) list.push({ key: 'no-source', level: 'info', title: '还没有添加媒体库', detail: '添加本地目录或 WebDAV 并扫描后，歌曲才会出现在曲库中。', action: '添加媒体库', to: '/library/media?add=LOCAL' })
   if (src && src.failed.length > 0) list.push({ key: 'scan', level: 'warn', title: `${src.failed.length} 个媒体库最近扫描失败`, detail: src.failed.map(item => item.name).join('、'), action: '查看媒体库', to: '/library/media' })
@@ -82,7 +78,7 @@ const todos = computed<Todo[]>(() => {
   return list
 })
 const todoLoading = computed(() => data.state === 'loading')
-const todoSections = ['library', 'sources', 'review', 'tv'] as const
+const todoSections = ['library', 'sources', 'review'] as const
 const todoErrors = computed(() => data.state === 'loading' ? 0 : todoSections.filter(key => !ok(key)).length)
 
 const recentSongs = computed(() => ok('recentSongs') ? (ov.value!.recentSongs ?? []) : null)
@@ -93,7 +89,7 @@ const playback = computed(() => ok('playback30d') ? ov.value!.playback30d! : nul
 const shortcuts = [
   { icon: FolderOpened, title: '扫描媒体库', text: '添加来源或重新扫描', to: '/library/media' },
   { icon: MagicStick, title: '整理元数据', text: '匹配平台信息并审核', to: '/library/songs/metadata' },
-  { icon: Monitor, title: '连接电视', text: '批准或撤销电视访问', to: '/system/tv-devices' },
+  { icon: Monitor, title: '电视首页', text: '设置电视首页与轮播', to: '/system/tv-settings' },
 ]
 </script>
 
@@ -292,7 +288,7 @@ const shortcuts = [
 
 .overview-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   margin: 24px 0 16px;
 }

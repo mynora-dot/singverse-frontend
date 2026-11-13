@@ -19,7 +19,7 @@ const metrics = [
         <button type="button" @click="emit('login', '/library/songs')">曲库</button>
         <button class="is-current" type="button" @click="emit('login', '/library/media')">加歌</button>
         <button type="button" @click="emit('login', '/library/songs/metadata')">整理</button>
-        <button type="button" @click="emit('login', '/system/tv-devices')">客厅</button>
+        <button type="button" @click="emit('login', '/system/tv-settings')">客厅</button>
       </nav>
     </div>
     <div class="sv-home-preview-tabs"><span>歌曲来源</span><button type="button" @click="emit('login', '/library/downloads')">下载歌曲</button><button type="button" @click="emit('login', '/library/media/recognition')">文件名识别</button></div>

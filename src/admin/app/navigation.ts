@@ -20,9 +20,8 @@ export const navigationGroups = [
     { path: '/library/audio-processing', label: '原唱与伴奏', icon: Headset },
     { path: '/library/review', label: '待审核', icon: CollectionTag },
   ] },
-  { id: 'living', label: '客厅', path: '/system/tv-devices', icon: Monitor, children: [
+  { id: 'living', label: '客厅', path: '/system/tv-settings', icon: Monitor, children: [
     { path: '/system/client-downloads', label: '客户端下载', icon: Download },
-    { path: '/system/tv-devices', label: '电视连接', icon: Monitor },
     { path: '/system/tv-settings', label: '电视首页', icon: Monitor },
     { path: '/library/playback-history', label: '播放与热门', icon: Clock },
     { path: '/library/missing-feedback', label: '缺歌心愿', icon: ChatLineSquare },

@@ -23,7 +23,6 @@ const baseOverview = (over: Record<string, unknown> = {}) => ({
   library: { totalSongs: 0, reviewSongs: 0, formalSongs: 0, formalVariants: 0, formalMedia: 0 },
   sources: { total: 0, failedTotal: 0, neverScanned: 0, failed: [] },
   review: { metadataBatch: null, classification: { activeTasks: 0, reviewItems: 0, latestTaskId: '' }, missingFeedbackPending: 0 },
-  tv: { activeDevices: 0, pending: 0 },
   tasks: { activeTotal: 0, counts: {}, items: [], observedAt: '' },
   recentSongs: [],
   playback30d: { totalPlays: 0, effectivePlays: 0, playedSongs: 0, playedMs: 0 },
@@ -47,7 +46,6 @@ it('使用聚合接口统计真实数字，并把待办链接到对应页面', a
     '/api/v1/admin/overview': baseOverview({
       library: { totalSongs: 1280, reviewSongs: 12, formalSongs: 900, formalVariants: 950, formalMedia: 1000 },
       sources: { total: 2, failedTotal: 1, neverScanned: 0, failed: [{ id: 'b', name: '来源b', lastScanError: '目录不可读' }] },
-      tv: { activeDevices: 1, pending: 1 },
     }),
     '/api/v1/background-tasks': emptyTasks,
     '/api/health': { status: 'UP' },
@@ -59,9 +57,10 @@ it('使用聚合接口统计真实数字，并把待办链接到对应页面', a
     expect(tiles[0]).toContain('1,280')
     expect(tiles[1]).toContain('900')
     expect(tiles[2]).toContain('12')
-    expect(tiles[3]).toContain('1')
+    expect(tiles).toHaveLength(3)
     const todos = wrapper.findAll('.todo-item').map(item => item.text())
-    expect(todos.some(text => text.includes('1 台电视等待授权'))).toBe(true)
+    expect(wrapper.text()).not.toContain('电视等待授权')
+    expect(wrapper.findAll('a').some(link => link.attributes('href')?.includes('/system/tv-devices'))).toBe(false)
     expect(todos.some(text => text.includes('1 个媒体库最近扫描失败') && text.includes('来源b'))).toBe(true)
     expect(todos.some(text => text.includes('12 首歌曲待复核'))).toBe(true)
     expect(todos.some(text => text.includes('默认密码') || text.includes('二次验证'))).toBe(false)
@@ -84,7 +83,7 @@ it('单块读取失败只影响该块，不显示“无待办”，可重新读�
   try {
     await flushPromises()
     expect(wrapper.findAll('.stat-block')[0]!.text()).toContain('读取失败')
-    expect(wrapper.findAll('.stat-block')[3]!.text()).toContain('0')
+    expect(wrapper.findAll('.stat-block')).toHaveLength(3)
     expect(wrapper.get('[role="alert"]').text()).toContain('1 项状态读取失败')
     const todos = wrapper.get('.todo-list').text()
     expect(todos).toContain('仍在使用默认密码')

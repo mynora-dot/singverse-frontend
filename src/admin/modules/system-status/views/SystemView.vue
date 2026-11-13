@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ElIcon } from 'element-plus'
-import { ArrowRight, Connection, Monitor } from '@element-plus/icons-vue'
+import { ArrowRight, Connection } from '@element-plus/icons-vue'
 import ServiceHealthCard from '../components/ServiceHealthCard.vue'
 import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { adminBasePath } from '../../../core/hosting/mount-path'
@@ -27,7 +27,6 @@ const entries = [
     </section>
     <nav class="sv-panel sv-content-section related-settings" aria-label="相关设置">
       <RouterLink to="/system/compute"><ElIcon><Connection /></ElIcon><span><strong>性能节点配置</strong><small>媒体探测、转码与硬件加速节点</small></span><ElIcon><ArrowRight /></ElIcon></RouterLink>
-      <RouterLink to="/system/tv-devices"><ElIcon><Monitor /></ElIcon><span><strong>电视设备</strong><small>批准或撤销电视访问</small></span><ElIcon><ArrowRight /></ElIcon></RouterLink>
     </nav>
     <p class="muted">服务健康只表示主服务可以响应，不代表计算节点、转码或某首歌曲已经可以播放。</p>
   </section>

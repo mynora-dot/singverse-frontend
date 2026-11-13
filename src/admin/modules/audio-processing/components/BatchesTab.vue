@@ -77,7 +77,7 @@ defineExpose({ refresh: () => busy.value ? Promise.resolve() : loadCurrent() })
   <div class="batches-tab">
     <ElAlert v-if="error" :title="error" type="error" show-icon :closable="false" />
     <p v-if="recognition" class="muted">查看重新识别的结果。无法确定的歌曲会显示“待人工确认”，可试听标记，也可改用深度识别。</p>
-    <ElEmpty v-if="!batches.length" :description="recognition ? '还没有批量识别任务' : '还没有生成过伴奏'"><p class="muted">{{ recognition ? '在“歌曲”中筛选识别未完成的歌曲，勾选后点击“批量自动识别”。' : '在“歌曲”中勾选要处理的歌曲，再点“为所选歌曲生成伴奏”。' }}</p><ElButton type="primary" @click="emit('songs')">去选择歌曲</ElButton></ElEmpty>
+    <ElEmpty v-if="!batches.length" :description="recognition ? '还没有批量识别任务' : '还没有生成过伴奏'"><p class="muted">{{ recognition ? '在“歌曲”中筛选识别未完成的歌曲，勾选后点击“识别已有音轨”。' : '在“歌曲”中勾选要处理的歌曲，再点“生成伴奏”。' }}</p><ElButton type="primary" @click="emit('songs')">去选择歌曲</ElButton></ElEmpty>
     <ul v-else class="batch-list" :aria-label="recognition ? '识别任务' : '生成任务'">
       <li v-for="batch in batches" :key="batch.id" class="batch-row">
         <div class="batch-main">
@@ -110,7 +110,7 @@ defineExpose({ refresh: () => busy.value ? Promise.resolve() : loadCurrent() })
             <div class="item-main"><strong>{{ item.title }}</strong><p v-if="item.error" :class="item.state === 'FAILED' ? 'inline-error' : 'muted'">{{ item.error }}</p></div>
             <span v-if="item.execution?.backend" class="muted">{{ backendName(item.execution.backend) }}</span>
             <ElTag :type="itemTones[item.state] || 'info'" effect="light" size="small">{{ itemState(item) }}</ElTag>
-            <ElButton v-if="recognition && item.state === 'REVIEW'" link type="primary" :disabled="busy" @click="emit('song', item.song_id)">去确认</ElButton>
+            <ElButton link type="primary" :disabled="busy" @click="current = undefined; emit('song', item.song_id)">{{ recognition && item.state === 'REVIEW' ? '去确认' : '查看歌曲' }}</ElButton>
             <ElButton v-if="['PENDING', 'PROBING', 'PROCESSING'].includes(item.state)" link :disabled="busy" :aria-label="'停止' + item.title" @click="cancelItem(item)">停止</ElButton>
           </li>
         </ul>

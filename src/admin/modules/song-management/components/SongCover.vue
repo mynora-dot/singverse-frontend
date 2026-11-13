@@ -2,19 +2,23 @@
 import { computed, ref, watch } from 'vue'
 import type { MediaSong } from '../../media-library/types'
 import { songTitle } from '../../metadata/utils'
-const props = defineProps<{ song: MediaSong; fallbackOnly?: boolean }>()
+// Playback records carry a song ID rather than the complete library metadata.
+const props = defineProps<{ song?: MediaSong; songId?: string; title?: string; fallbackOnly?: boolean }>()
 const failed = ref(false)
+const id = computed(() => props.song?.id ?? props.songId ?? '')
+const title = computed(() => props.song ? songTitle(props.song) : props.title || '未命名歌曲')
 const artwork = computed(() => {
-  const metadata = props.song.metadata
-  return metadata && !metadata.stale && metadata.fields.includes('cover') && metadata.track.coverUrl
-    ? `/api/v1/metadata/songs/${encodeURIComponent(props.song.id)}/cover?variant=thumbnail` : ''
+  if (!id.value) return ''
+  const metadata = props.song?.metadata
+  const available = !props.song || (metadata && !metadata.stale && metadata.fields.includes('cover') && metadata.track.coverUrl)
+  return available ? `/api/v1/metadata/songs/${encodeURIComponent(id.value)}/cover?variant=thumbnail` : ''
 })
-watch(() => [props.song.id, props.song.metadata, artwork.value], () => { failed.value = false })
+watch(() => [id.value, props.song?.metadata, artwork.value], () => { failed.value = false })
 </script>
 <template>
   <span class="song-cover">
-    <img v-if="artwork && !failed && !fallbackOnly" :src="artwork" :alt="`${songTitle(song)}的封面`" loading="lazy" decoding="async" @error="failed = true">
-    <span v-else class="song-cover-placeholder" role="img" aria-label="暂无歌曲封面"><span class="record-grooves"><span>{{ songTitle(song).slice(0, 1) }}</span></span></span>
+    <img v-if="artwork && !failed && !fallbackOnly" :src="artwork" :alt="`${title}的封面`" loading="lazy" decoding="async" width="48" height="48" @error="failed = true">
+    <span v-else class="song-cover-placeholder" role="img" aria-label="暂无歌曲封面"><span class="record-grooves"><span>{{ title.slice(0, 1) }}</span></span></span>
   </span>
 </template>
 <style scoped>

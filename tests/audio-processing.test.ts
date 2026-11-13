@@ -46,6 +46,13 @@ const stubs = {
 }
 async function open() { wrapper = mount(View, { global: { stubs } }); await flushPromises() }
 function button(text: string, scope: Pick<DOMWrapper<Element>, 'findAll'> = wrapper!) { return scope.findAll('button').find(item => item.text() === text)! }
+async function configureGeneration() {
+  await button('生成伴奏', wrapper!.get('.selection-bar')).trigger('click'); await flushPromises()
+}
+async function prepareGeneration() {
+  await configureGeneration()
+  await button('预览处理范围').trigger('click'); await flushPromises()
+}
 function requested(fragment: string) { return vi.mocked(authRequest).mock.calls.some(([path]) => path.includes(fragment)) }
 
 it('任务中心的批次深链接直接打开指定批次详情', async () => {
@@ -60,7 +67,7 @@ it('跨页勾选后确认生成，提交后进入生成任务并显示执行设�
   await button('下一页').trigger('click'); await flushPromises()
   await wrapper!.find('input[aria-label="选择c"]').setValue(true)
   expect(wrapper!.text()).toContain('已选 2 首')
-  await button('为所选歌曲生成伴奏').trigger('click'); await flushPromises()
+  await prepareGeneration()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/batches/preview', 'POST', expect.objectContaining({ ids: ['a', 'c'], all: false }), 120000)
   const dialog = wrapper!.get('[role="dialog"]')
   expect(dialog.text()).toContain('将为 2 首歌曲生成独立伴奏'); expect(dialog.text()).toContain('先读取音轨 1 首')
@@ -76,7 +83,7 @@ it('全部筛选结果绑定已应用的筛选，编辑未提交条件不会改�
   await open(); await button('选择全部 60 首').trigger('click')
   expect(wrapper!.text()).toContain('已选 60 首')
   await wrapper!.find('input[placeholder="搜索歌曲名称"]').setValue('尚未应用')
-  await button('为所选歌曲生成伴奏').trigger('click'); await flushPromises()
+  await prepareGeneration()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/batches/preview', 'POST', expect.objectContaining({ all: true, filter: expect.objectContaining({ title: '', streams: null }) }), 120000)
 })
 it('后台准备显示进度，准备完成前不能提交，完成后等待明确确认', async () => {
@@ -87,7 +94,7 @@ it('后台准备显示进度，准备完成前不能提交，完成后等待明�
     return previous(...args)
   })
   await open(); await wrapper!.get('input[aria-label="选择a"]').setValue(true)
-  await button('为所选歌曲生成伴奏').trigger('click'); await flushPromises()
+  await prepareGeneration()
   expect(wrapper!.get('[role="dialog"]').text()).toContain('200 / 1000')
   expect(button('开始生成').attributes('disabled')).toBeDefined()
   expect(requested('/submit')).toBe(false)
@@ -103,7 +110,7 @@ it('准备中可取消且取消后不能提交', async () => {
     return previous(...args)
   })
   await open(); await wrapper!.get('input[aria-label="选择a"]').setValue(true)
-  await button('为所选歌曲生成伴奏').trigger('click'); await flushPromises()
+  await prepareGeneration()
   await button('取消准备').trigger('click'); await flushPromises()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/batches/batch/cancel', 'POST')
   expect(wrapper!.get('[role="dialog"]').text()).toContain('已取消准备')
@@ -119,7 +126,7 @@ it('取消准备后迟到的预览轮询不能恢复开始按钮', async () => {
     return previous(...args)
   })
   await open(); await wrapper!.get('input[aria-label="选择a"]').setValue(true)
-  await button('为所选歌曲生成伴奏').trigger('click'); await flushPromises()
+  await prepareGeneration()
   await vi.advanceTimersByTimeAsync(4000)
   await button('取消准备').trigger('click'); await flushPromises()
   resolvePreview(preview); await flushPromises()
@@ -164,7 +171,7 @@ it('应用新筛选会清除旧选择', async () => {
   await wrapper!.find('input[placeholder="搜索歌手"]').setValue('新歌手')
   await wrapper!.find('form').trigger('submit'); await flushPromises()
   expect(wrapper!.text()).not.toContain('已选')
-  expect(button('为所选歌曲生成伴奏').attributes('disabled')).toBeDefined()
+  expect(wrapper!.find('.selection-bar').exists()).toBe(false)
   expect(requested('artist=%E6%96%B0%E6%AD%8C%E6%89%8B')).toBe(true)
 })
 it('状态快捷筛选立即生效，并按状态给出对应的单曲操作', async () => {
@@ -178,11 +185,11 @@ it('状态快捷筛选立即生效，并按状态给出对应的单曲操作', a
     return previous(...args)
   })
   await open()
-  const chip = wrapper!.findAll('.chip input').find(input => input.element.parentElement!.textContent === '待标记原唱')!
-  await chip.setValue(true); await flushPromises()
+  await wrapper!.get('select[aria-label="更多处理状态"]').setValue('UNCONFIRMED')
+  await wrapper!.get('form').trigger('submit'); await flushPromises()
   expect(requested('state=UNCONFIRMED')).toBe(true)
   expect(wrapper!.text()).toContain('待标记'); expect(wrapper!.text()).toContain('已有伴奏'); expect(wrapper!.text()).toContain('素材或模型不支持此任务')
-  expect(button('试听伴奏')).toBeTruthy(); expect(button('生成伴奏')).toBeTruthy()
+  expect(button('试听伴奏')).toBeTruthy(); expect(button('重新生成')).toBeTruthy()
   await button('标记原唱').trigger('click'); await flushPromises()
   const drawer = wrapper!.get('.drawer')
   expect(drawer.text()).toContain('哪一条是原唱'); expect(drawer.text()).toContain('音轨 1 · AAC 立体声')
@@ -241,7 +248,10 @@ it('停止任务确认期间阻止重复提交，离页后不发送停止请求'
 })
 it('没有合格后端时禁止生成，并引导到节点与模型下载模型', async () => {
   ready = false; await open()
-  expect(button('为所选歌曲生成伴奏').attributes('disabled')).toBeDefined()
+  expect(wrapper!.find('.selection-bar').exists()).toBe(false)
+  await wrapper!.get('input[aria-label="选择a"]').setValue(true)
+  await configureGeneration()
+  expect(button('预览处理范围').attributes('disabled')).toBeDefined()
   expect(wrapper!.text()).toContain('还没有安装分离模型')
   await button('去准备环境').trigger('click'); await flushPromises()
   expect(router.push).toHaveBeenCalledWith('/system/compute#audio-models')
@@ -259,8 +269,10 @@ it('离开页面后不再轮询', async () => {
 })
 it('模型试跑通过但当前资源不足时阻止生成并显示预算入口', async () => {
   resourceReady = false; await open()
-  expect(button('为所选歌曲生成伴奏').attributes('disabled')).toBeDefined()
-  expect(wrapper!.text()).toContain('内存或磁盘不足')
+  await wrapper!.get('input[aria-label="选择a"]').setValue(true)
+  await configureGeneration()
+  expect(button('预览处理范围').attributes('disabled')).toBeDefined()
+  expect(wrapper!.text()).toContain('空闲内存或磁盘低于预算')
 })
 it('隐藏部署信息，OpenVINO模型下载使用独立清单', async () => {
   const previous = vi.mocked(authRequest).getMockImplementation()!
@@ -327,8 +339,8 @@ it('表格展示封面音轨与任务信息，调整分页后回到首页', asyn
   const previous = vi.mocked(authRequest).getMockImplementation()!
   vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/songs?') ? { totalElements: 60, items: [row('a', { coverAvailable: true, audio: { ...roles, jobs: [{ id: 'job', kind: 'SEPARATE', state: 'FAILED', backend: 'cuda', error: '执行失败' }] } })] } as never : previous(...args))
   await open()
-  expect(wrapper!.findAll('thead th')).toHaveLength(7)
-  expect(wrapper!.text()).toContain('AAC · 2 声道')
+  expect(wrapper!.findAll('thead th')).toHaveLength(6)
+  expect(wrapper!.text()).toContain('AAC · 立体声')
   expect(wrapper!.text()).toContain('执行失败')
   expect(wrapper!.get('.row-cover img').attributes('src')).toBe('/api/v1/metadata/songs/a/cover')
   await wrapper!.get('.row-cover img').trigger('error')
@@ -342,6 +354,8 @@ it('硬件存在时仍允许主动选择已合格的 CPU', async () => {
   const previous = vi.mocked(authRequest).getMockImplementation()!
   vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/node') ? { ...node(), backends: [{ id: 'cpu', state: 'AVAILABLE' }, { id: 'cuda', state: 'AVAILABLE', detected: true }, { id: 'mps', state: 'AVAILABLE', detected: true }] } as never : previous(...args))
   await open()
+  await wrapper!.get('input[aria-label="选择a"]').setValue(true)
+  await configureGeneration()
   const choices = wrapper!.get('[aria-label="生成伴奏使用的设备"]')
   expect(choices.find('option[value="cpu"]').exists()).toBe(true)
   expect(choices.find('option[value="cuda"]').exists()).toBe(true)

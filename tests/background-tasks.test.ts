@@ -5,7 +5,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { ElPagination, ElSelect } from 'element-plus'
 import View from '../src/admin/modules/background-tasks/BackgroundTasksView.vue'
 import { backgroundTasks, type BackgroundTask, type ItemPage, type TaskPage } from '../src/admin/modules/background-tasks/api'
-import { frameProgress } from '../src/admin/modules/background-tasks/presentation'
+import { childTaskCount, frameProgress } from '../src/admin/modules/background-tasks/presentation'
 
 vi.mock('../src/admin/modules/background-tasks/api')
 const sample = (changes: Partial<BackgroundTask> = {}): BackgroundTask => ({
@@ -183,9 +183,34 @@ it('扫描完成与整批等待分别显示，后续任务继续轮询', async (
   expect(wrapper!.text()).toContain('已发现 4 首歌曲')
   expect(wrapper!.text()).toContain('2 首等待后续阶段判断或创建')
   expect(wrapper!.text()).toContain('等待后续音轨处理')
+  expect(wrapper!.get('.task-phase-track').text()).toContain('尚未创建子任务')
   expect(backgroundTasks.items).not.toHaveBeenCalled()
   await tick(2000)
   expect(backgroundTasks.children).toHaveBeenCalledTimes(2)
+})
+
+it('待登记歌曲不误算为已创建子任务，服务端总数优先', () => {
+  expect(childTaskCount(sample({ childrenCounts: { queued: 2, pendingDiscovery: 2 } }))).toBe(0)
+  expect(childTaskCount(sample({ childrenCounts: { queued: 3, pendingDiscovery: 2, running: 1 } }))).toBe(2)
+  expect(childTaskCount(sample({ childrenCounts: { total: 0, queued: 2, pendingDiscovery: 2, failed: 1 } }))).toBe(0)
+})
+
+it('未记录扫描状态时不宣称扫描完成，也不显示虚构百分比', async () => {
+  vi.mocked(backgroundTasks.detail).mockResolvedValue(sample({ status: 'QUEUED', stage: 'WAITING_RECOGNITION',
+    operation: { ...sample().operation, status: '', businessStatus: '', stage: '' }, childrenCounts: { total: 0 } }))
+  await open('/system/tasks/task-one')
+  expect(wrapper!.get('.task-phase-track').text()).toContain('扫描状态未记录')
+  expect(wrapper!.get('.task-phase-track').text()).not.toContain('扫描完成')
+  expect(wrapper!.find('[role="progressbar"]').exists()).toBe(false)
+})
+
+it('清除空结果的筛选时保留历史范围并恢复搜索框', async () => {
+  vi.mocked(backgroundTasks.list).mockResolvedValue(page([]))
+  await open('/system/tasks?view=HISTORY&type=METADATA&status=FAILED&q=无结果')
+  await button('清除筛选').trigger('click'); await flushPromises()
+  expect(router.currentRoute.value.query).toEqual({ view: 'HISTORY' })
+  expect(wrapper!.get('input[aria-label="搜索任务名称或编号"]').element).toHaveProperty('value', '')
+  expect(backgroundTasks.list).toHaveBeenLastCalledWith({ view: 'HISTORY', type: '', status: '', q: '', page: 0 })
 })
 
 it('迟到的子任务响应不会覆盖新批次，明细失败保留结果并五秒重试', async () => {

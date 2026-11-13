@@ -75,7 +75,7 @@ onMounted(load)
 
 <template>
   <section class="tv-settings">
-    <PageHeader title="电视首页" description="为客厅里的 SingVerse 配置专属首页。所有已授权电视共用此设置。">
+    <PageHeader title="电视首页" description="为客厅里的 SingVerse 配置专属首页。所有登录此 NAS 的电视共用此设置。">
       <template #actions><ElButton :disabled="busy" @click="load">重新加载</ElButton><ElButton type="primary" :loading="busy" :disabled="!settings || !dirty" @click="save">保存设置</ElButton></template>
     </PageHeader>
     <div v-if="error" role="alert" class="tv-error">{{ error }}</div>

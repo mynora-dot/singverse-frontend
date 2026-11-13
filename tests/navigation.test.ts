@@ -7,7 +7,7 @@ import { navigationGroups, navigationContext } from '../src/admin/app/navigation
 
 beforeEach(() => {
   vi.stubGlobal('scrollTo', vi.fn())
-  vi.stubGlobal('fetch', vi.fn().mockImplementation((path: string) => Promise.resolve(path.includes('/background-tasks/batch-1') ? Response.json({detail:'任务不存在'}, {status:404}) : Response.json((path.includes('/ai/') || path.endsWith('/classification/tags')) ? [] : path.includes('/auth/session') ? { username: 'admin', defaultPassword: true, mfaEnabled: false, recoveryCodesRemaining: 0 } : { status: 'UP', items: [], totalElements: 0, devices: [], pending: [] }))))
+  vi.stubGlobal('fetch', vi.fn().mockImplementation((path: string) => Promise.resolve(path.includes('/background-tasks/batch-1') ? Response.json({detail:'任务不存在'}, {status:404}) : Response.json((path.includes('/ai/') || path.endsWith('/classification/tags')) ? [] : path.includes('/auth/session') ? { username: 'admin', defaultPassword: true, mfaEnabled: false, recoveryCodesRemaining: 0 } : { status: 'UP', items: [], totalElements: 0 }))))
 })
 afterEach(() => vi.unstubAllGlobals())
 it('键盘跳转主要内容不会破坏 hash 路由', async () => {
@@ -39,7 +39,7 @@ it('精简主导航与当前分区提供全部现有管理功能', async () => {
   await router.push('/library/songs'); const wrapper = mount(App, { global: { plugins: [router] } }); await flushPromises()
   expect(wrapper.findAll('.primary-navigation a').map(a => a.text())).toEqual(['首页','曲库','加歌','整理','客厅'])
   expect(wrapper.findAll('.section-navigation a').map(a => a.text())).toEqual(['歌曲','歌手','歌单','分类标签'])
-  const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/classification','/library/media','/library/downloads','/library/media/recognition','/library/songs/metadata','/library/audio-processing','/library/review','/system/tv-devices','/system/tv-settings','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai','/system']
+  const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/classification','/library/media','/library/downloads','/library/media/recognition','/library/songs/metadata','/library/audio-processing','/library/review','/system/tv-settings','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai','/system']
   expect(navigationGroups.flatMap(g => g.children.map(e => e.path)).sort()).toEqual(expected.sort())
   await wrapper.get('.mobile-nav-toggle').trigger('click')
   expect(wrapper.get('#admin-navigation').text()).toContain('账号与安全'); expect(wrapper.get('#admin-navigation').text()).toContain('分类标签')
@@ -92,4 +92,17 @@ it('顶栏全局搜索跳转到歌曲工作区并携带搜索词与透镜', asyn
   expect(router.currentRoute.value.path).toBe('/library/songs')
   expect(router.currentRoute.value.query).toEqual({ lens: 'songs', search: '周杰伦' })
   wrapper.unmount()
+})
+
+it('电视授权页和入口已移除，客厅入口直接进入电视首页设置', async () => {
+  expect(navigationGroups.find(group => group.id === 'living')?.path).toBe('/system/tv-settings')
+  expect(router.getRoutes().some(route => route.path === '/system/tv-devices')).toBe(false)
+  await router.push('/system/tv-devices')
+  const wrapper = mount(App, { global: { plugins: [router] } })
+  try {
+    await flushPromises()
+    expect(wrapper.text()).toContain('页面不存在')
+    expect(wrapper.findAll('a').some(link => link.attributes('href')?.includes('/system/tv-devices'))).toBe(false)
+    expect(vi.mocked(fetch).mock.calls.some(([path]) => String(path).includes('/device-authorizations') || String(path).includes('/tv-devices'))).toBe(false)
+  } finally { wrapper.unmount() }
 })

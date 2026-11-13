@@ -8,7 +8,6 @@ export interface OverviewSources { total: number; failedTotal: number; neverScan
 export interface OverviewMetadataBatch { id: string; status: string; review: number; completed: number; total: number }
 export interface OverviewClassification { activeTasks: number; reviewItems: number; latestTaskId: string }
 export interface OverviewReview { metadataBatch: OverviewMetadataBatch | null; classification: OverviewClassification; missingFeedbackPending: number }
-export interface OverviewTv { activeDevices: number; pending: number }
 export interface OverviewTasks { activeTotal: number; counts: Record<string, number>; items: BackgroundTask[]; observedAt: string }
 export interface OverviewPlayback { totalPlays: number; effectivePlays: number; playedSongs: number; playedMs: number }
 export interface OverviewCache { usageBytes: number; entryCount: number }
@@ -22,7 +21,6 @@ export interface AdminOverview {
   library: OverviewLibrary | null
   sources: OverviewSources | null
   review: OverviewReview | null
-  tv: OverviewTv | null
   tasks: OverviewTasks | null
   recentSongs: MediaSong[] | null
   playback30d: OverviewPlayback | null
@@ -46,7 +44,6 @@ export function normalizeOverview(raw: unknown): AdminOverview {
     library: pick<OverviewLibrary>(data, 'library'),
     sources: pick<OverviewSources>(data, 'sources'),
     review: pick<OverviewReview>(data, 'review'),
-    tv: pick<OverviewTv>(data, 'tv'),
     tasks: pick<OverviewTasks>(data, 'tasks'),
     recentSongs: Array.isArray(data.recentSongs) ? (data.recentSongs as MediaSong[]) : null,
     playback30d: pick<OverviewPlayback>(data, 'playback30d'),

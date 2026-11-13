@@ -24,6 +24,27 @@ const stages: Record<string, string> = {
   download: '读取素材', transcode: '转换媒体', analyze: '分析音轨', inference: '模型推理',
 }
 export const activeTask = (status: string) => ['QUEUED', 'RUNNING', 'PAUSED', 'CANCELLING', 'AWAITING_CONFIRMATION'].includes(status)
+export const countNames: Record<string, string> = { completed: '完成', queued: '排队', running: '运行', failed: '失败', review: '待审核', uncertain: '识别不确定' }
+export const isScan = (task: BackgroundTask) => task.type.endsWith('SCAN')
+export function compactTaskName(task: BackgroundTask) {
+  const suffix = task.subjectName ? ' · ' + task.subjectName : ''
+  return suffix && task.name.endsWith(suffix) ? task.name.slice(0, -suffix.length) : task.name
+}
+export function taskHighlights(task: BackgroundTask) {
+  return Object.entries(countNames).flatMap(([key, label]) => {
+    const value = Math.max(task.childrenCounts[key] || 0, Number(task.statistics[key] || 0))
+    return value > 0 ? [{ key, label, value }] : []
+  })
+}
+/** 待登记的歌曲也会计入 queued；不能将它们误当成已创建的子任务。 */
+export function childTaskCount(task: BackgroundTask) {
+  const counts = task.childrenCounts
+  if (typeof counts.total === 'number') return Math.max(0, counts.total)
+  const queued = Math.max(0, (counts.queued || 0) - (counts.pendingDiscovery || 0))
+  const registered = ['completed', 'running', 'failed', 'cancelled', 'interrupted', 'skipped']
+    .reduce((total, key) => total + (counts[key] || 0), queued)
+  return Math.max(registered, counts.review || 0, counts.uncertain || 0)
+}
 export const stageName = (stage: string) => stages[stage] || stage || '等待更新'
 export function tone(status: string): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
   if (status === 'COMPLETED') return 'success'
