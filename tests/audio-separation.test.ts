@@ -41,3 +41,15 @@ it('手工确认左声道后只提取该声道，不改动全曲库原唱标记'
   expect(authRequest).toHaveBeenCalledWith('/api/v1/media-songs/song/audio-jobs', 'POST', expect.objectContaining({ sourceAudioId: 'stream:0:LEFT', sourceConfirmed: true }))
   expect(vi.mocked(authRequest).mock.calls.some(([path, method]) => path.endsWith('/audio-roles') && method === 'PUT')).toBe(false)
 })
+
+it('多音轨逐条试听，选择确认的源伴奏前禁止直接分离', async () => {
+  vi.mocked(authRequest).mockResolvedValue({ state: 'UNKNOWN', jobs: [], streams: [0, 1, 2].map(i => ({ id: 'stream:' + i, channels: 2 })) } as never)
+  wrapper = mount(AudioRolesPanel, { props: { songId: 'multi', canProcess: false, separation: capabilities, workbench: true } })
+  await flushPromises()
+  expect(wrapper.get('[aria-label="逐轨试听"]').findAll('button')).toHaveLength(3)
+  expect(button('生成整曲伴奏').attributes('disabled')).toBeDefined()
+  await wrapper.get('select[aria-label="已确认的源伴奏"]').setValue('stream:2')
+  expect(button('生成整曲伴奏').attributes('disabled')).toBeUndefined()
+  await button('生成整曲伴奏').trigger('click'); await flushPromises()
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/media-songs/multi/audio-jobs', 'POST', expect.objectContaining({ sourceAudioId: 'stream:2', sourceConfirmed: true, separationProfile: 'DSP_FAST' }))
+})

@@ -25,7 +25,8 @@ async function loadItems() {
 function changePage(next: number) { itemPage.value = next; void loadItems() }
 watch(() => props.batch?.state === 'PREVIEW' ? props.batch.id : '', id => {
   itemRequest++; items.value = []; itemPage.value = 0; itemsError.value = ''; itemsLoading.value = false
-  if (id) void loadItems()
+  if (id && props.batch?.items) items.value = props.batch.items
+  else if (id) void loadItems()
 }, { immediate: true })
 onBeforeUnmount(() => { itemRequest++ })
 function itemReason(item: BatchItem) {
@@ -49,7 +50,7 @@ const skipped = computed(() => {
       <p v-else-if="batch.state === 'FAILED'" class="lead" role="alert">{{ batch.error || '歌曲准备失败，请重新选择歌曲后重试。' }}</p>
       <p v-else-if="batch.state === 'CANCELLED'" class="lead">已取消准备。</p>
       <p v-else class="lead">将为 <strong>{{ pending }}</strong> 首歌曲{{ recognizing ? '重新识别原唱与伴奏' : '生成独立伴奏' }}。</p>
-      <div v-if="batch.state === 'PREVIEW'" class="preview-totals"><div><span>本次选择</span><strong>{{ batch.total }}<small>首</small></strong></div><div><span>可处理</span><strong>{{ pending }}<small>首</small></strong></div><div><span>跳过</span><strong>{{ batch.counts.SKIPPED || 0 }}<small>首</small></strong></div></div>
+      <div v-if="batch.state === 'PREVIEW'" class="preview-totals" :class="{ 'has-failed': batch.counts.FAILED }"><div><span>本次选择</span><strong>{{ batch.total }}<small>首</small></strong></div><div><span>可处理</span><strong>{{ pending }}<small>首</small></strong></div><div><span>跳过</span><strong>{{ batch.counts.SKIPPED || 0 }}<small>首</small></strong></div><div v-if="batch.counts.FAILED"><span>准备失败</span><strong>{{ batch.counts.FAILED }}<small>首</small></strong></div></div>
       <p v-if="recognizing" class="muted">方式：{{ recognitionName(batch.kind) }}。{{ batch.kind === 'FAST' ? '按音轨标签和短片段人声判断，不生成新的伴奏文件。' : '分离多个片段的人声进行对比，耗时较长。' }}只有判断可靠时才自动保存标记，无法确定的保留待人工确认。</p>
       <p v-else class="muted">方案：{{ profileName(batch.separationProfile) }} · {{ batch.outputFormat === 'flac' ? 'FLAC' : 'AAC 192k' }}</p>
       <p v-if="!recognizing && batch.separationProfile === 'DSP_FAST'" class="muted">中心抵消也可能削弱鼓、贝斯和主奏，并留下混响。建议先对代表歌曲进行短片试听。</p>
@@ -81,5 +82,9 @@ const skipped = computed(() => {
 .lead{margin:0 0 12px;font-size:15px;color:var(--sv-text-primary)}.breakdown{margin:0 0 12px;padding-left:20px;display:grid;gap:4px;font-size:var(--sv-font-body)}.muted{margin:0;font-size:var(--sv-font-meta);line-height:1.6;color:var(--sv-text-secondary)}
 .preview-totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:16px 0 20px;padding:16px;border:1px solid var(--sv-border-subtle);border-radius:8px;background:var(--sv-surface-1)}.preview-totals>div{display:grid;gap:6px}.preview-totals span{font-size:12px;color:var(--sv-text-secondary)}.preview-totals strong{font-size:24px;line-height:1.3;color:var(--sv-text-primary);font-weight:600}.preview-totals small{margin-left:4px;font-size:12px;font-weight:400;color:var(--sv-text-secondary)}.breakdown{margin-top:16px;padding-left:20px;gap:8px}.preview-error{margin-bottom:16px}.muted+.muted{margin-top:12px}
 .preview-songs{margin:20px 0}.preview-songs h3{margin:0 0 8px;font-size:14px;font-weight:600;color:var(--sv-text-primary)}.preview-songs ul{max-height:240px;overflow-y:auto;padding:0;margin:0;list-style:none;border-block:1px solid var(--sv-border-subtle)}.preview-songs li{display:flex;align-items:center;gap:16px;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--sv-border-subtle)}.preview-songs li:last-child{border:0}.preview-songs li>span:first-child{min-width:0}.preview-songs strong{display:block;font-size:14px;font-weight:500;color:var(--sv-text-primary);overflow-wrap:anywhere}.preview-songs small{display:block;margin-top:4px;font-size:13px;line-height:1.6;color:var(--sv-text-secondary);overflow-wrap:anywhere}.item-outcome{flex:none;font-size:12px;color:var(--sv-text-secondary)}.item-outcome.is-pending{color:var(--sv-accent-primary)}.preview-songs :deep(.el-pagination){justify-content:center;margin-top:8px}
+.preview-totals.has-failed{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media(max-width:560px){.lead,.breakdown,.muted{font-size:16px}.preview-totals{padding:12px;gap:8px}.preview-totals span,.preview-totals small{font-size:13px}}
+:global(.el-dialog:has(.preview-totals) .el-dialog__footer .el-button){min-height:44px}
+.muted{font-size:14px}
+@media(max-width:560px){.muted{font-size:16px}}
 </style>

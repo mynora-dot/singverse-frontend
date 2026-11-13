@@ -90,7 +90,7 @@ onBeforeUnmount(() => { generation++; clearTimeout(timer) })
     <div v-if="detail && !detail.streams && !uniqueOriginal" class="roles-actions">
       <ElButton type="primary" :disabled="busy || reading" @click="submit('PROBE', '已开始读取音轨')">读取音轨</ElButton>
     </div>
-    <section v-else-if="streams.length === 1 || uniqueOriginal" class="roles-block" aria-label="伴奏">
+    <section v-else-if="(streams.length === 1 || uniqueOriginal) && (detail?.backingResource || (!capabilities && !inFlight(separate)))" class="roles-block" aria-label="伴奏">
       <template v-if="detail?.backingResource">
         <h4>试听伴奏</h4>
         <audio class="backing-player" :src="accompanimentUrl(songId, detail.backingResource.jobId)" controls preload="none" aria-label="试听生成的伴奏" />
@@ -123,14 +123,19 @@ onBeforeUnmount(() => { generation++; clearTimeout(timer) })
     <section v-if="capabilities && (streams.length || uniqueOriginal)" class="roles-block" aria-label="生成与试听伴奏">
       <h4>{{ detail?.state === 'CONFIRMED' && detail?.backingId ? '提取已确认的伴奏' : '选择伴奏方案' }}</h4>
       <p v-if="detail?.state === 'CONFIRMED' && detail?.backingId" class="muted">优先提取已确认的伴奏音轨，不再进行人声分离。</p>
+      <component :is="workbench && (streams.length === 1 || uniqueOriginal) ? 'details' : 'div'" class="source-options">
+      <summary v-if="workbench && (streams.length === 1 || uniqueOriginal)">从已确认的源音轨提取伴奏</summary>
       <label class="muted">已确认的源伴奏<select v-model="sourceAudio" aria-label="已确认的源伴奏" :disabled="busy || inFlight(separate)"><option value="">{{ detail?.backingId ? '使用已标记的伴奏音轨' : '没有源伴奏，按方案生成' }}</option><template v-for="(stream, index) in streams" :key="stream.id"><option :value="stream.id">{{ streamLabel(stream, index) }} · 整条</option><option v-if="stream.channels === 2" :value="stream.id + ':LEFT'">音轨 {{ index + 1 }} · 左声道</option><option v-if="stream.channels === 2" :value="stream.id + ':RIGHT'">音轨 {{ index + 1 }} · 右声道</option></template></select></label>
       <p v-if="sourceAudio" class="muted">仅当您已试听确认此音轨或声道是伴奏时选择。点击生成即按此标记直接提取，不做消人声；不改变原有音轨标记。</p>
-      <SeparationControls v-else-if="!reusingSource && canGenerate" v-model:profile="profile" v-model:backend="preferred" :backends="devices" :disabled="busy || inFlight(separate)" :cards="workbench" />
+      </component>
+      <SeparationControls v-if="!reusingSource && canGenerate" v-model:profile="profile" v-model:backend="preferred" :backends="devices" :disabled="busy || inFlight(separate)" :cards="workbench" />
       <p v-if="!canGenerate" class="muted">请先试听并标记原唱与伴奏，或选择已确认的源伴奏音轨。</p>
       <p v-if="!ready" class="muted">所选方案尚未通过节点试跑。<ElButton link type="primary" @click="emit('setup')">准备环境</ElButton></p>
-      <div class="roles-actions">
+      <div class="roles-actions generation-actions">
         <ElButton :disabled="busy || !ready || !canGenerate || inFlight(separate)" @click="generate(true)">生成 12 秒试听</ElButton>
         <ElButton type="primary" :disabled="busy || !ready || !canGenerate || inFlight(separate)" @click="generate(false)">生成整曲伴奏</ElButton>
+      </div>
+      <div class="roles-actions">
         <ElButton :disabled="busy || !ready || !canGenerate || inFlight(separate)" @click="generate(false, 'flac')">生成 FLAC 导出</ElButton>
       </div>
       <p class="muted">FLAC 从分离结果保存，不会把已有 AAC 转成 FLAC；分离本身仍可能损失音质。</p>
@@ -172,4 +177,8 @@ onBeforeUnmount(() => { generation++; clearTimeout(timer) })
 .job-list,.job-history ul{display:grid;gap:8px;margin:0;padding:0;list-style:none;font-size:var(--sv-font-meta);color:var(--sv-text-secondary)}.job-list li{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.job-history summary{cursor:pointer;min-height:28px;line-height:28px;font-size:var(--sv-font-meta);color:var(--sv-text-secondary)}.job-history ul{padding:8px 0 0 4px}.muted{margin:0;font-size:var(--sv-font-meta);line-height:1.6;color:var(--sv-text-secondary)}.danger{color:var(--sv-semantic-danger)}.roles-footnote{font-size:12px;color:var(--sv-text-tertiary)}
 .in-workbench{gap:24px}.in-workbench .roles-status{background:var(--sv-surface-1);border:1px solid var(--sv-border-subtle);padding:16px}.in-workbench .roles-block{padding-top:20px;border-top:1px solid var(--sv-border-subtle)}.in-workbench .roles-block h4,.in-workbench .track-choice legend{font-size:16px}.in-workbench .track-choice legend{padding-top:20px}.in-workbench .track-option{min-height:64px}.in-workbench .roles-actions :deep(.el-button){min-height:40px}.in-workbench .job-history summary{min-height:44px;line-height:44px}.in-workbench .track-role{font-size:13px}.in-workbench .roles-status h3{font-size:16px}
 @media(max-width:560px){.in-workbench .muted,.in-workbench .track-name,.in-workbench .roles-status p,.in-workbench .roles-notice{font-size:16px}.in-workbench .roles-actions :deep(.el-button){min-height:44px;font-size:14px}.in-workbench .roles-footnote{font-size:13px}.in-workbench .roles-actions{gap:8px}.in-workbench .track-option{padding:12px;gap:8px}.in-workbench .roles-status{flex-wrap:wrap}.in-workbench .roles-status>div{flex-basis:100%}}
+.in-workbench .muted,.in-workbench .roles-status p{font-size:14px}
+.in-workbench :deep(.track-preview p){font-size:14px}.in-workbench :deep(.preview-actions .el-button){min-height:44px}.in-workbench .generation-actions{position:sticky;bottom:-28px;z-index:1;padding:12px 0;background:var(--sv-surface-2)}.source-options summary{min-height:44px;line-height:1.6;padding:10px 0;font-size:14px;color:var(--sv-text-secondary);cursor:pointer}.source-options>label{display:block}.source-options:not([open]):is(details)>label,.source-options:not([open]):is(details)>p{display:none}
+@media(max-width:560px){.in-workbench .muted,.in-workbench .roles-status p{font-size:16px}.in-workbench .roles-footnote{font-size:13px}}
+@media(max-width:560px){.in-workbench :deep(.track-preview p){font-size:16px}.in-workbench .generation-actions{bottom:-20px}.in-workbench .generation-actions :deep(.el-button){flex:1;min-width:0;padding:10px 12px}}
 </style>

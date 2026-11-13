@@ -340,7 +340,7 @@ it('表格展示封面音轨与任务信息，调整分页后回到首页', asyn
   vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/songs?') ? { totalElements: 60, items: [row('a', { coverAvailable: true, audio: { ...roles, jobs: [{ id: 'job', kind: 'SEPARATE', state: 'FAILED', backend: 'cuda', error: '执行失败' }] } })] } as never : previous(...args))
   await open()
   expect(wrapper!.findAll('thead th')).toHaveLength(6)
-  expect(wrapper!.text()).toContain('AAC · 立体声')
+  expect(wrapper!.text()).toContain('AAC 立体声')
   expect(wrapper!.text()).toContain('执行失败')
   expect(wrapper!.get('.row-cover img').attributes('src')).toBe('/api/v1/metadata/songs/a/cover')
   await wrapper!.get('.row-cover img').trigger('error')
@@ -413,4 +413,114 @@ it('启动自动试跑显示进度和播放优先提示，验证完成后恢复�
   expect(readiness(current, '').title).toContain('等待空闲')
   expect(readiness(current, '').hint).toContain('播放任务优先')
   expect(readiness({ ...current, selected: 'mps', startupCheck: { state: 'COMPLETED' } }, '').ready).toBe(true)
+})
+
+it('选歌后才显示处理栏，打开配置或取消均不会创建批次', async () => {
+  await open()
+  expect(wrapper!.find('.selection-bar').exists()).toBe(false)
+  await wrapper!.get('input[aria-label="选择a"]').setValue(true)
+  await configureGeneration()
+  expect(wrapper!.get('[role="dialog"]').text()).toContain('下一步检查可处理范围与跳过原因')
+  expect(requested('/batches/preview')).toBe(false)
+  await button('取消').trigger('click'); await flushPromises()
+  expect(wrapper!.find('[role="dialog"]').exists()).toBe(false)
+  expect(wrapper!.get('.selection-bar').text()).toContain('已选 1 首')
+  await button('取消选择').trigger('click')
+  expect(wrapper!.find('.selection-bar').exists()).toBe(false)
+})
+
+it('新版方案卡保留显式 CPU 设备与方案请求，极速档不依赖 Demucs', async () => {
+  ready = false
+  const previous = vi.mocked(authRequest).getMockImplementation()!
+  vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/node') ? { ...node(), separation: { version: 1,
+    profiles: [{ id: 'DSP_FAST', ready: true }, { id: 'AI_CLEAN', ready: true }, { id: 'LEGACY_DEMUCS', ready: false }],
+    backends: [{ id: 'cpu', state: 'AVAILABLE' }, { id: 'mps', state: 'AVAILABLE' }],
+  } } as never : previous(...args))
+  await open(); await wrapper!.get('input[aria-label="选择a"]').setValue(true)
+  await configureGeneration()
+  expect(button('预览处理范围').attributes('disabled')).toBeUndefined()
+  await wrapper!.get('.profile-card input[value="AI_CLEAN"]').setValue(true)
+  await wrapper!.get('select[aria-label="生成伴奏使用的设备"]').setValue('cpu')
+  await button('预览处理范围').trigger('click'); await flushPromises()
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/batches/preview', 'POST', expect.objectContaining({ ids: ['a'], all: false, backend: 'cpu', separationProfile: 'AI_CLEAN', outputFormat: 'aac' }), 120000)
+  expect(requested('/submit')).toBe(false)
+})
+
+it('识别配置显示快速模型降级说明，并提交所选识别方式', async () => {
+  const previous = vi.mocked(authRequest).getMockImplementation()!
+  vi.mocked(authRequest).mockImplementation(async (...args) => {
+    if (args[0].includes('/node')) return { ...node(), fastClassifier: { ready: false } } as never
+    if (args[0].endsWith('/batches/preview')) return { ...preview, kind: 'ANALYZE' } as never
+    return previous(...args)
+  })
+  await open(); await wrapper!.get('input[aria-label="选择a"]').setValue(true)
+  await button('识别已有音轨', wrapper!.get('.selection-bar')).trigger('click'); await flushPromises()
+  expect(wrapper!.get('[role="dialog"]').text()).toContain('本次仅按音轨标签判断')
+  await wrapper!.get('input[name="recognition-kind"][value="ANALYZE"]').setValue(true)
+  await button('预览处理范围').trigger('click'); await flushPromises()
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/batches/preview', 'POST', expect.objectContaining({ kind: 'ANALYZE', ids: ['a'] }), 120000)
+  expect(button('开始识别')).toBeTruthy()
+  expect(requested('/submit')).toBe(false)
+})
+
+it('范围准备失败留在配置面板，错误可见且允许重试', async () => {
+  const previous = vi.mocked(authRequest).getMockImplementation()!
+  let failing = true
+  vi.mocked(authRequest).mockImplementation(async (...args) => {
+    if (args[0].endsWith('/batches/preview') && failing) throw new Error('节点暂时不可用')
+    return previous(...args)
+  })
+  await open(); await wrapper!.get('input[aria-label="选择a"]').setValue(true)
+  await prepareGeneration()
+  expect(wrapper!.get('[role="dialog"]').text()).toContain('节点暂时不可用')
+  expect(button('预览处理范围').attributes('disabled')).toBeUndefined()
+  failing = false
+  await button('预览处理范围').trigger('click'); await flushPromises()
+  expect(button('开始生成')).toBeTruthy()
+})
+
+it('预览读取逐曲跳过原因，明细失败时先重试再允许提交', async () => {
+  const previous = vi.mocked(authRequest).getMockImplementation()!
+  let failing = true
+  vi.mocked(authRequest).mockImplementation(async (...args) => {
+    if (args[0].endsWith('/batches/batch?page=0')) {
+      if (failing) throw new Error('读取明细失败')
+      return { ...preview, items: [{ song_id: 'a', title: '已有伴奏歌曲', state: 'SKIPPED', category: 'READY', error: '已有伴奏' }] } as never
+    }
+    return previous(...args)
+  })
+  await open(); await wrapper!.get('input[aria-label="选择a"]').setValue(true)
+  await prepareGeneration()
+  expect(button('开始生成').attributes('disabled')).toBeDefined()
+  expect(wrapper!.get('[role="dialog"]').text()).toContain('读取明细失败')
+  failing = false; await button('重试明细').trigger('click'); await flushPromises()
+  expect(wrapper!.get('.preview-songs').text()).toContain('已有伴奏歌曲已有伴奏已跳过')
+  expect(button('开始生成').attributes('disabled')).toBeUndefined()
+})
+
+it('未读取音轨的行先进入检查面板，不直接生成批次', async () => {
+  const previous = vi.mocked(authRequest).getMockImplementation()!
+  vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/songs?') ? { totalElements: 1, items: [row('未知', { category: 'UNPROBED', audio: { state: 'UNKNOWN', jobs: [] } })] } as never : previous(...args))
+  await open(); await button('读取音轨').trigger('click'); await flushPromises()
+  expect(wrapper!.get('.drawer').text()).toContain('未知')
+  expect(requested('/batches/preview')).toBe(false)
+})
+
+it('生成任务可返回对应歌曲并自动打开音轨抽屉', async () => {
+  router.route.query = { tab: 'tasks', batch: 'batch' }; await open()
+  await button('查看歌曲').trigger('click'); await flushPromises()
+  expect(router.route.query).toEqual({ song: 'a' })
+  expect(wrapper!.get('#audio-tab-songs').attributes('aria-selected')).toBe('true')
+  expect(wrapper!.get('.drawer').text()).toContain('哪一条是原唱')
+})
+
+it('更多筛选支持 Escape 收起，且不应用未提交的条件', async () => {
+  await open()
+  const details = wrapper!.get('.more-filters')
+  ;(details.element as HTMLDetailsElement).open = true
+  await wrapper!.get('input[aria-label="歌手"]').setValue('尚未应用')
+  await details.trigger('keydown', { key: 'Escape' })
+  expect((details.element as HTMLDetailsElement).open).toBe(false)
+  expect((wrapper!.get('input[aria-label="歌手"]').element as HTMLInputElement).value).toBe('')
+  expect(requested('artist=')).toBe(false)
 })
