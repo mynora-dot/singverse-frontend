@@ -8,6 +8,7 @@ export const navigationGroups = [
     { path: '/library/songs', label: '歌曲', icon: Headset },
     { path: '/library/artists', label: '歌手', icon: Microphone },
     { path: '/library/playlists', label: '歌单', icon: Collection },
+    { path: '/library/favorites', label: '收藏', icon: Collection },
     { path: '/library/classification', label: '分类标签', icon: CollectionTag },
   ] },
   { id: 'add', label: '加歌', path: '/library/media', icon: Download, children: [

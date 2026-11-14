@@ -12,6 +12,7 @@ export function resolveSongsLens(to: RouteLocationNormalized) {
 }
 
 export const songManagementRoutes: RouteRecordRaw[] = [
+  { path: '/library/favorites', component: () => import('../favorites/FavoritesView.vue'), meta: { title: '收藏管理' } },
   { path: '/library/playback-history', component: () => import('../playback-history/PlaybackHistoryView.vue'), meta: { title: '播放记录' } },
   { path: '/library/missing-feedback', component: () => import('../missing-feedback/MissingFeedbackView.vue'), meta: { title: '缺歌反馈' } },
   { path: '/library/audio-processing', component: () => import('../audio-processing/AudioProcessingView.vue'), meta: { title: '原唱与伴奏' } },
