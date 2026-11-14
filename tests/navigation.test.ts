@@ -39,7 +39,7 @@ it('精简主导航与当前分区提供全部现有管理功能', async () => {
   await router.push('/library/songs'); const wrapper = mount(App, { global: { plugins: [router] } }); await flushPromises()
   expect(wrapper.findAll('.primary-navigation a').map(a => a.text())).toEqual(['首页','曲库','加歌','整理','客厅'])
   expect(wrapper.findAll('.section-navigation a').map(a => a.text())).toEqual(['歌曲','歌手','歌单','分类标签'])
-  const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/classification','/library/media','/library/downloads','/library/media/recognition','/library/songs/metadata','/library/audio-processing','/library/review','/system/tv-settings','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai','/system']
+  const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/classification','/library/media','/library/downloads','/library/media/recognition','/library/songs/metadata','/library/audio-processing','/system/tv-settings','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai','/system']
   expect(navigationGroups.flatMap(g => g.children.map(e => e.path)).sort()).toEqual(expected.sort())
   await wrapper.get('.mobile-nav-toggle').trigger('click')
   expect(wrapper.get('#admin-navigation').text()).toContain('账号与安全'); expect(wrapper.get('#admin-navigation').text()).toContain('分类标签')

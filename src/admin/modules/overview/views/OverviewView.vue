@@ -71,7 +71,7 @@ const todos = computed<Todo[]>(() => {
   const lib = ok('library') ? d!.library! : null
   if (lib && lib.reviewSongs > 0) list.push({ key: 'review', level: 'info', title: `${fmt(lib.reviewSongs)} 首歌曲待复核`, detail: '文件名未能完整识别歌名或歌手，复核后才能被准确搜索。', action: '去复核', to: '/library/songs?status=REVIEW' })
   const rev = ok('review') ? d!.review! : null
-  if (rev?.metadataBatch && rev.metadataBatch.review > 0) list.push({ key: 'metadata', level: 'info', title: `${fmt(rev.metadataBatch.review)} 首平台匹配待审核`, detail: '核对歌名、歌手与封面后确认应用，未确认前不会改动曲库。', action: '去审核', to: `/library/songs/metadata?batch=${rev.metadataBatch.id}` })
+  if (rev?.metadataBatch && rev.metadataBatch.review > 0) list.push({ key: 'metadata', level: 'info', title: `${fmt(rev.metadataBatch.review)} 首平台匹配待审核`, detail: '核对歌名、歌手与封面后确认应用，未确认前不会改动曲库。', action: '去审核', to: `/library/songs/metadata?batch=${encodeURIComponent(rev.metadataBatch.id)}&status=REVIEW` })
   if (rev && rev.classification.reviewItems > 0) list.push({ key: 'classification', level: 'info', title: `${fmt(rev.classification.reviewItems)} 首分类建议待确认`, detail: '查看 AI 给出的分类与标签，确认后才会写入歌曲。', action: '去确认', to: rev.classification.latestTaskId ? `/library/classification?task=${rev.classification.latestTaskId}` : '/library/classification' })
   if (rev && rev.missingFeedbackPending > 0) list.push({ key: 'missing', level: 'info', title: `${fmt(rev.missingFeedbackPending)} 条缺歌心愿待处理`, detail: '亲友在点歌页留下的缺歌反馈，可据此补充曲库。', action: '查看心愿', to: '/library/missing-feedback' })
   if (auth.account && !auth.account.mfaEnabled) list.push({ key: 'mfa', level: 'info', title: '未开启二次验证', detail: '开启后登录需额外输入验证器中的动态码。', action: '去开启', to: '/system/parameters' })

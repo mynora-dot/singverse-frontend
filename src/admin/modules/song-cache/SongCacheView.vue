@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { Headset as SongPlaceholderIcon } from '@element-plus/icons-vue'
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { ArrowDown, ArrowUp, CircleCheck, CollectionTag, Delete, Headset, InfoFilled, RefreshRight, Search } from '@element-plus/icons-vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
-import { ElIcon, ElButton, ElMessageBox, ElPagination } from 'element-plus'
+import { ElIcon, ElButton, ElCheckbox, ElDialog, ElMessageBox, ElPagination, ElPopover } from 'element-plus'
 import { ApiError } from '../../core/auth/api'
 import PageHeader from '../../shared/ui/PageHeader.vue'
+import SongCover from '../song-management/components/SongCover.vue'
 import { songCache, type CacheEntry, type CachePage, type CachePin, type CachePins, type CacheSettings, type CleanupJob, type CleanupRequest } from './api'
 
 const gib = 1024 ** 3
@@ -14,6 +15,11 @@ const draft = reactive({ capacityGiB: '' as string | number, policy: 'HYBRID', h
 const page = ref(1), loading = ref(false), busy = ref(false), error = ref(''), notice = ref(''), conflict = ref(false)
 const pins = ref<CachePins | null>(null), pinPage = ref(1), pinsLoading = ref(false), pinError = ref('')
 const job = ref<CleanupJob | null>(null), jobError = ref('')
+const settingsExpanded = ref(false), jobDetailsExpanded = ref(false)
+const activeView = ref<'cache' | 'pins'>('cache'), keyword = ref(''), typeFilter = ref('ALL')
+const expandedEntries = ref(new Set<string>())
+const cacheTab = ref<HTMLButtonElement>(), pinsTab = ref<HTMLButtonElement>()
+const recentEntry = ref<CacheEntry | null>(null), recentConfirmed = ref(false), recentOpen = ref(false)
 let active = true, epoch = 0, pinEpoch = 0, jobEpoch = 0
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 const jobKey = 'singverse.cache.cleanup'
@@ -32,10 +38,35 @@ const validation = computed(() => !Number.isSafeInteger(maxBytes.value) || maxBy
   : !Number.isInteger(Number(draft.high)) || !Number.isInteger(Number(draft.low)) || Number(draft.low) < 1 || Number(draft.high) > 100 || Number(draft.low) >= Number(draft.high)
     ? '水位应为 1～100 的整数，低水位必须小于高水位。' : '')
 const usedPercent = computed(() => result.value && result.value.settings.maxBytes > 0 ? Math.min(100, result.value.usageBytes / result.value.settings.maxBytes * 100) : 0)
+const usageRatio = computed(() => result.value && result.value.settings.maxBytes > 0 ? (result.value.usageBytes / result.value.settings.maxBytes * 100).toLocaleString('zh-CN', { maximumFractionDigits: 2 }) : '0')
+const remainingBytes = computed(() => Math.max(0, (result.value?.settings.maxBytes ?? 0) - (result.value?.usageBytes ?? 0)))
+const capacityValidation = computed(() => !Number.isSafeInteger(maxBytes.value) || maxBytes.value < 64 * 1024 ** 2 || maxBytes.value > 1024 ** 5)
+const filteredEntries = computed(() => (result.value?.items ?? []).filter(entry => matches(entry) && (typeFilter.value === 'ALL' || (entry.target.mode === 'ORIGINAL' ? 'ORIGINAL' : 'COMPATIBLE') === typeFilter.value)))
+const filteredPins = computed(() => (pins.value?.items ?? []).filter(matches))
+const statisticsPending = computed(() => result.value?.usageReady === false || result.value?.statisticsReady === false)
+const cleanupDisabled = computed(() => busy.value || loading.value || runningJob.value || statisticsPending.value || !result.value || result.value.usageBytes <= 0 && result.value.entryCount <= 0)
+const policyDisabledReason = computed(() => result.value?.settings.policy === 'MANUAL' ? '手动策略不执行评分回收，请使用清理缓存。' : statisticsPending.value ? '占用或播放评分统计准备中，暂不能开始清理。' : '')
+const policyTarget = computed(() => (result.value?.settings.maxBytes ?? 0) * (result.value?.settings.lowWatermarkPercent ?? 75) / 100)
 const runningJob = computed(() => !!job.value && ['QUEUED', 'RUNNING', 'CANCELLING'].includes(job.value.state))
 const jobStates: Record<string, string> = { QUEUED: '等待清理', RUNNING: '正在清理', CANCELLING: '正在取消', SUCCEEDED: '清理完成', PARTIAL: '部分清理完成', BLOCKED: '受保护数据阻止继续清理', FAILED: '清理失败', CANCELLED: '清理已取消', INTERRUPTED: '清理被服务重启中断' }
 const reasons: Record<string, string> = { PLAYING: '正在播放', DOWNLOADING: '正在下载', PINNED: '已固定', RECENT_PLAY: '近 24 小时播放保护', PREFETCH: '正在预取', DELETING: '正在删除', BUILDING: '正在接收', CHANGED: '缓存状态已变化', STATISTICS_OR_MANUAL: '统计未就绪或当前采用手动策略' }
 const lifecycles: Record<string, string> = { HOT: '热门', WARM: '常用', COLD: '冷门', EVICT: '待回收' }
+function matches(value: CacheEntry | CachePin) { return !keyword.value.trim() || [value.title, value.artist, value.songId].some(text => text?.toLocaleLowerCase().includes(keyword.value.trim().toLocaleLowerCase())) }
+function resetFilters() { keyword.value = ''; typeFilter.value = 'ALL' }
+function changeView(value: 'cache' | 'pins') { activeView.value = value; resetFilters() }
+async function tabKeydown(event: KeyboardEvent) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  changeView(event.key === 'Home' ? 'cache' : event.key === 'End' ? 'pins' : activeView.value === 'cache' ? 'pins' : 'cache')
+  await nextTick(); (activeView.value === 'cache' ? cacheTab.value : pinsTab.value)?.focus()
+}
+function toggleDetails(id: string) { const value = new Set(expandedEntries.value); if (value.has(id)) value.delete(id); else value.add(id); expandedEntries.value = value }
+async function toggleSettings() {
+  if (busy.value) return
+  if (settingsExpanded.value && dirty.value) { if (!await discard()) return; if (settings.value) adopt(settings.value) }
+  settingsExpanded.value = !settingsExpanded.value
+}
+async function discardSettings() { if (!busy.value && settings.value && await discard()) adopt(settings.value) }
 function protections(entry: CacheEntry) { return (entry.protectionReasons ?? []).map(reason => reasons[reason] ?? reason) }
 function deletionBlocked(entry: CacheEntry) { return entry.leased || entry.pinned || entry.state === 'DELETING' || (entry.protectionReasons ?? []).some(reason => ['PLAYING', 'DOWNLOADING', 'PINNED', 'PREFETCH', 'BUILDING', 'DELETING'].includes(reason)) }
 function adopt(value: CacheSettings) {
@@ -51,6 +82,7 @@ async function load(replaceSettings = false) {
     const data = await songCache.list(page.value - 1, 20)
     if (!active || seq !== epoch) return
     result.value = data
+    expandedEntries.value = new Set([...expandedEntries.value].filter(id => data.items.some(entry => entry.id === id)))
     if (!settings.value || replaceSettings || !dirty.value) adopt(data.settings)
     const last = Math.max(1, Math.ceil(data.totalElements / 20))
     if (page.value > last) { page.value = last; await load() }
@@ -89,6 +121,7 @@ async function save() {
 function rememberJob(id?: string) { try { if (id) sessionStorage.setItem(jobKey, id); else sessionStorage.removeItem(jobKey) } catch { /* Polling also works when browser storage is unavailable. */ } }
 function applyJob(value: CleanupJob) {
   job.value = value; currentJobId = value.id
+  if (value.failed > 0 || ['BLOCKED', 'FAILED', 'INTERRUPTED'].includes(value.state)) jobDetailsExpanded.value = true
   clearTimeout(pollTimer)
   if (['QUEUED', 'RUNNING', 'CANCELLING'].includes(value.state)) { rememberJob(value.id); pollTimer = setTimeout(() => { void pollJob(value.id) }, 1000) }
   else { rememberJob(); void load(); void loadPins() }
@@ -102,7 +135,7 @@ async function pollJob(id = job.value?.id || currentJobId) {
   catch (value) { if (active && seq === jobEpoch) jobError.value = value instanceof Error ? value.message : '读取清理进度失败，请重试' }
 }
 async function startJob(input: CleanupRequest) {
-  if (!active || busy.value || runningJob.value) return
+  if (!active || busy.value || runningJob.value || input.mode === 'POLICY' && policyDisabledReason.value) return
   busy.value = true; error.value = ''; notice.value = ''; jobError.value = ''
   const seq = ++jobEpoch
   try { const value = await songCache.cleanup(input); if (active && seq === jobEpoch) applyJob(value) }
@@ -118,18 +151,26 @@ async function cancelJob() {
   finally { if (active) busy.value = false }
 }
 async function remove(entry: CacheEntry) {
-  if (busy.value || loading.value || runningJob.value || deletionBlocked(entry)) return
+  if (busy.value || loading.value || runningJob.value || statisticsPending.value || deletionBlocked(entry)) return
   const recent = entry.protectionReasons?.includes('RECENT_PLAY') ?? false
+  if (recent) { recentEntry.value = entry; recentConfirmed.value = false; recentOpen.value = true; return }
   try {
-    const content = `${entry.target.mode === 'ORIGINAL' ? '删除原片缓存副本？WebDAV 源文件会保留，下次播放将按需重新读取。' : '删除这份兼容缓存？原始歌曲会保留，下次需要时将重新生成。'}${recent ? ' 此歌曲近 24 小时实际播放过：确认后仅对这一份缓存覆盖近期保护。' : ''}`
-    await ElMessageBox.confirm(content, `删除“${entry.title || '未命名歌曲'}”的缓存`, { confirmButtonText: recent ? '确认覆盖保护并删除' : '删除缓存', cancelButtonText: '保留', type: 'warning', autofocus: false })
+    const content = entry.target.mode === 'ORIGINAL' ? '删除原片缓存副本？WebDAV 源文件会保留，下次播放将按需重新读取。' : '删除这份兼容缓存？原始歌曲会保留，下次需要时将重新生成。'
+    await ElMessageBox.confirm(content, `删除“${entry.title || '未命名歌曲'}”的缓存`, { confirmButtonText: '删除缓存', cancelButtonText: '保留', type: 'warning', autofocus: false })
   } catch { return }
-  await startJob({ mode: 'DELETE', entryId: entry.id, ...(recent ? { confirmRecent: true } : {}) })
+  await startJob({ mode: 'DELETE', entryId: entry.id })
+}
+async function confirmRecentDelete() {
+  if (!recentEntry.value || !recentConfirmed.value || busy.value || loading.value || runningJob.value || statisticsPending.value || deletionBlocked(recentEntry.value)) return
+  const entryId = recentEntry.value.id
+  recentOpen.value = false
+  await startJob({ mode: 'DELETE', entryId, confirmRecent: true })
 }
 async function clear(mode: 'CLEAR' | 'POLICY' = 'CLEAR') {
-  if (busy.value || loading.value || runningJob.value || !result.value || result.value.usageBytes <= 0 && result.value.entryCount <= 0) return
+  if (cleanupDisabled.value || !result.value || mode === 'POLICY' && policyDisabledReason.value) return
   try {
-    await ElMessageBox.confirm(mode === 'CLEAR' ? '清理所有未受保护的歌曲缓存？固定、近 24 小时实际播放、正在播放或下载的条目会跳过，原始歌曲和离线兼容版本会保留。' : '按当前混合评分回收到低水位？固定、近期播放和使用中的数据受保护，可能无法达到目标。', mode === 'CLEAR' ? '清理缓存' : '按策略回收', { confirmButtonText: '开始清理', cancelButtonText: '保留', type: 'warning', autofocus: false })
+    const target = `按当前混合评分回收到低水位 ${result.value.settings.lowWatermarkPercent ?? 75}%（${bytes(policyTarget.value)}）？${result.value.usageBytes <= policyTarget.value ? ' 当前占用已低于目标，本次无需删除缓存。' : ''}固定、近期播放和使用中的数据受保护，可能无法达到目标。`
+    await ElMessageBox.confirm(mode === 'CLEAR' ? '清理所有未受保护的歌曲缓存，不受低水位目标限制？固定、近 24 小时实际播放、正在播放或下载的条目会跳过，原始歌曲和离线兼容版本会保留。' : target, mode === 'CLEAR' ? '清理缓存' : '按策略回收', { confirmButtonText: mode === 'CLEAR' ? '开始清理' : '开始回收', cancelButtonText: '保留', type: 'warning', autofocus: false })
   } catch { return }
   await startJob({ mode })
 }
@@ -151,21 +192,41 @@ async function togglePin(value: CacheEntry | CachePin) {
 }
 function bytes(value: number) {
   if (!Number.isFinite(value)) return '未知'
+  if (value === 0) return '0 B'
   if (value >= gib) return `${(value / gib).toLocaleString('zh-CN', { maximumFractionDigits: 2 })} GiB`
   if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} MiB`
   return `${(value / 1024).toLocaleString('zh-CN', { maximumFractionDigits: 1 })} KiB`
 }
 function date(value?: string | null) { const time = value ? new Date(value) : null; return !time || Number.isNaN(time.getTime()) ? '尚无实际播放' : time.toLocaleString('zh-CN', { hour12: false }) }
 function score(value?: number) { return Number.isFinite(value) ? value!.toFixed(3) : '—' }
+function shortDate(value?: string) {
+  const time = value ? new Date(value) : null
+  if (!time || Number.isNaN(time.getTime())) return '暂无访问记录'
+  const today = new Date()
+  const day = time.toDateString() === today.toDateString() ? '今天' : time.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', ...(time.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}) })
+  return `${day} ${time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+}
+function completeness(entry: CacheEntry) {
+  if (entry.target.mode !== 'ORIGINAL') return ''
+  const cached = entry.cachedBytes ?? entry.bytes, total = entry.sourceBytes ?? entry.target.sourceBytes ?? 0
+  if (entry.complete === true || total > 0 && cached >= total) return '已完整缓存'
+  return `部分已缓存${total > 0 ? ` ${Math.min(100, Math.floor(cached / total * 100))}%` : ''}`
+}
+function shortFormat(entry: CacheEntry) {
+  if (entry.target.mode === 'ORIGINAL') return 'WebDAV 原片'
+  if (entry.target.mode === 'REMUX') return '重封装 / 保留源编码'
+  if (entry.target.mode === 'AUDIO_TRANSCODE' || entry.mediaType === 'AUDIO') return entry.mediaType === 'VIDEO' ? 'AAC / 保留视频编码' : 'AAC / 音频'
+  return `${(entry.target.codec || 'h264').toUpperCase()} / 上限 ${entry.target.width || '—'} × ${entry.target.height || '—'}`
+}
 function jobFailure(value: CleanupJob['errors'][number]) { return typeof value === 'string' ? value : value.message || value.code || '缓存清理失败' }
 function format(entry: CacheEntry) {
   const mode = entry.target.mode
   if (mode === 'ORIGINAL') {
     const cached = entry.cachedBytes ?? entry.bytes, total = entry.sourceBytes ?? entry.target.sourceBytes ?? 0
-    return entry.complete === true || total > 0 && cached >= total ? 'WebDAV 原片 · 已完整缓存' : total > 0 ? `WebDAV 原片 · 已缓存 ${bytes(cached)} / ${bytes(total)}` : 'WebDAV 原片 · 按需缓存'
+    return entry.complete === true || total > 0 && cached >= total ? 'WebDAV 原片 / 已完整缓存' : total > 0 ? `WebDAV 原片 / 已缓存 ${bytes(cached)} / ${bytes(total)}` : 'WebDAV 原片 / 按需缓存'
   }
-  const output = mode === 'REMUX' ? '重封装，保留源编码' : mode === 'AUDIO_TRANSCODE' ? entry.mediaType === 'VIDEO' ? '音频转 AAC，保留视频编码' : 'AAC 音频' : entry.mediaType === 'VIDEO' ? `${(entry.target.codec || 'h264').toUpperCase()} · 画质上限 ${entry.target.width || '—'} × ${entry.target.height || '—'}` : 'AAC 音频'
-  return `${output}${entry.target.start ? ` · 从 ${entry.target.start} 秒起` : ''}`
+  const output = mode === 'REMUX' ? '重封装，保留源编码' : mode === 'AUDIO_TRANSCODE' ? entry.mediaType === 'VIDEO' ? '音频转 AAC，保留视频编码' : 'AAC 音频' : entry.mediaType === 'VIDEO' ? `${(entry.target.codec || 'h264').toUpperCase()} / 画质上限 ${entry.target.width || '—'} × ${entry.target.height || '—'}` : 'AAC 音频'
+  return `${output}${entry.target.start ? ` / 从 ${entry.target.start} 秒起` : ''}`
 }
 function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value || busy.value) { event.preventDefault(); event.returnValue = '' } }
 onBeforeRouteLeave(() => busy.value ? false : discard())
@@ -176,67 +237,93 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
 
 <template>
   <section class="song-cache-page">
-    <PageHeader title="存储与缓存" description="NAS 保存 WebDAV 原片缓存与音视频兼容结果，原片按需缓存，队列临近结束时提前读取下一首。">
-      <template #actions><ElButton :loading="loading" :disabled="busy" @click="load()">刷新列表</ElButton></template>
-    </PageHeader>
+    <PageHeader title="存储与缓存" description="查看缓存容量、固定常听歌曲，按需回收空间。WebDAV 原片按需读取，兼容缓存与原片共用容量；离线兼容版本仍在歌曲播放设置中管理。" />
     <div v-if="error" role="alert" class="cache-feedback cache-error">{{ error }}<ElButton v-if="conflict" text :disabled="busy || loading" @click="reloadSettings">重新读取设置</ElButton></div>
     <p v-if="notice" role="status" class="cache-feedback cache-success">{{ notice }}</p>
     <template v-if="result">
-      <section class="sv-panel sv-content-section cache-storage" aria-label="缓存容量概况">
-        <div><span class="cache-eyebrow">服务节点缓存占用</span><p class="cache-storage-number">{{ result.usageReady === false ? '正在计算占用…' : bytes(result.usageBytes) }} <span>/ {{ bytes(result.settings.maxBytes) }}</span></p><progress :value="usedPercent" max="100" aria-label="缓存容量使用比例"/><p class="cache-hint">占用包含正在接收及待清理残留的数据 · {{ result.entryCount }} 份歌曲缓存<span v-if="result.reservedBytes !== undefined"> · 已预留 {{ bytes(result.reservedBytes) }}</span></p><p v-if="result.statisticsReady === false" class="cache-hint" role="status">正在准备播放评分统计，当前尚未就绪。</p></div>
-        <div class="cache-storage-policy"><span class="cache-eyebrow">当前策略</span><strong>{{ policyLabel(result!.settings.policy) }}</strong><div class="cache-cleanup-buttons"><ElButton :disabled="busy || loading || runningJob || result.usageBytes <= 0 && result.entryCount <= 0" @click="clear('POLICY')">按策略回收</ElButton><ElButton type="danger" plain :disabled="busy || loading || runningJob || result.usageBytes <= 0 && result.entryCount <= 0" @click="clear('CLEAR')">清理缓存</ElButton></div></div>
-      </section>
-      <form v-if="settings" class="sv-panel sv-content-section cache-settings" @submit.prevent="save">
-        <div class="cache-section-heading"><div><h2>缓存设置</h2><p>自动回收和批量清理保护固定、近 24 小时实际播放、正在播放及下载的缓存。近 3 天播放有软保留加分。</p></div><span v-if="dirty" class="cache-draft">尚未保存</span></div>
-        <div class="cache-fields">
-          <label>最大缓存容量 <span class="cache-unit">GiB</span><input v-model="draft.capacityGiB" type="number" min="0.0625" max="1048576" step="any" required aria-label="最大缓存容量" :disabled="busy || loading"/><small>默认 50 GiB；启动时空间不足则按剩余空间的 80% 设置。手动保存后保留设置。</small></label>
-          <label>缓存策略<select v-model="draft.policy" aria-label="缓存策略" :disabled="busy || loading"><option v-for="policy in policies" :key="policy.value" :value="policy.value">{{ policy.label }}</option></select><small>{{ selectedPolicy.description }}</small></label>
-          <label>高水位 <span class="cache-unit">%</span><input v-model="draft.high" type="number" min="2" max="100" step="1" required aria-label="缓存高水位" :disabled="busy || loading || runningJob"/><small>混合策略达到此占用比例时触发回收，默认 90%。</small></label>
-          <label>低水位 <span class="cache-unit">%</span><input v-model="draft.low" type="number" min="1" max="99" step="1" required aria-label="缓存低水位" :disabled="busy || loading || runningJob"/><small>回收目标，默认 75%；受保护数据可能使目标无法达到。</small></label>
+      <section class="cache-storage" aria-label="缓存容量概况">
+        <div class="cache-storage-top">
+          <div class="cache-storage-number"><span class="cache-capacity-label">缓存容量</span><strong>{{ result.usageReady === false ? '正在计算…' : bytes(result.usageBytes) }}</strong><span>/ {{ bytes(result.settings.maxBytes) }}</span></div>
+          <div class="cache-cleanup-buttons">
+            <ElButton class="cache-refresh" :icon="RefreshRight" :loading="loading" :disabled="busy" aria-label="刷新列表" title="刷新缓存及占用" @click="load()"><span class="sr-only">刷新列表</span></ElButton>
+            <ElButton type="primary" :disabled="cleanupDisabled || !!policyDisabledReason" :title="policyDisabledReason || '按已保存策略回收到低水位'" @click="clear('POLICY')">按策略回收</ElButton>
+            <ElButton type="danger" plain :disabled="cleanupDisabled" @click="clear('CLEAR')">清理缓存</ElButton>
+          </div>
         </div>
-        <div class="cache-settings-footer"><p v-if="dirty && validation" class="cache-validation" role="alert">{{ validation }}</p><span v-else class="cache-hint">原片与兼容结果共用容量，清理缓存不修改原始歌曲。</span><div><ElButton :disabled="busy || loading" @click="reloadSettings">重新读取设置</ElButton><ElButton type="primary" native-type="submit" :loading="busy" :disabled="loading || runningJob || !dirty || !!validation || conflict">保存设置</ElButton></div></div>
-      </form>
-      <section v-if="job || jobError" class="sv-panel sv-content-section cache-job" aria-label="缓存清理任务" aria-live="polite">
-        <div class="cache-section-heading"><div><h2>{{ job ? jobStates[job.state] || job.state : '读取清理任务' }}</h2><p>清理在后台执行，取消会保留已完成的删除；离开页面不会停止任务。</p></div><ElButton v-if="runningJob" :disabled="busy || job?.state === 'CANCELLING'" @click="cancelJob">取消清理</ElButton></div>
+        <progress :value="usedPercent" max="100" aria-label="缓存容量使用比例" />
+        <div class="cache-capacity-meta">
+          <div><span class="cache-used"><i aria-hidden="true" />已用 {{ result.usageReady === false ? '计算中' : `${usageRatio}%` }}</span><span class="cache-remaining">剩余 {{ bytes(remainingBytes) }}</span><span>{{ result.entryCount }} 份歌曲缓存</span></div>
+          <div class="cache-reserved"><span v-if="result.reservedBytes !== undefined">预留 {{ bytes(result.reservedBytes) }}</span><ElPopover trigger="click" placement="bottom-end" :width="300" popper-class="cache-usage-popover"><template #reference><ElButton text :icon="InfoFilled" aria-label="缓存占用与预留说明" /></template><p>占用包含正在接收和待清理残留的数据。预留空间单独列出，不代表可播放的缓存。</p></ElPopover></div>
+        </div>
+        <p v-if="statisticsPending" class="cache-statistics-note" role="status">{{ result.usageReady === false ? '正在计算缓存占用，请稍候。' : '正在准备播放评分统计，当前尚未就绪。' }}</p>
+        <div class="cache-policy-line">
+          <div class="cache-policy-brief"><ElIcon><CircleCheck /></ElIcon><strong>{{ policyLabel(result.settings.policy) }}</strong><span v-if="result.settings.policy === 'MANUAL'">容量不足时停止新增缓存</span><span v-else>{{ result.settings.highWatermarkPercent ?? 90 }}% 触发回收，{{ result.settings.lowWatermarkPercent ?? 75 }}% 为目标</span></div>
+          <ElButton text class="cache-settings-toggle" :disabled="busy" :aria-expanded="settingsExpanded" aria-controls="cache-settings" @click="toggleSettings"><span v-if="dirty" class="cache-draft">尚未保存</span>{{ settingsExpanded ? '收起设置' : '调整设置' }}<ElIcon><ArrowUp v-if="settingsExpanded" /><ArrowDown v-else /></ElIcon></ElButton>
+        </div>
+        <p v-if="result.settings.policy === 'MANUAL'" class="cache-policy-note">{{ policyDisabledReason }}</p>
+        <form v-if="settings" v-show="settingsExpanded" id="cache-settings" class="cache-settings" novalidate @submit.prevent="save">
+          <div class="cache-section-heading"><div><h2>缓存设置</h2><p>自动回收和批量清理保护固定、近 24 小时实际播放、正在播放及下载的缓存。近 3 天播放有软保留加分。</p></div></div>
+          <div class="cache-fields">
+            <label>容量上限<span class="cache-unit">GiB</span><input v-model="draft.capacityGiB" type="number" min="0.0625" max="1048576" step="any" required aria-label="最大缓存容量" :aria-invalid="dirty && capacityValidation" :disabled="busy || loading" /><small>默认 50 GiB；启动时空间不足则按剩余空间的 80% 设置。手动保存后保留设置。</small></label>
+            <label>回收策略<select v-model="draft.policy" aria-label="缓存策略" :disabled="busy || loading"><option v-for="policy in policies" :key="policy.value" :value="policy.value">{{ policy.label }}</option></select><small>{{ selectedPolicy.description }}</small></label>
+            <label>高水位 / 触发点<span class="cache-unit">%</span><input v-model="draft.high" type="number" min="2" max="100" step="1" required aria-label="缓存高水位" :aria-invalid="dirty && !capacityValidation && !!validation" :disabled="busy || loading || runningJob" /><small>达到此占用比例时触发混合回收，默认 90%。</small></label>
+            <label>低水位 / 回收目标<span class="cache-unit">%</span><input v-model="draft.low" type="number" min="1" max="99" step="1" required aria-label="缓存低水位" :aria-invalid="dirty && !capacityValidation && !!validation" :disabled="busy || loading || runningJob" /><small>默认 75%；受保护数据可能使目标无法达到。</small></label>
+          </div>
+          <p v-if="draft.policy === 'MANUAL'" class="cache-hint">高低水位仅在混合评分策略下生效，手动策略不执行按策略回收。</p>
+          <div class="cache-settings-footer"><p v-if="dirty && validation" class="cache-validation" role="alert">{{ validation }}</p><p v-else class="cache-hint">保存后生效。原片与兼容结果共用容量，清理缓存不修改原始歌曲。</p><div><ElButton :disabled="busy || loading" @click="reloadSettings">重新读取设置</ElButton><ElButton v-if="dirty" :disabled="busy || loading" @click="discardSettings">放弃修改</ElButton><ElButton type="primary" native-type="submit" :loading="busy" :disabled="loading || runningJob || !dirty || !!validation || conflict">保存设置</ElButton></div></div>
+        </form>
+      </section>
+
+      <section v-if="job || jobError" class="cache-job" aria-label="缓存清理任务" aria-live="polite">
+        <div class="cache-job-summary"><div><h2>{{ job ? jobStates[job.state] || job.state : '读取清理任务' }}</h2><p v-if="job">已清理 {{ job.removed }} 份缓存，释放 {{ bytes(job.freedBytes) }}；跳过 {{ job.skipped }} 份，失败 {{ job.failed }} 份。</p></div><div class="cache-job-actions"><ElButton v-if="runningJob" :disabled="busy || job?.state === 'CANCELLING'" @click="cancelJob">取消清理</ElButton><ElButton text :aria-expanded="jobDetailsExpanded" aria-controls="cache-job-details" @click="jobDetailsExpanded = !jobDetailsExpanded">{{ jobDetailsExpanded ? '收起详情' : '任务详情' }}<ElIcon><ArrowUp v-if="jobDetailsExpanded" /><ArrowDown v-else /></ElIcon></ElButton></div></div>
         <p v-if="jobError" role="alert" class="cache-error">{{ jobError }}<ElButton text @click="pollJob()">重试读取进度</ElButton></p>
-        <template v-if="job"><p>已清理 {{ job.removed }} 份缓存，释放 {{ bytes(job.freedBytes) }}；跳过 {{ job.skipped }} 份，失败 {{ job.failed }} 份。</p><p>占用 {{ bytes(job.usageBeforeBytes) }} → {{ bytes(job.usageAfterBytes) }} · 目标 {{ bytes(job.targetBytes) }}</p><p v-if="job.spaceInsufficient" role="alert" class="cache-error">清理后空间仍不足，还需 {{ bytes(job.shortfallBytes) }}。请取消不需要的固定、等待使用结束，或增加缓存容量及磁盘空间。</p><p v-else-if="!runningJob && !job.targetReached" class="cache-hint">未达到目标水位，当前仍有可用缓存空间；受保护条目不会被强制删除。</p><ul v-if="Object.keys(job.skippedByReason ?? {}).length" class="cache-job-reasons"><li v-for="(count, reason) in job.skippedByReason" :key="reason">{{ reasons[reason] || reason }}：{{ count }} 份</li></ul><ul v-if="job.errors?.length" class="cache-error"><li v-for="(item, index) in job.errors" :key="index">{{ jobFailure(item) }}</li></ul></template>
+        <p v-if="job?.spaceInsufficient" role="alert" class="cache-error">清理后空间仍不足，还需 {{ bytes(job.shortfallBytes) }}。请取消不需要的固定、等待使用结束，或增加缓存容量及磁盘空间。</p>
+        <div v-show="jobDetailsExpanded" id="cache-job-details" class="cache-job-details"><p>清理在后台执行，取消会保留已完成的删除；离开页面不会停止任务。</p><template v-if="job"><p>占用 {{ bytes(job.usageBeforeBytes) }} → {{ bytes(job.usageAfterBytes) }}，目标 {{ bytes(job.targetBytes) }}</p><p v-if="!job.spaceInsufficient && !runningJob && !job.targetReached" class="cache-hint">未达到目标水位，当前仍有可用缓存空间；受保护条目不会被强制删除。</p><ul v-if="Object.keys(job.skippedByReason ?? {}).length" class="cache-job-reasons"><li v-for="(count, reason) in job.skippedByReason" :key="reason">{{ reasons[reason] || reason }}：{{ count }} 份</li></ul><ul v-if="job.errors?.length" class="cache-error"><li v-for="(item, index) in job.errors" :key="index">{{ jobFailure(item) }}</li></ul></template></div>
       </section>
-      <section class="sv-panel sv-content-section cache-pins" aria-label="固定的歌曲缓存">
-        <div class="cache-section-heading"><div><h2>固定歌曲 <span>{{ pins?.totalElements ?? 0 }}</span></h2><p>固定作用于同曲全部变体及未来缓存，不强制下载整曲；没有缓存或已下架的固定记录也可在此取消。</p></div><ElButton :disabled="pinsLoading || busy" @click="loadPins">刷新固定</ElButton></div>
-        <p v-if="pinError" role="alert" class="cache-error">{{ pinError }}</p><p v-else-if="pinsLoading" role="status">正在读取固定歌曲…</p><p v-else-if="!pins?.items.length" class="cache-hint">尚未固定歌曲。可在下方缓存条目中固定。</p>
-        <article v-for="pin in pins?.items ?? []" :key="pin.songId" class="cache-pin-row"><div><strong>{{ pin.title || pin.songId }}</strong><p>{{ pin.artist || '歌曲信息暂不可用' }}<span v-if="pin.hasCache === false"> · 尚无缓存</span></p></div><ElButton :disabled="busy" :aria-label="`取消固定${pin.title || pin.songId}`" @click="togglePin(pin)">取消固定</ElButton></article>
-        <ElPagination v-if="pins?.totalElements" :current-page="pinPage" :page-size="20" :total="pins.totalElements" :disabled="busy || pinsLoading" layout="total, prev, pager, next" @current-change="value => { pinPage = value; loadPins() }"/>
-      </section>
-      <section class="sv-panel sv-content-section cache-list" aria-label="已缓存的音视频">
-        <div class="cache-section-heading"><div><h2>已缓存的音视频 <span>{{ result.totalElements }}</span></h2><p>原片可部分缓存；整曲缓存支持跳转复用。不同画质、音轨、字幕或独立生成的片段可能有多份缓存。离线兼容版本仍在歌曲播放设置中管理。</p></div></div>
-        <p v-if="loading" class="cache-loading" role="status">正在读取缓存…</p>
-        <div v-else-if="!result.items.length" class="cache-empty"><span aria-hidden="true"><ElIcon><SongPlaceholderIcon /></ElIcon></span><h3>暂无歌曲缓存</h3><p>播放 WebDAV 原片或生成兼容结果后，已缓存内容会显示在这里。</p></div>
-        <template v-else>
-          <div class="cache-table-heading" aria-hidden="true"><span>歌曲 / 格式</span><span>大小</span><span>命中 / 最近使用</span><span>状态 / 操作</span></div>
-          <article v-for="entry in result.items" :key="entry.id" class="cache-row">
-            <div class="cache-song"><span class="cache-media-icon" :class="{ audio: entry.mediaType === 'AUDIO' }">{{ entry.mediaType === 'AUDIO' ? '音频' : '视频' }}</span><div><h3>{{ entry.title || '未命名歌曲' }}</h3><p>{{ entry.artist || entry.songId || entry.id }}</p><small>{{ format(entry) }}</small><small v-if="entry.lifecycle">{{ lifecycles[entry.lifecycle] || entry.lifecycle }} · 近 7 天有效 {{ entry.playCount7d ?? 0 }} 次 · 综合 {{ score(entry.score) }}</small><small v-if="entry.H !== undefined" :title="`热度 H=${score(entry.H)}，最近 R=${score(entry.R)}，频次 F=${score(entry.F)}，保留优先级 ${score(entry.priority)}`">H {{ score(entry.H) }} / R {{ score(entry.R) }} / F {{ score(entry.F) }}</small><small v-if="entry.lastPlayedAt">实际播放于 {{ date(entry.lastPlayedAt) }}</small></div></div>
-            <div class="cache-size"><span class="mobile-label">大小</span>{{ bytes(entry.bytes) }}<small v-if="(entry.residueBytes ?? 0) > 0" title="损坏或待清理的文件仍占磁盘，不计入可播放缓存字节">另有残留占用 {{ bytes(entry.residueBytes ?? 0) }}</small></div>
-            <div class="cache-access"><strong>命中 {{ entry.hits }} 次</strong><time :datetime="entry.lastAccessAt">{{ date(entry.lastAccessAt) }}</time><small :title="date(entry.createdAt)">生成于 {{ date(entry.createdAt) }}</small></div>
-            <div class="cache-row-actions"><span :class="{ 'cache-in-use': deletionBlocked(entry) }">{{ protections(entry).join(' · ') || (entry.leased ? '正在使用' : entry.target.mode === 'ORIGINAL' && entry.complete === false ? '部分已缓存' : '可复用') }}</span><span v-if="entry.pinned && !entry.protectionReasons?.includes('PINNED')">已固定</span><ElButton v-if="entry.songId" text :disabled="busy || loading || entry.state === 'DELETING'" :aria-label="`${entry.pinned ? '取消固定' : '固定'}${entry.title || '未命名歌曲'}的缓存`" @click="togglePin(entry)">{{ entry.pinned ? '取消固定' : '固定歌曲' }}</ElButton><ElButton text type="danger" :disabled="deletionBlocked(entry) || busy || loading || runningJob" :aria-label="`删除${entry.title || '未命名歌曲'}的缓存`" @click="remove(entry)">删除缓存</ElButton></div>
-          </article>
-        </template>
-        <ElPagination v-if="result.totalElements" :current-page="page" :page-size="20" :total="result.totalElements" :disabled="busy || loading" layout="total, prev, pager, next" @current-change="value => { page = value; load() }"/>
+
+      <section class="cache-workspace" aria-label="缓存管理">
+        <div class="cache-workspace-top"><div class="cache-tabs" role="tablist" aria-label="缓存管理视图"><button id="cache-list-tab" ref="cacheTab" type="button" role="tab" :aria-selected="activeView === 'cache'" :tabindex="activeView === 'cache' ? 0 : -1" aria-controls="cache-list-panel" @click="changeView('cache')" @keydown="tabKeydown">缓存明细<span>{{ result.totalElements }}</span></button><button id="cache-pins-tab" ref="pinsTab" type="button" role="tab" :aria-selected="activeView === 'pins'" :tabindex="activeView === 'pins' ? 0 : -1" aria-controls="cache-pins-panel" @click="changeView('pins')" @keydown="tabKeydown">固定歌曲<span>{{ pins?.totalElements ?? '—' }}</span></button></div><p>一首歌可有多份缓存，份数不等于歌曲数</p></div>
+        <div class="cache-filter-row"><label class="cache-search"><ElIcon><Search /></ElIcon><input v-model="keyword" type="search" :aria-label="activeView === 'cache' ? '查找当前页歌曲或歌手' : '查找当前页固定歌曲'" :placeholder="activeView === 'cache' ? '查找当前页歌曲或歌手' : '查找当前页固定歌曲'" maxlength="200" :disabled="activeView === 'cache' ? loading : pinsLoading" /></label><select v-if="activeView === 'cache'" v-model="typeFilter" aria-label="筛选当前页缓存类型" :disabled="loading"><option value="ALL">全部类型</option><option value="ORIGINAL">原片</option><option value="COMPATIBLE">兼容缓存</option></select><span class="cache-filter-scope">仅筛选当前页</span><ElButton v-if="activeView === 'pins'" class="cache-pin-refresh" text :icon="RefreshRight" :disabled="pinsLoading || busy" @click="loadPins">刷新固定</ElButton></div>
+
+        <section v-show="activeView === 'cache'" id="cache-list-panel" class="cache-list" role="tabpanel" aria-labelledby="cache-list-tab" aria-label="已缓存的音视频" :aria-busy="loading">
+          <p v-if="loading" class="cache-loading" role="status">正在读取缓存…</p>
+          <div v-else-if="!result.items.length" class="cache-empty"><ElIcon><Headset /></ElIcon><h3>暂无歌曲缓存</h3><p>播放 WebDAV 原片或生成兼容结果后，已缓存内容会显示在这里。</p></div>
+          <div v-else-if="!filteredEntries.length" class="cache-empty"><ElIcon><Search /></ElIcon><h3>当前页没有匹配的缓存</h3><p>换个关键词、重置筛选，或切换到其他页继续查找。</p><ElButton @click="resetFilters">重置筛选</ElButton></div>
+          <div v-else class="cache-table"><div class="cache-table-heading" aria-hidden="true"><span>歌曲与副本</span><span>类型与规格</span><span>已占用</span><span>保护状态</span><span>最近访问</span><span>操作</span></div>
+            <article v-for="entry in filteredEntries" :key="entry.id" class="cache-row" :data-cache-id="entry.id" :data-song-id="entry.songId">
+              <div class="cache-row-main">
+                <div class="cache-song"><SongCover class="cache-song-cover" :song-id="entry.songId" :title="entry.title" /><button type="button" class="cache-song-open" :aria-label="`查看${entry.title || '未命名歌曲'}的缓存详情`" :aria-expanded="expandedEntries.has(entry.id)" :aria-controls="`cache-detail-${entry.id}`" title="展开缓存规格、使用记录与播放评分" @click="toggleDetails(entry.id)"><strong>{{ entry.title || '未命名歌曲' }}</strong><span>{{ entry.artist || entry.songId || '歌曲信息暂不可用' }}</span><ElIcon class="cache-song-chevron"><ArrowUp v-if="expandedEntries.has(entry.id)" /><ArrowDown v-else /></ElIcon></button></div>
+                <div class="cache-format"><span>{{ entry.target.mode === 'ORIGINAL' ? '原片' : '兼容缓存' }} {{ entry.mediaType === 'AUDIO' ? '音频' : '视频' }}</span><small>{{ shortFormat(entry) }}</small></div>
+                <div class="cache-size"><span>{{ bytes(entry.bytes) }}</span><small v-if="completeness(entry)" :class="{ 'cache-partial': completeness(entry).startsWith('部分') }">{{ completeness(entry) }}</small><small v-if="(entry.residueBytes ?? 0) > 0" title="损坏或待清理的文件仍占磁盘，不计入可播放缓存字节">另有残留占用 {{ bytes(entry.residueBytes ?? 0) }}</small></div>
+                <div class="cache-protections"><span v-if="entry.pinned && !entry.protectionReasons?.includes('PINNED')" class="cache-protection is-pinned">固定保护</span><span v-for="(reason, index) in protections(entry)" :key="reason" class="cache-protection" :class="{ 'is-pinned': entry.protectionReasons?.[index] === 'PINNED', 'is-active': entry.protectionReasons?.[index] !== 'PINNED' }">{{ reason }}</span><span v-if="!protections(entry).length && !entry.pinned" class="cache-protection" :class="{ 'is-active': entry.leased || entry.state === 'DELETING' }">{{ entry.state === 'DELETING' ? '正在删除' : entry.leased ? '正在使用' : '可回收' }}</span></div>
+                <time class="cache-access" :datetime="entry.lastAccessAt" :title="date(entry.lastAccessAt)">{{ shortDate(entry.lastAccessAt) }}</time>
+                <div class="cache-row-actions"><ElButton v-if="entry.songId" text class="cache-icon-button cache-pin-button" :class="{ 'is-pinned': entry.pinned }" :icon="CollectionTag" :disabled="busy || loading || entry.state === 'DELETING'" :aria-pressed="!!entry.pinned" :aria-label="`${entry.pinned ? '取消固定' : '固定'}${entry.title || '未命名歌曲'}的缓存`" :title="entry.pinned ? '取消整首歌的固定' : '固定此歌曲的全部缓存'" @click="togglePin(entry)" /><ElButton text type="danger" class="cache-icon-button cache-delete-button" :icon="Delete" :disabled="deletionBlocked(entry) || busy || loading || runningJob || statisticsPending" :aria-label="`删除${entry.title || '未命名歌曲'}的缓存`" :title="deletionBlocked(entry) ? '固定或使用中的缓存暂不能删除' : entry.protectionReasons?.includes('RECENT_PLAY') ? '单份删除需确认覆盖近期保护' : '删除这一份缓存'" @click="remove(entry)" /></div>
+              </div>
+              <div v-show="expandedEntries.has(entry.id)" :id="`cache-detail-${entry.id}`" class="cache-entry-details" role="region" :aria-label="`${entry.title || '未命名歌曲'}的缓存详情`"><dl><div><dt>缓存规格</dt><dd>{{ format(entry) }}</dd></div><div><dt>使用记录</dt><dd>命中 {{ entry.hits }} 次<br />最近访问 {{ date(entry.lastAccessAt) }}<br />生成于 {{ date(entry.createdAt) }}</dd></div><div><dt>播放与评分</dt><dd><span v-if="entry.lifecycle">{{ lifecycles[entry.lifecycle] || entry.lifecycle }} / 近 7 天有效 {{ entry.playCount7d ?? 0 }} 次 / 综合 {{ score(entry.score) }}</span><span v-else>近 7 天有效 {{ entry.playCount7d ?? 0 }} 次</span><br /><span v-if="entry.H !== undefined" :title="`保留优先级 ${score(entry.priority)}`">H {{ score(entry.H) }} / R {{ score(entry.R) }} / F {{ score(entry.F) }}<br /></span>实际播放于 {{ date(entry.lastPlayedAt) }}</dd></div></dl></div>
+            </article>
+          </div>
+          <div class="cache-list-footer"><span v-if="result.totalElements">本页 {{ filteredEntries.length }} / {{ result.items.length }} 份<span v-if="keyword.trim() || typeFilter !== 'ALL'">（已筛选）</span></span><span v-else>共 0 份缓存</span><ElPagination v-if="result.totalElements" :current-page="page" :page-size="20" :total="result.totalElements" :disabled="busy || loading" layout="prev, pager, next" @current-change="value => { page = value; load() }" /></div>
+          <details class="cache-explanation"><summary>关于缓存与保护规则</summary><p>原片可部分缓存，整曲缓存支持跳转复用。不同画质、音轨、字幕或独立生成的片段可能有多份缓存。</p><p>固定对同曲现有及未来缓存生效，不强制下载。自动回收和批量清理会跳过固定、近 24 小时实际播放及使用中的副本。近期播放副本如需单独删除，必须明确确认覆盖保护。</p><p>清理只删除本地缓存，不修改原始歌曲。离线兼容版本仍在歌曲播放设置中管理。</p></details>
+        </section>
+
+        <section v-show="activeView === 'pins'" id="cache-pins-panel" class="cache-pins" role="tabpanel" aria-labelledby="cache-pins-tab" aria-label="固定的歌曲缓存" :aria-busy="pinsLoading">
+          <p class="cache-pin-note">固定作用于同曲全部变体及未来缓存，不强制下载整曲。取消固定不会删除缓存，没有缓存的固定记录也可在此取消。</p>
+          <p v-if="pinError" role="alert" class="cache-feedback cache-error">{{ pinError }}<ElButton text :disabled="busy || pinsLoading" @click="loadPins">重试读取固定</ElButton></p><p v-else-if="pinsLoading" class="cache-loading" role="status">正在读取固定歌曲…</p>
+          <div v-else-if="!pins?.items.length" class="cache-empty"><ElIcon><CollectionTag /></ElIcon><h3>尚未固定歌曲</h3><p>在缓存明细中固定常听歌曲，可保护同曲的所有缓存。</p><ElButton @click="changeView('cache')">查看缓存明细</ElButton></div>
+          <div v-else-if="!filteredPins.length" class="cache-empty"><ElIcon><Search /></ElIcon><h3>当前页没有匹配的固定歌曲</h3><ElButton @click="resetFilters">重置筛选</ElButton></div>
+          <div v-else class="cache-pin-list"><article v-for="pin in filteredPins" :key="pin.songId" class="cache-pin-row" :data-pin-song-id="pin.songId"><SongCover class="cache-song-cover" :song-id="pin.songId" :title="pin.title" /><div><strong>{{ pin.title || pin.songId }}</strong><p>{{ pin.artist || '歌曲信息暂不可用' }}</p></div><span v-if="pin.hasCache === false" class="cache-no-copy">尚无缓存</span><ElButton :disabled="busy" :aria-label="`取消固定${pin.title || pin.songId}`" @click="togglePin(pin)">取消固定</ElButton></article></div>
+          <div class="cache-list-footer"><span>本页 {{ filteredPins.length }} / {{ pins?.items.length ?? 0 }} 首</span><ElPagination v-if="pins?.totalElements" :current-page="pinPage" :page-size="20" :total="pins.totalElements" :disabled="busy || pinsLoading" layout="prev, pager, next" @current-change="value => { pinPage = value; loadPins() }" /></div>
+        </section>
       </section>
     </template>
     <p v-else-if="loading" role="status" class="cache-loading">正在读取缓存…</p>
-    <section v-else class="sv-panel sv-content-section cache-unavailable"><h2>暂时无法读取歌曲缓存</h2><p>请检查服务节点的缓存目录、磁盘空间和读写权限。缓存管理无需连接计算节点。</p><div><ElButton @click="load()">重试</ElButton></div></section>
+    <section v-else class="cache-unavailable"><h2>暂时无法读取歌曲缓存</h2><p>请检查服务节点的缓存目录、磁盘空间和读写权限。缓存管理无需连接计算节点。</p><ElButton @click="load()">重试</ElButton></section>
+
+    <ElDialog v-model="recentOpen" title="覆盖近期保护并删除？" width="min(460px, calc(100vw - 32px))" align-center class="cache-recent-dialog">
+      <template v-if="recentEntry"><div class="cache-dialog-song"><strong>{{ recentEntry.title || '未命名歌曲' }}</strong><span>{{ recentEntry.artist || recentEntry.songId }}</span><span>{{ format(recentEntry) }} / {{ bytes(recentEntry.bytes) }}</span></div><p class="cache-dialog-copy">仅删除这一份本地缓存；原始歌曲与离线兼容版本保持不变。</p><p class="cache-dialog-warning">这份缓存近 24 小时内实际播放过，通常受到近期保护。</p><ElCheckbox v-model="recentConfirmed" class="cache-recent-checkbox">我确认覆盖近期播放保护，只删除这一份缓存</ElCheckbox></template>
+      <template #footer><div class="cache-recent-actions"><ElButton @click="recentOpen = false">保留缓存</ElButton><ElButton type="danger" :disabled="!recentConfirmed || busy || loading || runningJob || statisticsPending" @click="confirmRecentDelete">覆盖保护并删除</ElButton></div></template>
+    </ElDialog>
   </section>
 </template>
 
-<style scoped>
-.cache-size small{display:block;white-space:normal;font-size:12px;color:var(--sv-text-secondary);line-height:1.6;margin-top:4px}
-.cache-job,.cache-pins{padding:24px 24px}.cache-job p,.cache-pin-row p{font-size:12px;line-height:1.8}.cache-pin-row{display:flex;justify-content:space-between;gap:20px;align-items:center;padding:12px 0;border-top:1px solid var(--sv-border-subtle)}.cache-pin-row strong{font-size:13px}.cache-pin-row p{margin:4px 0 0;color:var(--sv-text-secondary)}.cache-pins>.el-pagination{justify-content:flex-end;margin-top:16px}.cache-cleanup-buttons{display:flex;gap:8px;flex-wrap:wrap}.cache-cleanup-buttons .el-button{margin:0}.cache-job-reasons{font-size:12px;line-height:1.8}.cache-row-actions>span{text-align:right;line-height:1.6}
-
-.song-cache-page{display:grid;gap:16px}.song-cache-page>.page-heading{margin:0}.cache-feedback{margin:0;padding:12px 16px;border-radius:8px;font-size:13px;line-height:1.7}.cache-error{color:var(--el-color-danger);background:var(--el-color-danger-light-9)}.cache-success{color:var(--el-color-success);background:var(--el-color-success-light-9)}.cache-storage{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:36px;padding:24px}.cache-eyebrow{display:block;color:var(--sv-text-secondary);font-size:12px}.cache-storage-number{margin:8px 0 16px;font-size:30px;font-weight:600;letter-spacing:-.5px}.cache-storage-number span{font-size:15px;font-weight:400;color:var(--sv-text-secondary)}.cache-storage progress{display:block;width:100%;height:7px;border:0;border-radius:8px;background:var(--sv-surface-3);accent-color:var(--sv-accent-primary)}progress::-webkit-progress-bar{background:var(--sv-surface-3);border-radius:8px}progress::-webkit-progress-value{background:var(--sv-accent-primary);border-radius:8px}.cache-hint{font-size:12px;color:var(--sv-text-secondary);line-height:1.8}.cache-storage .cache-hint{margin:12px 0 0}.cache-storage-policy{display:flex;min-width:180px;flex-direction:column;align-items:flex-start;gap:12px}.cache-storage-policy strong{font-size:14px}.cache-storage-policy .el-button{margin-top:auto}.cache-settings,.cache-list{padding:24px 24px}.cache-section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px}.cache-section-heading h2{font-size:16px;margin:0}.cache-section-heading h2 span{color:var(--sv-text-secondary);font-size:12px;margin-left:8px}.cache-section-heading p{font-size:12px;line-height:1.8;color:var(--sv-text-secondary);margin:8px 0 0}.cache-draft{color:var(--sv-accent-primary);font-size:12px;white-space:nowrap}.cache-fields{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(240px,1.1fr) repeat(2,minmax(120px,.5fr));gap:24px}.cache-fields label{position:relative;display:flex;flex-direction:column;gap:8px;font-size:13px}.cache-unit{position:absolute;top:0;right:0;color:var(--sv-text-secondary);font-size:12px}.cache-fields input,.cache-fields select{width:100%;min-height:40px;border:1px solid var(--sv-border-default);border-radius:8px;background:var(--sv-surface-1);color:var(--sv-text-primary);padding:8px 12px;font:inherit}.cache-fields input:focus,.cache-fields select:focus{outline:2px solid var(--sv-accent-primary);outline-offset:1px}.cache-fields small{font-size:12px;color:var(--sv-text-secondary);line-height:1.8}.cache-settings-footer{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:20px;padding-top:20px;border-top:1px solid var(--sv-border-subtle)}.cache-settings-footer>div{display:flex;gap:12px;flex:none}.cache-settings-footer .el-button{margin:0}.cache-validation{font-size:12px;color:var(--el-color-danger)}.cache-table-heading,.cache-row{display:grid;grid-template-columns:minmax(240px,1fr) 100px minmax(160px,.55fr) 100px;gap:20px;align-items:center}.cache-table-heading{color:var(--sv-text-secondary);font-size:12px;padding:0 0 12px;border-bottom:1px solid var(--sv-border-subtle)}.cache-row{padding:16px 0;border-bottom:1px solid var(--sv-border-subtle)}.cache-song{display:flex;gap:16px;align-items:center;min-width:0}.cache-media-icon{display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:var(--sv-surface-3);color:var(--sv-text-secondary);font-size:12px;flex:none}.cache-media-icon.audio{color:var(--sv-accent-primary)}.cache-song>div{min-width:0}.cache-song h3{font-size:14px;overflow-wrap:anywhere;margin:0 0 4px}.cache-song p,.cache-song small{display:block;font-size:12px;color:var(--sv-text-secondary);line-height:1.6;margin:0;overflow-wrap:anywhere}.cache-size{font-size:13px;white-space:nowrap}.mobile-label{display:none}.cache-access{display:flex;flex-direction:column;gap:8px;min-width:0}.cache-access strong{font-size:12px;font-weight:500}.cache-access time,.cache-access small{font-size:12px;color:var(--sv-text-secondary)}.cache-row-actions{display:flex;flex-direction:column;align-items:flex-end;gap:8px}.cache-row-actions>span{font-size:12px;color:var(--sv-text-secondary)}.cache-row-actions>span.cache-in-use{color:var(--el-color-warning)}.cache-row-actions .el-button{font-size:12px;margin:0;padding:4px 0;height:auto}.cache-list>.el-pagination{justify-content:flex-end;margin-top:20px}.cache-empty{padding:40px 16px;text-align:center}.cache-empty>span{font-size:36px;color:var(--sv-text-secondary)}.cache-empty h3{font-size:16px;margin:16px 0 12px}.cache-empty p,.cache-loading{color:var(--sv-text-secondary);font-size:13px;line-height:1.8}.cache-unavailable{padding:32px}.cache-unavailable h2{font-size:17px}.cache-unavailable p{color:var(--sv-text-secondary);font-size:13px;line-height:1.8}.cache-unavailable>div{display:flex;align-items:center;gap:20px;margin-top:24px}.cache-unavailable .text-link{font-size:13px}
-@media(max-width:1100px){.cache-fields{grid-template-columns:minmax(160px,.7fr) minmax(240px,1fr)}.cache-table-heading,.cache-row{grid-template-columns:minmax(200px,1fr) 85px minmax(140px,.6fr) 90px;gap:12px}.cache-settings-footer{align-items:flex-start}.cache-access small{display:none}}
-@media(max-width:760px){.cache-storage{padding:20px;gap:24px}.cache-storage-policy{min-width:145px}.cache-storage-number{font-size:24px}.cache-settings,.cache-list{padding:20px}.cache-table-heading{display:none}.cache-row{grid-template-columns:minmax(0,1fr) auto;gap:16px}.cache-song{grid-column:1 / -1}.cache-size{grid-column:1;font-size:12px}.mobile-label{display:inline;color:var(--sv-text-secondary);margin-right:8px}.cache-access{grid-column:1;grid-row:3;gap:4px}.cache-row-actions{grid-column:2;grid-row:2 / 4;align-self:end}.cache-fields{grid-template-columns:1fr}.cache-settings-footer{flex-direction:column}.cache-settings-footer>div{width:100%;flex-wrap:wrap}.cache-list>.el-pagination{justify-content:center;max-width:100%;overflow:auto}.cache-fields label{max-width:100%}}
-@media(max-width:430px){.cache-storage{grid-template-columns:1fr;gap:20px}.cache-storage-policy{flex-direction:row;flex-wrap:wrap;align-items:center;gap:12px}.cache-storage-policy .cache-eyebrow{width:100%}.cache-storage-policy .el-button{margin:0 0 0 auto}.cache-storage-policy strong{font-size:12px}}
-@media(max-width:768px), (pointer:coarse) {
-  .cache-fields input, .cache-fields select { min-height: 44px; }
-}
-</style>
+<style scoped src="./song-cache-workspace.css"></style>

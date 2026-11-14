@@ -244,7 +244,7 @@ it('待办 inbox 覆盖平台审核、分类确认与缺歌心愿并链接到对
     expect(todos.some(text => text.includes('7 首分类建议待确认'))).toBe(true)
     expect(todos.some(text => text.includes('2 条缺歌心愿待处理'))).toBe(true)
     const actions = wrapper.findAll('.todo-action')
-    expect(actions.find(a => a.text().includes('去审核'))!.attributes('href')).toContain('/library/songs/metadata?batch=batch-9')
+    expect(actions.find(a => a.text().includes('去审核'))!.attributes('href')).toContain('/library/songs/metadata?batch=batch-9&status=REVIEW')
     expect(actions.find(a => a.text().includes('去确认'))!.attributes('href')).toContain('/library/classification?task=task-3')
     expect(actions.find(a => a.text().includes('查看心愿'))!.attributes('href')).toContain('/library/missing-feedback')
   } finally { wrapper.unmount() }

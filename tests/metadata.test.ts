@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
+import { songManagementRoutes } from '../src/admin/modules/song-management/routes'
 import MetadataScrapeView from '../src/admin/modules/metadata/views/MetadataScrapeView.vue'
 import SingleSongScrapeDialog from '../src/admin/modules/metadata/components/SingleSongScrapeDialog.vue'
 import { metadata } from '../src/admin/modules/metadata/api/metadata'
@@ -18,7 +19,7 @@ const candidate: MetadataCandidate = { id: 'candidate-1', score: .95, track: { p
 function batch(status = 'RUNNING'): MetadataBatch { return { id: 'batch-1', mode: 'SELECTED', status, total: 1, completed: 0, pending: 1, processing: 0, review: 0, applied: 0, failed: 0, skippedExisting: 0, autoApply: false, threshold: .95, createdAt: '', updatedAt: '', items: [], page: 0, size: 20, totalElements: 1 } }
 function button(text: string) { return wrapper.findAll('button').find(item => item.text() === text)! }
 async function page(path = '/library/songs/metadata') {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/library/songs/metadata', component: MetadataScrapeView }, { path: '/system/music-platforms', component: { template: '<div>音乐平台设置</div>' } }, { path: '/library/songs', component: { template: '<div>歌曲管理</div>' } }] })
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/library/songs/metadata', component: MetadataScrapeView }, songManagementRoutes.find(route => route.path === '/library/review')!, { path: '/system/music-platforms', component: { template: '<div>音乐平台设置</div>' } }, { path: '/library/songs', component: { template: '<div>歌曲管理</div>' } }] })
   await router.push(path)
   wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router], stubs: { teleport: true } } })
   await flushPromises(); return router
@@ -32,11 +33,12 @@ beforeEach(() => {
 })
 it('可选择指定媒体来源创建批次，确认文案与请求范围一致', async () => {
   vi.mocked(metadata.start).mockResolvedValue(batch())
-  const confirm = vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as Awaited<ReturnType<typeof ElMessageBox.confirm>>)
   await page()
   await wrapper.get('select[aria-label="刮削媒体来源"]').setValue('source-1')
-  await button('刮削所选媒体源').trigger('click'); await flushPromises()
-  expect(confirm).toHaveBeenCalledWith(expect.stringContaining('仅检查媒体来源「家庭 NAS」'), '开始元数据刮削', expect.any(Object))
+  await button('开始匹配').trigger('click'); await flushPromises()
+  expect(wrapper.get('.start-scope-options').text()).toContain('家庭 NAS')
+  expect(metadata.start).not.toHaveBeenCalled()
+  await button('确认开始匹配').trigger('click'); await flushPromises()
   expect(metadata.start).toHaveBeenCalledWith(true, [], 'source-1')
 })
 afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; vi.restoreAllMocks(); vi.clearAllMocks(); vi.useRealTimers() })
@@ -53,10 +55,10 @@ it('历史查询期间误标已应用的记录可重新匹配，正常应用记�
 it('平台关闭时阻止启动，管理入口转到设置并保留所选歌曲', async () => {
   vi.mocked(metadata.settings).mockResolvedValue({ ...config, enabled: false })
   const router = await page('/library/songs/metadata?songIds=a,b')
-  expect((button('刮削全部歌曲').element as HTMLButtonElement).disabled).toBe(true)
+  expect((button('开始匹配').element as HTMLButtonElement).disabled).toBe(true)
   expect(wrapper.text()).toContain('设置 → 音乐平台')
   expect(wrapper.find('input[type=checkbox]').exists()).toBe(false)
-  await button('管理平台').trigger('click'); await flushPromises()
+  await wrapper.get('.platform-entry').trigger('click'); await flushPromises()
   expect(router.currentRoute.value.path).toBe('/system/music-platforms')
   expect(router.currentRoute.value.query.returnTo).toBe('/library/songs/metadata?songIds=a,b')
   expect(metadata.saveSettings).not.toHaveBeenCalled()
@@ -65,7 +67,9 @@ it('选中批次确认后提交所选歌曲，并显示持久化进度', async (
   vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as Awaited<ReturnType<typeof ElMessageBox.confirm>>)
   vi.mocked(metadata.start).mockResolvedValue(batch())
   const router = await page('/library/songs/metadata?songIds=a,b')
-  await button('刮削已选（2）').trigger('click'); await flushPromises()
+  await button('开始匹配').trigger('click'); await flushPromises()
+  expect(wrapper.get('input[value=selected]').element).toHaveProperty('checked', true)
+  await button('确认开始匹配').trigger('click'); await flushPromises()
   expect(metadata.start).toHaveBeenCalledWith(false, ['a', 'b'])
   expect(router.currentRoute.value.query.batch).toBe('batch-1')
   expect(wrapper.text()).toContain('正在匹配')
@@ -92,7 +96,8 @@ it('批次审核复用单曲编辑工作区及批次候选', async () => {
   vi.mocked(singleReview.load).mockResolvedValue({ song: { id: 'song-1', sourceName: 'nas', relativePath: '晴天.mkv', fileSize: 1024, metadata: null } as never, fingerprint: 'fingerprint', version: 'version', values: { title: '晴天', artists: ['周杰伦'], album: null, releaseDate: null, aliases: [], durationMs: null, cover: null } })
   await page()
   await button('审核候选').trigger('click'); await flushPromises()
-  expect(wrapper.findComponent(SingleSongScrapeDialog).exists()).toBe(true)
+  expect(wrapper.findComponent(SingleSongScrapeDialog).props('presentation')).toBe('drawer')
+  expect(wrapper.find('.drawer-candidate-select').exists()).toBe(true)
   expect(wrapper.text()).toContain('当前歌曲 · 入库信息')
   expect(wrapper.text()).toContain('选中候选与应用预览')
   expect(wrapper.text()).toContain('编辑元数据')
@@ -106,22 +111,22 @@ it('批次审核复用单曲编辑工作区及批次候选', async () => {
 it('歌曲信息页只展示已保存的平台与间隔，不再内嵌配置表单', async () => {
   vi.mocked(metadata.settings).mockResolvedValue({ ...config, minIntervalSeconds: 10, maxIntervalSeconds: 20 })
   await page()
-  expect(wrapper.get('.metadata-settings').text()).toContain('间隔 10～20 秒')
+  expect(wrapper.get('.platform-entry').attributes('title')).toContain('间隔 10～20 秒')
   expect(wrapper.find('input[aria-label="批量最小间隔秒"]').exists()).toBe(false)
   expect(metadata.saveSettings).not.toHaveBeenCalled()
 })
 it('歌曲信息页准确展示零秒等待配置', async () => {
   vi.mocked(metadata.settings).mockResolvedValue({ ...config, minIntervalSeconds: 0, maxIntervalSeconds: 0 })
   await page()
-  expect(wrapper.get('.metadata-settings').text()).toContain('间隔 0～0 秒')
+  expect(wrapper.get('.platform-entry').attributes('title')).toContain('间隔 0～0 秒')
 })
 it('运行批次保留整体进度并将平台配置交给设置页', async () => {
   vi.mocked(metadata.latest).mockResolvedValue({ ...batch(), total: 12, completed: 5, pending: 6, processing: 1, review: 2, skippedExisting: 3, processableTotal: 9, legacySkipped: 3, observedAt: '2026-10-28T00:00:00Z' })
   await page()
-  expect(wrapper.get('.progress-caption').text()).toContain('已处理 5 / 12 首')
+  expect(wrapper.get('.progress-caption').text()).toContain('5 / 12首已处理')
   expect(wrapper.get('[role=progressbar]').attributes('aria-valuenow')).toBe('42')
   expect(wrapper.find('#batch-settings-form').exists()).toBe(false)
-  expect(button('管理平台')).toBeDefined()
+  expect(wrapper.get('.platform-entry')).toBeDefined()
   expect(wrapper.text()).toContain('仅保存汇总')
   expect(wrapper.text()).toContain('最近读取')
 })
@@ -139,7 +144,7 @@ it('5% 候选明确显示无可信匹配和核对入口，不能误呈现为高�
 it('状态快捷筛选、歌手搜索和排序提交给后端，而不是只过滤当前页', async () => {
   vi.mocked(metadata.latest).mockResolvedValue(batch('COMPLETED'))
   await page()
-  await wrapper.get('.batch-stats button:last-child').trigger('click'); await flushPromises()
+  await wrapper.get('select[aria-label="更多歌曲状态"]').setValue('SKIPPED_EXISTING'); await flushPromises()
   expect(metadata.batch).toHaveBeenLastCalledWith('batch-1', 0, 'SKIPPED_EXISTING', '', 'DEFAULT')
   await wrapper.get('input[aria-label="搜索批次歌名或歌手"]').setValue('歌手%')
   await wrapper.get('form[aria-label="批次歌曲筛选"]').trigger('submit'); await flushPromises()
@@ -168,10 +173,50 @@ it('终止确认说明未处理和已写入的真实语义，终止后不再显�
 it('重新进入指定批次恢复后端状态与筛选结果', async () => {
   vi.mocked(metadata.batch).mockResolvedValue({ ...batch('PAUSED'), total: 9, completed: 5, pending: 4, processing: 0, review: 2, applied: 0, failed: 0, skippedExisting: 3 })
   await page('/library/songs/metadata?batch=batch-1')
-  expect(metadata.batch).toHaveBeenCalledWith('batch-1')
-  expect(wrapper.get('.progress-caption').text()).toContain('已处理 5 / 9 首')
+  expect(metadata.batch).toHaveBeenCalledWith('batch-1', 0, '', '', 'DEFAULT')
+  expect(wrapper.get('.progress-caption').text()).toContain('5 / 9首已处理')
   expect(wrapper.get('[role=progressbar]').attributes('aria-valuenow')).toBe('56')
   expect(button('继续')).toBeDefined()
+  expect(metadata.start).not.toHaveBeenCalled()
+})
+
+it('旧审核链接跳转到歌曲信息，保留批次、所选歌曲和锚点并筛选待审核', async () => {
+  vi.mocked(metadata.batch).mockResolvedValue({ ...batch('COMPLETED'), pending: 0, totalElements: 0 })
+  const router = await page('/library/review?batch=batch-1&songIds=a,b#song-a')
+  expect(router.currentRoute.value.path).toBe('/library/songs/metadata')
+  expect(router.currentRoute.value.query).toEqual({ batch: 'batch-1', songIds: 'a,b', status: 'REVIEW' })
+  expect(router.currentRoute.value.hash).toBe('#song-a')
+  expect(wrapper.get('h1').text()).toBe('歌曲信息')
+  expect(wrapper.get('button[data-status=REVIEW]').attributes('aria-pressed')).toBe('true')
+  expect(metadata.batch).toHaveBeenCalledWith('batch-1', 0, 'REVIEW', '', 'DEFAULT')
+  expect(metadata.start).not.toHaveBeenCalled()
+})
+
+it('待审核为零仍可筛选，空态返回全部歌曲并保留批次与选择上下文', async () => {
+  const completed = { ...batch('COMPLETED'), completed: 1, pending: 0, applied: 1 }
+  vi.mocked(metadata.batch).mockResolvedValue(completed)
+  const router = await page('/library/songs/metadata?batch=batch-1&songIds=a,b')
+  const reviewFilter = wrapper.get('button[data-status=REVIEW]')
+  expect(reviewFilter.text()).toBe('待审核 0')
+  await reviewFilter.trigger('click'); await flushPromises()
+  expect(router.currentRoute.value.query.status).toBe('REVIEW')
+  expect(wrapper.text()).toContain('当前没有待审核歌曲')
+  expect(metadata.batch).toHaveBeenLastCalledWith('batch-1', 0, 'REVIEW', '', 'DEFAULT')
+  await wrapper.get('.batch-list-empty button').trigger('click'); await flushPromises()
+  expect(router.currentRoute.value.query).toEqual({ batch: 'batch-1', songIds: 'a,b' })
+  expect(wrapper.get('button[data-status=ALL]').attributes('aria-pressed')).toBe('true')
+  expect(metadata.batch).toHaveBeenLastCalledWith('batch-1', 0, '', '', 'DEFAULT')
+})
+
+it('浏览器返回状态查询时同步列表，未知状态回到全部', async () => {
+  vi.mocked(metadata.batch).mockResolvedValue(batch('COMPLETED'))
+  const router = await page('/library/songs/metadata?batch=batch-1&status=FAILED')
+  await router.push('/library/songs/metadata?batch=batch-1&status=REVIEW'); await flushPromises()
+  expect(wrapper.get('button[data-status=REVIEW]').attributes('aria-pressed')).toBe('true')
+  expect(metadata.batch).toHaveBeenLastCalledWith('batch-1', 0, 'REVIEW', '', 'DEFAULT')
+  await router.push('/library/songs/metadata?batch=batch-1&status=UNKNOWN'); await flushPromises()
+  expect(wrapper.get('button[data-status=ALL]').attributes('aria-pressed')).toBe('true')
+  expect(metadata.batch).toHaveBeenLastCalledWith('batch-1', 0, '', '', 'DEFAULT')
   expect(metadata.start).not.toHaveBeenCalled()
 })
 

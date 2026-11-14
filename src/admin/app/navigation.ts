@@ -18,7 +18,6 @@ export const navigationGroups = [
   { id: 'tidy', label: '整理', path: '/library/songs/metadata', icon: MagicStick, children: [
     { path: '/library/songs/metadata', label: '歌曲信息', icon: MagicStick },
     { path: '/library/audio-processing', label: '原唱与伴奏', icon: Headset },
-    { path: '/library/review', label: '待审核', icon: CollectionTag },
   ] },
   { id: 'living', label: '客厅', path: '/system/tv-settings', icon: Monitor, children: [
     { path: '/system/client-downloads', label: '客户端下载', icon: Download },
@@ -36,7 +35,8 @@ export const navigationGroups = [
   ] },
 ]
 export function navigationContext(path: string) {
-  if (path === '/library/media/recognition/rules' || path === '/library/filename-parser' || path === '/library/filename-parser-profiles') path = '/library/media/recognition'
+  if (path === '/library/review') path = '/library/songs/metadata'
+  else if (path === '/library/media/recognition/rules' || path === '/library/filename-parser' || path === '/library/filename-parser-profiles') path = '/library/media/recognition'
   else if (path.startsWith('/library/media/') && path !== '/library/media/recognition') path = '/library/media'
   const group = navigationGroups.find(group => group.children.some(entry => entry.path === path))
   return { group, entry: group?.children.find(entry => entry.path === path) ?? (path === overviewEntry.path ? overviewEntry : path === taskEntry.path || path.startsWith(taskEntry.path + '/') ? taskEntry : undefined) }

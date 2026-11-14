@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { ElMessageBox, ElPagination } from 'element-plus'
+import { ElCheckbox, ElDialog, ElMessageBox, ElPagination } from 'element-plus'
 import { onBeforeRouteLeave } from 'vue-router'
 import SongCacheView from '../src/admin/modules/song-cache/SongCacheView.vue'
 import { songCache, type CachePage, type CleanupJob } from '../src/admin/modules/song-cache/api'
@@ -31,7 +31,7 @@ beforeEach(() => {
   vi.mocked(songCache.job).mockResolvedValue(structuredClone(completed))
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks(); vi.useRealTimers() })
-async function page() { wrapper = mount(SongCacheView, { global: { stubs: { RouterLink: { template: '<a><slot/></a>' } } } }); await flushPromises() }
+async function page() { wrapper = mount(SongCacheView, { attachTo: document.body, global: { stubs: { RouterLink: { template: '<a><slot/></a>' } } } }); await flushPromises() }
 function button(text: string) { return wrapper!.findAll('button').find(b => b.text() === text)! }
 function confirm() { return vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as Awaited<ReturnType<typeof ElMessageBox.confirm>>) }
 
@@ -61,6 +61,39 @@ it('磁盘满导致自动预算为零时容量进度仍有效，不自动保存�
   expect(songCache.save).not.toHaveBeenCalled()
 })
 
+it('缓存明细按歌曲编号显示封面，编号编码且缺图或加载失败时显示占位', async () => {
+  const value = structuredClone(original)
+  value.items[0]!.songId = 'song/一'
+  delete value.items[1]!.songId
+  vi.mocked(songCache.list).mockResolvedValue(value)
+  await page()
+  const video = wrapper!.get('[data-cache-id="cache-video"]')
+  expect(video.get('.song-cover img').attributes('src')).toBe('/api/v1/metadata/songs/song%2F%E4%B8%80/cover?variant=thumbnail')
+  expect(video.get('.song-cover img').attributes('alt')).toBe('合唱歌曲的封面')
+  expect(video.get('.song-cover img').attributes('loading')).toBe('lazy')
+  const audio = wrapper!.get('[data-cache-id="cache-audio"]')
+  expect(audio.find('.song-cover img').exists()).toBe(false)
+  expect(audio.find('[aria-label="暂无歌曲封面"]').exists()).toBe(true)
+  await video.get('.song-cover img').trigger('error')
+  expect(video.find('.song-cover img').exists()).toBe(false)
+  expect(video.find('[aria-label="暂无歌曲封面"]').exists()).toBe(true)
+})
+
+it('固定歌曲包含尚无缓存的歌曲也显示封面，加载失败保留歌曲与取消固定操作', async () => {
+  vi.mocked(songCache.pins).mockResolvedValue({ items: [{ songId: 'future/song', title: '未来固定', pinned: true, revision: 7, hasCache: false }], page: 0, size: 20, totalElements: 1 })
+  await page()
+  await wrapper!.get('#cache-pins-tab').trigger('click')
+  const pin = wrapper!.get('[data-pin-song-id="future/song"]')
+  expect(pin.get('.song-cover img').attributes('src')).toBe('/api/v1/metadata/songs/future%2Fsong/cover?variant=thumbnail')
+  expect(pin.get('.song-cover img').attributes('alt')).toBe('未来固定的封面')
+  expect(pin.text()).toContain('尚无缓存')
+  await pin.get('.song-cover img').trigger('error')
+  expect(pin.find('.song-cover img').exists()).toBe(false)
+  expect(pin.find('[aria-label="暂无歌曲封面"]').exists()).toBe(true)
+  expect(pin.get('button[aria-label="取消固定未来固定"]').attributes('disabled')).toBeUndefined()
+  expect(songCache.cleanup).not.toHaveBeenCalled()
+})
+
 it('原片部分缓存显示实际容量和完整度，使用中的预缓存不能删除', async () => {
   const value = structuredClone(original)
   value.items = [
@@ -69,8 +102,8 @@ it('原片部分缓存显示实际容量和完整度，使用中的预缓存不�
   ]
   vi.mocked(songCache.list).mockResolvedValue(value)
   await page()
-  expect(wrapper!.text()).toContain('WebDAV 原片 · 已缓存 2 MiB / 20 MiB')
-  expect(wrapper!.text()).toContain('WebDAV 原片 · 已完整缓存')
+  expect(wrapper!.text()).toContain('WebDAV 原片 / 已缓存 2 MiB / 20 MiB')
+  expect(wrapper!.text()).toContain('WebDAV 原片 / 已完整缓存')
   expect(wrapper!.text()).not.toContain('画质上限')
   expect(wrapper!.get('button[aria-label="删除原片部分的缓存"]').attributes('disabled')).toBeDefined()
   const ask = confirm()
@@ -100,7 +133,7 @@ it('残留占用与有效原片字节分开展示，不把损坏块计入整曲�
   await page()
   expect(wrapper!.get('.cache-storage-number').text()).toContain('6 MiB')
   expect(wrapper!.get('.cache-size').text()).toContain('2 MiB')
-  expect(wrapper!.get('.cache-size small').text()).toBe('另有残留占用 4 MiB')
+  expect(wrapper!.findAll('.cache-size small').map(item => item.text())).toContain('另有残留占用 4 MiB')
   expect(wrapper!.text()).toContain('已缓存 2 MiB / 6 MiB')
   expect(wrapper!.text()).not.toContain('已完整缓存')
 })
@@ -115,6 +148,94 @@ it('容量和策略只有显式保存才生效，按GiB转为字节且携带当�
   await wrapper!.get('form.cache-settings').trigger('submit'); await flushPromises()
   expect(songCache.save).toHaveBeenCalledWith({ maxBytes: 3.5 * 1024 ** 3, policy: 'HYBRID', ttlHours: 72, revision: 2, highWatermarkPercent: 85, lowWatermarkPercent: 65 })
   expect(wrapper!.text()).toContain('缓存设置已保存')
+})
+
+it('设置默认收起，取消放弃继续编辑，确认放弃后收起并恢复保存值', async () => {
+  await page()
+  expect(wrapper!.get('form.cache-settings').isVisible()).toBe(false)
+  await button('调整设置').trigger('click')
+  expect(wrapper!.get('form.cache-settings').isVisible()).toBe(true)
+  await wrapper!.get('input[aria-label="最大缓存容量"]').setValue('25')
+  const ask = confirm().mockRejectedValueOnce('cancel')
+  await wrapper!.get('.cache-settings-toggle').trigger('click'); await flushPromises()
+  expect(wrapper!.get('form.cache-settings').isVisible()).toBe(true)
+  expect(wrapper!.get('input[aria-label="最大缓存容量"]').element).toHaveProperty('value', '25')
+  await wrapper!.get('.cache-settings-toggle').trigger('click'); await flushPromises()
+  expect(ask).toHaveBeenCalledTimes(2)
+  expect(wrapper!.get('form.cache-settings').isVisible()).toBe(false)
+  await button('调整设置').trigger('click')
+  expect(wrapper!.get('input[aria-label="最大缓存容量"]').element).toHaveProperty('value', '10')
+  expect(songCache.save).not.toHaveBeenCalled()
+})
+
+it('明细按当前页关键词和类型筛选，不把筛选结果计为全库数量', async () => {
+  const value = structuredClone(original)
+  value.totalElements = value.entryCount = 52
+  value.items[0]!.target.mode = 'ORIGINAL'
+  vi.mocked(songCache.list).mockResolvedValue(value)
+  await page()
+  const search = wrapper!.get('input[aria-label="查找当前页歌曲或歌手"]')
+  await search.setValue('歌手三')
+  expect(wrapper!.findAll('[data-cache-id]')).toHaveLength(1)
+  expect(wrapper!.get('[data-cache-id]').attributes('data-cache-id')).toBe('cache-audio')
+  expect(wrapper!.get('#cache-list-tab').text()).toContain('52')
+  expect(wrapper!.get('.cache-list-footer').text()).toContain('本页 1 / 2 份（已筛选）')
+  expect(songCache.list).toHaveBeenCalledTimes(1)
+  await wrapper!.get('select[aria-label="筛选当前页缓存类型"]').setValue('ORIGINAL')
+  expect(wrapper!.text()).toContain('当前页没有匹配的缓存')
+  await button('重置筛选').trigger('click')
+  expect(wrapper!.findAll('[data-cache-id]')).toHaveLength(2)
+  wrapper!.getComponent(ElPagination).vm.$emit('current-change', 2); await flushPromises()
+  expect(songCache.list).toHaveBeenLastCalledWith(1, 20)
+})
+
+it('缓存与固定列表通过键盘切换，筛选在切换后重置且独立分页', async () => {
+  vi.mocked(songCache.pins).mockResolvedValue({ items: [{ songId: 'future', title: '未来固定', pinned: true, revision: 7, hasCache: false }], page: 0, size: 20, totalElements: 21 })
+  await page()
+  await wrapper!.get('input[aria-label="查找当前页歌曲或歌手"]').setValue('无匹配')
+  await wrapper!.get('#cache-list-tab').trigger('keydown', { key: 'ArrowRight' })
+  expect(wrapper!.get('#cache-pins-tab').attributes('aria-selected')).toBe('true')
+  expect(wrapper!.get('#cache-pins-tab').attributes('tabindex')).toBe('0')
+  expect(wrapper!.get('#cache-pins-panel').isVisible()).toBe(true)
+  expect(wrapper!.get('#cache-list-panel').isVisible()).toBe(false)
+  expect(wrapper!.get('input[aria-label="查找当前页固定歌曲"]').element).toHaveProperty('value', '')
+  expect(wrapper!.get('#cache-pins-panel').text()).toContain('尚无缓存')
+  wrapper!.findAllComponents(ElPagination)[1]!.vm.$emit('current-change', 2); await flushPromises()
+  expect(songCache.pins).toHaveBeenLastCalledWith(1, 20)
+  expect(songCache.list).toHaveBeenCalledTimes(1)
+  await wrapper!.get('#cache-pins-tab').trigger('keydown', { key: 'Home' })
+  expect(wrapper!.get('#cache-list-panel').isVisible()).toBe(true)
+  expect(wrapper!.findAll('[data-cache-id]')).toHaveLength(2)
+})
+
+it('保存前仍按已保存策略回收，已保存手动策略禁用评分回收但允许清理', async () => {
+  const value = structuredClone(original)
+  value.settings.policy = 'MANUAL'
+  vi.mocked(songCache.list).mockResolvedValue(value)
+  await page()
+  expect(button('按策略回收').attributes('disabled')).toBeDefined()
+  expect(button('清理缓存').attributes('disabled')).toBeUndefined()
+  await wrapper!.get('select[aria-label="缓存策略"]').setValue('HYBRID')
+  expect(button('按策略回收').attributes('disabled')).toBeDefined()
+  const ask = confirm()
+  await button('按策略回收').trigger('click'); await flushPromises()
+  expect(songCache.cleanup).not.toHaveBeenCalled()
+  expect(ask).not.toHaveBeenCalled()
+  await button('清理缓存').trigger('click'); await flushPromises()
+  expect(songCache.cleanup).toHaveBeenCalledWith({ mode: 'CLEAR' })
+})
+
+it('统计未就绪时显示准备状态并禁止批量及单份删除', async () => {
+  vi.mocked(songCache.list).mockResolvedValue({ ...structuredClone(original), statisticsReady: false })
+  await page()
+  expect(wrapper!.text()).toContain('正在准备播放评分统计')
+  expect(button('按策略回收').attributes('disabled')).toBeDefined()
+  expect(button('清理缓存').attributes('disabled')).toBeDefined()
+  expect(wrapper!.get('button[aria-label="删除合唱歌曲的缓存"]').attributes('disabled')).toBeDefined()
+  const ask = confirm()
+  await button('清理缓存').trigger('click'); await flushPromises()
+  expect(ask).not.toHaveBeenCalled()
+  expect(songCache.cleanup).not.toHaveBeenCalled()
 })
 
 it('验证容量与整数水位边界，无效草稿不能提交', async () => {
@@ -263,11 +384,32 @@ it('近24小时单删必须明确确认，批量清理仍保护近期和固定',
   vi.mocked(songCache.list).mockResolvedValue(value)
   await page(); const ask = confirm()
   await wrapper!.get('button[aria-label="删除合唱歌曲的缓存"]').trigger('click'); await flushPromises()
-  expect(ask.mock.calls[0]![0]).toContain('确认后仅对这一份缓存覆盖近期保护')
+  const dialog = wrapper!.getComponent(ElDialog)
+  expect(dialog.text()).toContain('我确认覆盖近期播放保护，只删除这一份缓存')
+  const remove = () => dialog.findAll('button').find(item => item.text() === '覆盖保护并删除')!
+  expect(remove().attributes('disabled')).toBeDefined()
+  expect(songCache.cleanup).not.toHaveBeenCalled()
+  await dialog.getComponent(ElCheckbox).setValue(true)
+  await remove().trigger('click'); await flushPromises()
   expect(songCache.cleanup).toHaveBeenCalledWith({ mode: 'DELETE', entryId: 'cache-video', confirmRecent: true })
   await button('清理缓存').trigger('click'); await flushPromises()
-  expect(ask.mock.calls[1]![0]).toContain('固定、近 24 小时实际播放')
+  expect(ask.mock.calls[0]![0]).toContain('固定、近 24 小时实际播放')
   expect(songCache.cleanup).toHaveBeenLastCalledWith({ mode: 'CLEAR' })
+})
+
+it('近期缓存取消删除不发请求，重新打开仍需重新勾选', async () => {
+  const value = structuredClone(original)
+  value.items[0]!.protectionReasons = ['RECENT_PLAY']
+  vi.mocked(songCache.list).mockResolvedValue(value)
+  await page()
+  await wrapper!.get('button[aria-label="删除合唱歌曲的缓存"]').trigger('click'); await flushPromises()
+  const dialog = wrapper!.getComponent(ElDialog)
+  await dialog.getComponent(ElCheckbox).setValue(true)
+  await dialog.findAll('button').find(item => item.text() === '保留缓存')!.trigger('click'); await flushPromises()
+  expect(songCache.cleanup).not.toHaveBeenCalled()
+  await wrapper!.get('button[aria-label="删除合唱歌曲的缓存"]').trigger('click'); await flushPromises()
+  expect(dialog.getComponent(ElCheckbox).props('modelValue')).toBe(false)
+  expect(dialog.findAll('button').find(item => item.text() === '覆盖保护并删除')!.attributes('disabled')).toBeDefined()
 })
 
 it('异步任务轮询显示保护阻塞，未达目标不误报空间不足', async () => {

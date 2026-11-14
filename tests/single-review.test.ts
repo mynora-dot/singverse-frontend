@@ -232,3 +232,22 @@ it('待复核歌曲不再展示顶部说明，保留可操作的手工编辑入�
   await edit.trigger('click'); await flushPromises()
   expect(wrapper.get('input[aria-label="编辑歌名"]').element.tagName).toBe('INPUT')
 })
+
+it('抽屉切换候选时保护手工草稿，取消放弃后恢复选择并保留版本提醒', async () => {
+  const live = context(); live.values.title = '歌名 (Live)'
+  vi.mocked(singleReview.load).mockResolvedValue(live)
+  vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue('cancel')
+  const other = { ...candidate, id: 'other', track: { ...candidate.track, album: '另一张专辑', provider: 'NETEASE' as const } }
+  wrapper = mount(SingleSongScrapeDialog, { props: { song: live.song, presentation: 'drawer', initialCandidates: [candidate, other], autoSelectThreshold: .95 }, global: { stubs: { teleport: true } } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('候选未标记现场版')
+  expect(wrapper.get('.drawer-candidate-select').text()).toContain('网易云音乐 · 歌名 / 歌手 / 另一张专辑')
+  await wrapper.findAll('button').find(b => b.text() === '编辑元数据')!.trigger('click'); await flushPromises()
+  await wrapper.get('input[aria-label="编辑专辑"]').setValue('手工草稿')
+  await wrapper.findAll('button').find(b => b.text() === '保存编辑到草稿')!.trigger('click'); await flushPromises()
+  await wrapper.get('.drawer-candidate-select select').setValue('other'); await flushPromises()
+  expect(ElMessageBox.confirm).toHaveBeenCalledWith(expect.stringContaining('切换候选'), '有尚未应用的修改', expect.anything())
+  expect(wrapper.get('.drawer-candidate-select select').element).toHaveProperty('value', 'candidate')
+  expect(wrapper.get('.field-comparison').text()).toContain('手工草稿')
+  expect(singleReview.apply).not.toHaveBeenCalled()
+})
