@@ -2,104 +2,134 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import PartyApp from '../src/party/PartyApp.vue'
-import { PartyHttpError, request } from '../src/party/api'
-vi.mock('../src/party/api', () => ({ request: vi.fn(), requestId: () => 'stable-request', PartyHttpError: class extends Error { status = 401 } }))
-let wrapper: VueWrapper | undefined
-const snapshot = { id: 'party', revision: 1, actorId: 'guest', host: false, status: 'ACTIVE', acceptingRequests: true, queue: [] }
-beforeEach(() => { sessionStorage.clear(); history.replaceState(null, '', '/party/'); vi.mocked(request).mockReset(); vi.mocked(request).mockImplementation(async (path: string) => { if (path.includes('snapshot')) return structuredClone(snapshot); if (path.includes('classification-tags')) return []; if (path.includes('library/songs')) return { items: [{ id: 'song', title: '测试歌曲', artists: ['测试歌手'], version: 'UNKNOWN' }], totalElements: 1 }; return {} }) })
-afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); vi.useRealTimers() })
-it('二维码预览不自动加入，确认后才创建参与身份', async () => {
+import { PartyHttpError, request, type Snapshot, type Song } from '../src/party/api'
+vi.mock('../src/party/api', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/party/api')>()
+  return { ...actual, request: vi.fn(), requestId: vi.fn(() => crypto.randomUUID()) }
+})
+let wrapper: VueWrapper | undefined, snapshot: Snapshot
+const song: Song = { id: 'song', title: '晴天', artists: ['周杰伦'] }
+function fresh(): Snapshot { return { id: 'party', revision: 1, stateRevision: 1, actorId: 'guest', host: false, status: 'ACTIVE', acceptingRequests: true, queuePolicy: 'FAIR', tvOnline: true, capabilities: ['AUTO_ADVANCE', 'SEEK', 'AUDIO_ROLE', 'APPLY_AUDIO_ROLES', 'REACTIONS'], playback: { attemptId: 'a', itemId: 'current', songId: 'singing', state: 'PLAYING', positionMs: 1000, durationMs: 200000, audioRole: 'backing' }, queue: [{ id: 'current', songId: 'singing', ownerId: 'other', ownerName: '家人', status: 'PLAYING', song: { ...song, id: 'singing' } }] } }
+function credentials() { sessionStorage.setItem('singverse-party', JSON.stringify({ token: 'token', sessionId: 'party', name: '亲友' })) }
+beforeEach(() => {
+  vi.useFakeTimers(); sessionStorage.clear(); history.replaceState(null, '', '/party/'); snapshot = fresh()
+  vi.stubGlobal('scrollTo', vi.fn()); vi.stubGlobal('requestAnimationFrame', (fn: FrameRequestCallback) => setTimeout(() => fn(0), 0))
+  vi.mocked(request).mockReset(); vi.mocked(request).mockImplementation(async (path: string, _method, body) => {
+    if (path.includes('snapshot')) return structuredClone(snapshot)
+    if (path === 'favorites/ids') return { songIds: [], revision: 1 }
+    if (path.includes('classification-tags')) return [{ id: 'tag', name: '国语', dimension: 'LANGUAGE', count: 1 }]
+    if (path.includes('/commands')) {
+      const command = body as { action: string; requestId: string }
+      if (command.action === 'ADD') snapshot.queue.push({ id: 'added', songId: song.id, song, ownerId: 'guest', ownerName: '亲友', status: 'WAITING', sequence: 2 })
+      snapshot.revision++; snapshot.stateRevision = (snapshot.stateRevision ?? 0) + 1
+      return structuredClone(snapshot)
+    }
+    if (path.includes('library/artists')) return { items: [{ id: 'artist', name: '周杰伦', count: 1 }], totalElements: 1 }
+    return { items: [song], totalElements: 1 }
+  })
+})
+afterEach(() => { wrapper?.unmount(); wrapper = undefined; document.body.innerHTML = ''; vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers() })
+async function start() { wrapper = mount(PartyApp, { attachTo: document.body }); await flushPromises(); return wrapper }
+async function click(text: string, scope = wrapper!) { const b = scope.findAll('button').find(b => b.text() === text); expect(b, text).toBeDefined(); await b!.trigger('click'); await flushPromises() }
+async function nativeClick(text: string) { const b = [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === text); expect(b, text).toBeDefined(); b!.click(); await flushPromises() }
+async function leave() { await wrapper!.get('.menu-button').trigger('click'); await flushPromises(); await nativeClick('离开本场') }
+it('二维码只预览，明确确认后创建独立身份', async () => {
   history.replaceState(null, '', '/party/#invite=invitation')
-  vi.mocked(request).mockImplementation(async (path: string) => { if (path === 'invitations/preview') return { sessionId: 'party', deviceName: '客厅电视' }; if (path === 'join') return { token: 'participant-token', sessionId: 'party', name: '亲友' }; if (path.includes('snapshot')) return snapshot; if (path.includes('classification-tags')) return []; return { items: [], totalElements: 0 } })
-  wrapper = mount(PartyApp); await flushPromises()
-  expect(wrapper.text()).toContain('客厅电视'); expect(vi.mocked(request).mock.calls.some(c => c[0] === 'join')).toBe(false)
-  await wrapper.get('#nickname').setValue('亲友'); await wrapper.findAll('button').find(b => b.text() === '确认加入这场聚会')!.trigger('click'); await flushPromises()
+  const original = vi.mocked(request).getMockImplementation()!
+  vi.mocked(request).mockImplementation(async (...args) => args[0] === 'invitations/preview' ? { sessionId: 'party', deviceName: '客厅电视' } : args[0] === 'join' ? { token: 'participant-token', sessionId: 'party', name: '亲友' } : original(...args))
+  await start(); expect(vi.mocked(request).mock.calls.some(c => c[0] === 'join')).toBe(false)
+  await wrapper!.get('input[autocomplete="nickname"]').setValue('亲友'); await wrapper!.get('form').trigger('submit'); await flushPromises()
   expect(request).toHaveBeenCalledWith('join', 'POST', { invitation: 'invitation', name: '亲友' }, undefined, expect.any(AbortSignal))
   expect(location.hash).toBe(''); expect(sessionStorage.getItem('singverse-party')).toContain('participant-token')
 })
-it('暂停接单禁用点歌，访客遥控不显示主持操作', async () => {
-  sessionStorage.setItem('singverse-party', JSON.stringify({ token: 'token', sessionId: 'party', name: '亲友' })); snapshot.acceptingRequests = false
-  wrapper = mount(PartyApp); await flushPromises()
-  expect(wrapper.get('.add').attributes('disabled')).toBeDefined()
-  await wrapper.findAll('nav button').find(b => b.text() === '遥控')!.trigger('click')
-  expect(wrapper.text()).toContain('遥控需要主人'); expect(wrapper.find('.remote-grid').exists()).toBe(false)
-  snapshot.acceptingRequests = true
+it('五种入口直接可见，歌手、最近、热门和共享收藏读取真实接口', async () => {
+  credentials(); await start()
+  expect(wrapper!.findAll('.finder button').map(b => b.text())).toEqual(['分类', '歌手', '最近', '热门', '家庭收藏'])
+  for (const [label, path] of [['歌手', 'library/artists'], ['最近', 'library/recent'], ['热门', 'library/popular'], ['家庭收藏', 'favorites?']]) {
+    await click(label!); expect(vi.mocked(request).mock.calls.some(c => c[0].includes(path!))).toBe(true)
+  }
+  await click('热门'); await click('近 7 天'); await vi.advanceTimersByTimeAsync(200); await flushPromises()
+  expect(vi.mocked(request).mock.calls.some(c => c[0].includes('popular?') && c[0].includes('period=7d'))).toBe(true)
 })
-it('点歌结果未知时保留原请求 ID，重试不会另发一次点歌', async () => {
-  sessionStorage.setItem('singverse-party', JSON.stringify({ token: 'token', sessionId: 'party', name: '亲友' }))
-  wrapper = mount(PartyApp); await flushPromises()
-  const implementation = vi.mocked(request).getMockImplementation()!
-  vi.mocked(request).mockImplementation(async (...args) => { if (args[0].includes('commands')) throw new Error('连接中断'); return implementation(...args) })
-  await wrapper.get('.add').trigger('click'); await flushPromises()
+it('暂停接单禁用点歌，普通亲友仍可遥控', async () => {
+  credentials(); snapshot.acceptingRequests = false; await start()
+  expect(wrapper!.get('.add-song').attributes('disabled')).toBeDefined()
+  await wrapper!.get('.bottom-nav button:last-child').trigger('click'); await flushPromises()
+  const pause = wrapper!.findAll('.stage button').find(b => b.text() === '暂停')!
+  expect(pause.attributes('disabled')).toBeUndefined(); await pause.trigger('click'); await flushPromises()
+  expect(vi.mocked(request).mock.calls.find(c => c[0].includes('commands'))?.[2]).toMatchObject({ action: 'PAUSE', attemptId: 'a' })
+})
+it('点歌成功留在曲库并显示自己的排队位置', async () => {
+  credentials(); await start(); await wrapper!.get('.add-song').trigger('click'); await flushPromises()
+  expect(wrapper!.get('.song-placement').text()).toContain('排第 1 位')
+  expect(wrapper!.get('.library').isVisible()).toBe(true)
+})
+it('歌手页往返后继续搜索，不吞掉第一次输入', async () => {
+  credentials(); await start(); await click('歌手')
+  await wrapper!.get('.artist-item').trigger('click'); await flushPromises()
+  const input = wrapper!.get('input[type="search"]')
+  await input.setValue('夜曲'); await vi.advanceTimersByTimeAsync(200); await flushPromises()
+  expect(vi.mocked(request).mock.calls.some(c => c[0].includes('library/artists/artist/songs?') && c[0].includes('q=%E5%A4%9C%E6%9B%B2'))).toBe(true)
+  await wrapper!.get('.artist-back').trigger('click'); await flushPromises()
+  await input.setValue('陈奕迅'); await vi.advanceTimersByTimeAsync(200); await flushPromises()
+  expect(vi.mocked(request).mock.calls.some(c => c[0].includes('library/artists?') && c[0].includes('q=%E9%99%88%E5%A5%95%E8%BF%85'))).toBe(true)
+})
+it('未知结果沿用同一请求 ID 重试，不再次点歌', async () => {
+  credentials(); await start(); const original = vi.mocked(request).getMockImplementation()!
+  vi.mocked(request).mockImplementation(async (...args) => { if (args[0].includes('commands')) throw new Error('连接中断'); return original(...args) })
+  await wrapper!.get('.add-song').trigger('click'); await flushPromises()
   const first = vi.mocked(request).mock.calls.find(c => c[0].includes('commands'))!
-  expect(first[2]).toMatchObject({ requestId: 'stable-request', songId: 'song', action: 'ADD' })
-  await wrapper.findAll('button').find(b => b.text() === '重试原请求')!.trigger('click'); await flushPromises()
+  await click('重试原请求')
   const commands = vi.mocked(request).mock.calls.filter(c => c[0].includes('commands'))
   expect(commands).toHaveLength(2); expect(commands[1]![2]).toEqual(first[2])
 })
-it('退出仅清理当前参与身份，不结束聚会或撤回歌曲', async () => {
-  sessionStorage.setItem('singverse-party', JSON.stringify({ token: 'token', sessionId: 'party', name: '亲友' }))
-  wrapper = mount(PartyApp); await flushPromises()
-  await wrapper.findAll('button').find(b => b.text() === '离开本场')!.trigger('click')
-  expect(sessionStorage.getItem('singverse-party')).toBeNull(); expect(vi.mocked(request).mock.calls.some(c => c[0].includes('commands'))).toBe(false)
+it('收藏失败保留服务端原状态，不写入浏览器收藏副本', async () => {
+  credentials(); await start(); const original = vi.mocked(request).getMockImplementation()!
+  vi.mocked(request).mockImplementation(async (...args) => { if (args[0] === 'favorites') throw new Error('保存失败'); return original(...args) })
+  await wrapper!.get('.song-row .favorite').trigger('click'); await flushPromises()
+  expect(wrapper!.get('.song-row .favorite').attributes('aria-pressed')).toBe('false')
+  expect(request).toHaveBeenCalledWith('favorites', 'PUT', { songIds: ['song'], selected: true }, 'token', expect.any(AbortSignal))
+  expect(localStorage.length).toBe(0)
 })
-it('退出后中止在途轮询，迟到响应不能恢复旧聚会', async () => {
-  vi.useFakeTimers()
-  sessionStorage.setItem('singverse-party', JSON.stringify({ token: 'token', sessionId: 'party', name: '亲友' }))
-  wrapper = mount(PartyApp); await flushPromises()
-  let resolve!: (value: unknown) => void
-  const implementation = vi.mocked(request).getMockImplementation()!
-  vi.mocked(request).mockImplementation((...args) => args[0].includes('snapshot') ? new Promise(done => { resolve = done }) : implementation(...args))
-  await vi.advanceTimersByTimeAsync(2500)
+it('退出只清理参与身份，迟到轮询不能恢复旧聚会', async () => {
+  credentials(); await start(); let resolve!: (value: unknown) => void
+  const original = vi.mocked(request).getMockImplementation()!
+  vi.mocked(request).mockImplementation((...args) => args[0].includes('snapshot') ? new Promise(done => { resolve = done }) : original(...args))
+  await vi.advanceTimersByTimeAsync(1000)
   const signal = vi.mocked(request).mock.calls.at(-1)![4]!
-  await wrapper.findAll('button').find(b => b.text() === '离开本场')!.trigger('click')
-  expect(signal.aborted).toBe(true)
-  resolve(snapshot); await flushPromises()
-  expect(wrapper.find('.greeting').exists()).toBe(false)
-  expect(sessionStorage.getItem('singverse-party')).toBeNull()
+  await leave(); expect(signal.aborted).toBe(true); resolve(snapshot); await flushPromises()
+  expect(wrapper!.find('.layout').exists()).toBe(false); expect(sessionStorage.getItem('singverse-party')).toBeNull()
+  expect(vi.mocked(request).mock.calls.some(c => c[0].includes('commands'))).toBe(false)
 })
-it('点歌成功后旧轮询不能回退已点队列，发送期间保留待确认请求', async () => {
-  vi.useFakeTimers()
-  sessionStorage.setItem('singverse-party', JSON.stringify({ token: 'token', sessionId: 'party', name: '亲友' }))
-  wrapper = mount(PartyApp); await flushPromises()
-  let resolvePoll!: (value: unknown) => void, resolveCommand!: (value: unknown) => void
-  const implementation = vi.mocked(request).getMockImplementation()!
-  vi.mocked(request).mockImplementation((...args) => {
-    if (args[0].includes('snapshot')) return new Promise(done => { resolvePoll = done })
-    if (args[0].includes('commands')) return new Promise(done => { resolveCommand = done })
-    return implementation(...args)
-  })
-  await vi.advanceTimersByTimeAsync(2500)
-  await wrapper.get('.add').trigger('click')
-  expect(wrapper.findAll('button').find(button => button.text() === '已核对，关闭此请求')!.attributes('disabled')).toBeDefined()
-  resolveCommand({ ...snapshot, revision: 2, queue: [{ id: 'item', status: 'WAITING', ownerId: 'guest', ownerName: '亲友', song: { title: '新加入的歌曲' } }] }); await flushPromises()
-  resolvePoll(snapshot); await flushPromises()
-  await wrapper.findAll('nav button').find(button => button.text() === '已点')!.trigger('click')
-  expect(wrapper.text()).toContain('新加入的歌曲')
+it('旧快照不能回退已确认队列', async () => {
+  credentials(); await start(); let resolve!: (value: unknown) => void
+  const old = structuredClone(snapshot), original = vi.mocked(request).getMockImplementation()!
+  vi.mocked(request).mockImplementation((...args) => args[0].includes('snapshot') ? new Promise(done => { resolve = done }) : original(...args))
+  await vi.advanceTimersByTimeAsync(1000); await wrapper!.get('.add-song').trigger('click'); await flushPromises(); resolve(old); await flushPromises()
+  expect(wrapper!.get('.song-placement').text()).toContain('排第 1 位')
 })
-it('新操作确认后旧轮询的401不清除当前身份', async () => {
-  vi.useFakeTimers()
-  sessionStorage.setItem('singverse-party', JSON.stringify({ token: 'token', sessionId: 'party', name: '亲友' }))
-  wrapper = mount(PartyApp); await flushPromises()
-  let rejectPoll!: (reason: Error) => void
-  const implementation = vi.mocked(request).getMockImplementation()!
-  vi.mocked(request).mockImplementation((...args) => {
-    if (args[0].includes('snapshot')) return new Promise((_done, reject) => { rejectPoll = reject })
-    if (args[0].includes('commands')) return Promise.resolve({ ...snapshot, revision: 2 })
-    return implementation(...args)
-  })
-  await vi.advanceTimersByTimeAsync(2500)
-  await wrapper.get('.add').trigger('click'); await flushPromises()
-  rejectPoll(new PartyHttpError(401, '旧响应')); await flushPromises()
-  expect(wrapper.find('.greeting').exists()).toBe(true)
-  expect(sessionStorage.getItem('singverse-party')).toContain('token')
+it('新操作成功后，旧轮询的 401 不清除当前身份', async () => {
+  credentials(); await start(); let reject!: (reason: Error) => void
+  const original = vi.mocked(request).getMockImplementation()!
+  vi.mocked(request).mockImplementation((...args) => args[0].includes('snapshot') ? new Promise((_done, fail) => { reject = fail }) : original(...args))
+  await vi.advanceTimersByTimeAsync(1000); await wrapper!.get('.add-song').trigger('click'); await flushPromises(); reject(new PartyHttpError(401, '旧响应')); await flushPromises()
+  expect(wrapper!.find('.layout').exists()).toBe(true); expect(sessionStorage.getItem('singverse-party')).toContain('token')
 })
-it('切换邀请清除旧身份及待确认命令，不轮询上一场聚会', async () => {
-  history.replaceState(null, '', '/party/#invite=new-invitation')
-  sessionStorage.setItem('singverse-party', JSON.stringify({ token: 'old-token', sessionId: 'old-party', name: '旧身份' }))
+it('确认期间自然切换的歌曲不会被迟到的切歌操作影响', async () => {
+  credentials(); await start(); await wrapper!.get('.bottom-nav button:last-child').trigger('click'); await flushPromises(); await click('切歌')
+  snapshot.playback!.attemptId = 'next-attempt'; snapshot.stateRevision = 3; await vi.advanceTimersByTimeAsync(1000); await flushPromises()
+  await nativeClick('确认切歌')
+  expect(vi.mocked(request).mock.calls.find(c => c[0].includes('commands'))?.[2]).toMatchObject({ action: 'NEXT', attemptId: 'a' })
+})
+it('旧 TV 能力不足时提示升级并禁用新增遥控', async () => {
+  credentials(); snapshot.queuePolicy = 'LEGACY'; snapshot.capabilities = []; await start()
+  expect(wrapper!.text()).toContain('更新 TV 版本')
+  await wrapper!.get('.bottom-nav button:last-child').trigger('click'); await flushPromises()
+  expect(wrapper!.get('.stage .seek-range').attributes('disabled')).toBeDefined()
+})
+it('切换邀请清除旧身份，不轮询上一场', async () => {
+  history.replaceState(null, '', '/party/#invite=new-invitation'); credentials()
   vi.mocked(request).mockResolvedValue({ sessionId: 'new-party', deviceName: '新电视' })
-  wrapper = mount(PartyApp); await flushPromises()
-  expect(wrapper.text()).toContain('新电视')
-  expect(sessionStorage.getItem('singverse-party')).toBeNull()
+  await start(); expect(wrapper!.text()).toContain('新电视'); expect(sessionStorage.getItem('singverse-party')).toBeNull()
   expect(vi.mocked(request).mock.calls.some(([path]) => path.includes('snapshot'))).toBe(false)
 })

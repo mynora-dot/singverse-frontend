@@ -124,7 +124,7 @@ onBeforeUnmount(() => { active = false; generation++; detailGeneration++; songGe
     </div>
     <div v-else-if="!error" class="feedback-list">
       <article v-for="item in items" :key="item.id" class="feedback-row">
-        <div class="feedback-song"><h2>{{ item.title }}</h2><p>{{ item.artist || '歌手未填写' }}<span v-if="item.versionLabel"> · {{ item.versionLabel }}</span></p><p v-if="item.description" class="feedback-description">{{ item.description }}</p><small>{{ date(item.createdAt) }} · {{ item.submittedBy || '管理员' }}登记</small></div>
+        <div class="feedback-song"><h2>{{ item.title }}</h2><p>{{ item.artist || '歌手未填写' }}<span v-if="item.versionLabel"> · {{ item.versionLabel }}</span></p><p v-if="item.description" class="feedback-description">{{ item.description }}</p><small>{{ date(item.createdAt) }} · {{ item.source === 'PARTY' ? '亲友点歌' : '后台登记' }} · {{ item.submittedBy || '管理员' }}</small></div>
         <div class="feedback-result"><ElTag :type="tagType(item.status)" size="small">{{ statusNames[item.status] }}</ElTag><p v-if="item.status === 'RESOLVED'">{{ item.resolvedSongTitle }}<small v-if="!item.resolvedSongAvailable">关联歌曲已下架，历史记录仍保留</small></p><p v-else-if="item.handlingNote">{{ item.handlingNote }}</p></div>
         <ElButton text type="primary" :disabled="opening || busy" @click="openDetail(item.id)">查看 / 处理</ElButton>
       </article>
@@ -145,7 +145,7 @@ onBeforeUnmount(() => { active = false; generation++; detailGeneration++; songGe
     <ElDialog :model-value="detailOpen" title="处理缺歌反馈" width="min(680px, calc(100vw - 32px))" :close-on-click-modal="false" :close-on-press-escape="!busy && !pickerOpen" :show-close="!busy && !pickerOpen" :before-close="closeDetail">
       <template v-if="current">
         <ElAlert v-if="dialogError" :title="dialogError" type="error" :closable="false"><ElButton text :disabled="busy || opening" @click="openDetail(current.id)">重新读取反馈</ElButton></ElAlert>
-        <div class="feedback-original"><h2>{{ current.title }}</h2><p>{{ current.artist || '歌手未填写' }}<span v-if="current.versionLabel"> · {{ current.versionLabel }}</span></p><p v-if="current.description" class="feedback-preserve">{{ current.description }}</p><small>{{ current.submittedBy || '管理员' }} · 后台登记 · {{ date(current.createdAt) }}</small></div>
+        <div class="feedback-original"><h2>{{ current.title }}</h2><p>{{ current.artist || '歌手未填写' }}<span v-if="current.versionLabel"> · {{ current.versionLabel }}</span></p><p v-if="current.description" class="feedback-preserve">{{ current.description }}</p><small>{{ current.submittedBy || '管理员' }} · {{ current.source === 'PARTY' ? '亲友点歌' : '后台登记' }} · {{ date(current.createdAt) }}</small></div>
         <form class="feedback-form" @submit.prevent="save">
           <label>处理状态<select v-model="handling.status" aria-label="设置缺歌处理状态" :disabled="busy || opening"><option v-for="(name, key) in statusNames" :key="key" :value="key">{{ name }}</option></select></label>
           <div v-if="handling.status === 'RESOLVED'" class="feedback-associated"><label>关联曲库歌曲 <span class="feedback-required">必选</span></label><div v-if="handling.resolvedSongId"><strong>{{ handling.songTitle }}</strong><p>{{ handling.songArtists.join(' / ') || '未知歌手' }}</p><p v-if="!handling.songAvailable" class="feedback-warning">这首歌已下架，请重新关联可用歌曲。</p></div><p v-else class="feedback-note">补齐后选择曲库中的具体版本，才能标记完成。</p><ElButton :disabled="busy || opening" @click="openPicker">{{ handling.resolvedSongId ? '重新关联歌曲' : '选择已补齐的歌曲' }}</ElButton></div>

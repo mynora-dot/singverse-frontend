@@ -1,139 +1,68 @@
 <script setup lang="ts">
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { type Item, type QueueCommand, type Song } from './api'
+import { usePartySession } from './usePartySession'
+import { dimensions, finders, usePartyLibrary, type Finder } from './usePartyLibrary'
 import AudioRolesEditor from './AudioRolesEditor.vue'
+import MissingSongForm from './MissingSongForm.vue'
+import PartyDialog from './PartyDialog.vue'
+import PartyIcon from './PartyIcon.vue'
+import PartyQueue from './PartyQueue.vue'
+import PartyRemote from './PartyRemote.vue'
 import SongArtwork from './SongArtwork.vue'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { request, requestId, PartyHttpError, type Credential, type Snapshot, type Song } from './api'
+import SongRow from './SongRow.vue'
 const serverHost = location.host
-const saved = sessionStorage.getItem('singverse-party')
-const credential = ref<Credential | null>(null)
-try { credential.value = saved ? JSON.parse(saved) as Credential : null } catch { sessionStorage.removeItem('singverse-party') }
-const invitation = new URLSearchParams(location.hash.slice(1)).get('invite') ?? ''
-const preview = ref<{ sessionId: string; deviceName: string } | null>(null)
-const name = ref(''), error = ref(''), notice = ref(''), busy = ref(false), tab = ref('点歌'), query = ref('')
-const snapshot = ref<Snapshot | null>(null), songs = ref<Song[]>([]), page = ref(0), total = ref(0)
-const tags = ref<{ id: string; name: string; dimension: string; count: number }[]>([]), selected = ref<string[]>([])
-const versionNames: Record<string, string> = { ORIGINAL: '原唱', ACCOMPANIMENT: '伴奏', INSTRUMENTAL: '纯音乐', DUET: '合唱', KARAOKE: '卡拉 OK' }
-const stateNames: Record<string, string> = { IDLE: '已停止', PREPARING: '准备中', BUFFERING: '缓冲中', PLAYING: '正在演唱', PAUSED: '已暂停', ENDED: '演唱结束', ERROR: '播放失败' }
-const dimensions: Record<string, string> = { LANGUAGE: '语种', DECADE: '年代', GENRE: '风格', MOOD: '情绪', SCENE: '场景', CUSTOM: '自定义' }
-const pending = ref<{ action: string; requestId: string; expectedRevision: number; songId?: string; itemId?: string } | null>(null)
-const queue = computed(() => snapshot.value?.queue.filter(i => ['WAITING', 'HANDOFF', 'PLAYING'].includes(i.status)) ?? [])
-let timer: ReturnType<typeof setTimeout> | undefined, generation = 0, sessionGeneration = 0, snapshotRequest = 0, operation = 0, stopped = false
-let sessionController = new AbortController()
-function current(turn: number) { return !stopped && turn === sessionGeneration }
-function replaceCredential(value: Credential | null) {
-  sessionController.abort(); sessionController = new AbortController(); sessionGeneration++; generation++
-  credential.value = value; snapshot.value = null; songs.value = []; tags.value = []; pending.value = null; selected.value = []; page.value = 0; total.value = 0
-  if (value) sessionStorage.setItem('singverse-party', JSON.stringify(value))
-  else sessionStorage.removeItem('singverse-party')
+const session = usePartySession(), library = usePartyLibrary(session), { state } = session, catalog = library.state
+const nav = ref('songs'), name = ref(''), sheet = ref(''), detail = ref<Song>(), dimension = ref('LANGUAGE'), filtersOpen = ref(false)
+const confirmation = ref<{ action: string; itemId?: string; attemptId?: string }>(), scrolls = new Map<string, number>()
+const snapshot = computed(() => state.snapshot), current = session.current
+const activeCurrent = computed(() => current.value && !['ENDED', 'IDLE', 'ERROR'].includes(snapshot.value?.playback?.state ?? 'IDLE'))
+const title = computed(() => catalog.artist?.name ?? (catalog.query ? '搜索结果' : ({ category: catalog.selected.length ? '分类歌曲' : '大家一起唱', artists: '按歌手找歌', recent: '最近唱过', popular: '热门歌曲', favorites: '家庭收藏' }[catalog.entry])))
+const canAdd = computed(() => state.online && !state.busy && !state.pending && snapshot.value?.status === 'ACTIVE' && snapshot.value.acceptingRequests)
+const selectedTags = computed(() => catalog.tags.filter(tag => catalog.selected.includes(tag.id)))
+const result = session.execution
+const feedback = computed(() => state.error || (result.value?.status === 'FAILED' ? result.value.detail ?? '电视未能执行，请检查播放状态' : result.value?.status === 'EXECUTED' ? '电视已执行' : state.notice))
+function placement(song: Song) {
+  const item = session.waiting.value.findIndex(i => i.songId === song.id && i.ownerId === snapshot.value?.actorId)
+  if (item >= 0) return `我点的，排第 ${item + 1} 位`
+  return activeCurrent.value && current.value?.songId === song.id && current.value.ownerId === snapshot.value?.actorId ? '我点的，正在唱' : ''
 }
-async function perform(task: () => Promise<void>) {
-  if (busy.value || stopped) return
-  const turn = ++operation; busy.value = true; error.value = ''
-  try { await task() }
-  catch (e) { if (!stopped && turn === operation) error.value = e instanceof Error ? e.message : '连接失败，请重试' }
-  finally { if (!stopped && turn === operation) busy.value = false }
+async function safely(task: () => Promise<unknown>) { try { await task() } catch (e) { session.failure(e) } }
+function command(action: string, fields: Partial<QueueCommand> = {}) { void safely(() => session.command(action, fields)) }
+function add(song: Song) { command('ADD', { songId: song.id }) }
+function favorite(song: Song) { void session.setFavorite(song.id, !state.favoriteIds.includes(song.id)) }
+function openDetail(song: Song) { detail.value = song; sheet.value = 'detail' }
+function correct(song = current.value?.song) { if (song) { detail.value = song; sheet.value = 'correction' } }
+function confirmAction(action: string, itemId?: string) { confirmation.value = { action, itemId, attemptId: snapshot.value?.playback?.attemptId }; sheet.value = 'confirm' }
+function priority(item: Item) { if (snapshot.value?.priorityItemId && !item.priority) confirmAction('TOP', item.id); else command(item.priority ? 'UNTOP' : 'TOP', { itemId: item.id }) }
+async function executeConfirmed() {
+  const c = confirmation.value; if (!c) return
+  const attempt = c.attemptId
+  await safely(async () => { await session.command(c.action, { itemId: c.itemId, attemptId: attempt }); sheet.value = '' })
 }
-async function refresh() {
-  const c = credential.value, turn = sessionGeneration, requestTurn = ++snapshotRequest
-  if (!c) return
-  try {
-    const value = await request<Snapshot>(`sessions/${c.sessionId}/snapshot`, 'GET', undefined, c.token, sessionController.signal)
-    if (current(turn) && requestTurn === snapshotRequest) snapshot.value = value
-  } catch (failed) { if (current(turn) && requestTurn === snapshotRequest) throw failed }
-}
-async function loadSongs() {
-  const id = ++generation, turn = sessionGeneration, c = credential.value
-  if (!c) return
-  const params = new URLSearchParams({ q: query.value, page: String(page.value), size: '20' })
-  selected.value.forEach(t => params.append('tagIds', t))
-  const result = await request<{ items: Song[]; totalElements: number }>(`library/songs?${params}`, 'GET', undefined, c.token, sessionController.signal)
-  if (current(turn) && id === generation) { songs.value = result.items; total.value = result.totalElements }
-}
-async function initialize() {
-  const turn = sessionGeneration, c = credential.value
-  if (!c) return
-  await refresh()
-  if (!current(turn)) return
-  const values = await request<typeof tags.value>('library/classification-tags', 'GET', undefined, c.token, sessionController.signal)
-  if (!current(turn)) return
-  tags.value = values; await loadSongs()
-}
-async function join() {
-  await perform(async () => {
-    const turn = sessionGeneration
-    const c = await request<Credential>('join', 'POST', { invitation, name: name.value }, undefined, sessionController.signal)
-    if (!current(turn)) return
-    replaceCredential(c); history.replaceState(null, '', location.pathname); await initialize()
-  })
-}
-async function command(action: string, itemId?: string, songId?: string) {
-  if (action === 'NEXT' && !confirm('切换到下一首？电视仍需确认下一位开唱。')) return
-  await perform(async () => {
-    if (!snapshot.value || !credential.value) return
-    if (pending.value) throw new Error('上一项操作结果尚未确认，请先核对已点列表')
-    pending.value = { action, requestId: requestId(), expectedRevision: snapshot.value.revision, ...(itemId ? { itemId } : {}), ...(songId ? { songId } : {}) }
-    await sendPending()
-  })
-}
-async function sendPending() {
-  const c = credential.value, command = pending.value, turn = sessionGeneration, requestTurn = ++snapshotRequest
-  if (!command || !c) return
-  try {
-    const value = await request<Snapshot>(`sessions/${c.sessionId}/commands`, 'POST', command, c.token, sessionController.signal)
-    if (current(turn) && requestTurn === snapshotRequest) { snapshot.value = value; pending.value = null; notice.value = '操作已确认' }
-  } catch (e) { if (current(turn)) await refresh().catch(() => {}); throw e }
-}
-function forgetPending() { if (busy.value) return; pending.value = null; notice.value = '已保留当前队列，请核对歌曲后再操作' }
-function leave() { operation++; busy.value = false; replaceCredential(null); notice.value = '已离开，请重新扫描电视二维码' }
-async function poll() {
-  if (stopped) return
-  const turn = sessionGeneration
-  try { if (credential.value && !busy.value) await refresh() }
-  catch (e) {
-    if (current(turn)) {
-      if (e instanceof PartyHttpError && e.status === 401) { replaceCredential(null); error.value = '参与权限已失效，请重新扫描电视二维码。' }
-      else error.value = '与 NAS 同步失败，操作前请先重试连接。'
-    }
-  } finally { if (!stopped) timer = setTimeout(() => { void poll() }, 2500) }
-}
-onMounted(async () => {
-  await perform(async () => {
-    if (invitation) {
-      const turn = sessionGeneration
-      const value = await request<typeof preview.value>('invitations/preview', 'POST', { invitation }, undefined, sessionController.signal)
-      if (!current(turn)) return
-      preview.value = value
-      if (credential.value?.sessionId !== value?.sessionId) { replaceCredential(null); return }
-    }
-    if (credential.value) await initialize()
-  })
-  void poll()
+const confirmCopy = computed(() => {
+  const action = confirmation.value?.action
+  if (action === 'TOP') return { title: '替换下一首优先位？', body: '新的歌曲会优先唱，原来插队的歌曲恢复正常轮流。', button: '替换插队位' }
+  if (action === 'RESTART') return { title: '从头重唱这首歌？', body: '电视会从 0:00 重新开始。', button: '确认重唱' }
+  return { title: '切到下一首？', body: session.waiting.value[0] ? `下一首是《${session.waiting.value[0].song.title}》，由${session.waiting.value[0].ownerName}点唱。` : '当前没有下一首，切歌后会等待大家点歌。', button: '确认切歌' }
 })
-onUnmounted(() => { stopped = true; operation++; generation++; sessionController.abort(); clearTimeout(timer) })
+async function navigate(value: string) { scrolls.set(nav.value, window.scrollY); nav.value = value; await nextTick(); window.scrollTo(0, scrolls.get(value) ?? 0) }
+async function entry(value: Finder) { if (catalog.entry === value) return; scrolls.set(catalog.entry, window.scrollY); catalog.entry = value; catalog.artist = null; await library.load(); await nextTick(); window.scrollTo(0, scrolls.get(value) ?? 0) }
+function dismissFeedback() { state.error = ''; state.notice = ''; state.lastRequestId = '' }
+watch(() => state.credential?.token, () => { sheet.value = ''; nav.value = 'songs'; scrolls.clear() })
+onMounted(session.initialize)
+onUnmounted(() => { session.close(); library.close() })
 </script>
-<template>
-  <main class="party-shell">
-    <header><a class="brand" href="/party/"><img src="/assets/brand/logo-mark.svg" width="34" height="34" alt=""><span>SingVerse</span></a><span class="eyebrow">客厅唱片</span></header>
-    <section v-if="!snapshot || (preview && credential?.sessionId !== preview.sessionId)" class="join-panel">
-      <p class="eyebrow">好歌，留给在场的你</p><h1>今晚，<br>一起唱首歌。</h1><p class="muted">歌曲来自家里的 NAS，与亲友共用电视上的演唱队列。</p>
-      <template v-if="preview"><div class="server-card"><span>即将加入</span><strong>{{ preview.deviceName }}</strong><small>{{ serverHost }}</small></div><label for="nickname">大家怎么称呼你</label><input id="nickname" v-model="name" maxlength="30" placeholder="输入昵称，同名不会合并身份"><button class="primary" :disabled="busy || !name.trim()" @click="join">确认加入这场聚会</button></template>
-      <template v-else><p class="empty">用微信扫描电视上的二维码，确认后即可点歌。</p><button v-if="credential" :disabled="busy" @click="perform(initialize)">恢复连接</button></template>
-    </section>
-    <template v-else>
-      <section class="greeting"><p class="eyebrow">{{ credential?.name }}，轮到你选歌了</p><h1>{{ tab === '点歌' ? '想唱什么？' : tab === '已点' ? '今晚的好歌' : '让演唱继续' }}</h1><p class="muted">{{ snapshot.status === 'ENDED' ? '这场聚会已结束' : snapshot.acceptingRequests ? '本场开放点歌' : '主持人已暂停接单' }} · {{ snapshot.host ? '房主' : '亲友' }}</p></section>
-      <section v-if="tab === '点歌'">
-        <form class="search" @submit.prevent="page = 0; perform(loadSongs)"><input v-model="query" placeholder="搜索歌名或歌手" aria-label="搜索歌名或歌手"><button class="primary" :disabled="busy">找歌</button></form>
-        <details class="filters"><summary>按分类发现 <span v-if="selected.length">· 已选 {{ selected.length }} 项</span></summary><fieldset v-for="(label, dimension) in dimensions" :key="dimension"><legend>{{ label }}</legend><label v-for="tag in tags.filter(t => t.dimension === dimension)" :key="tag.id" class="chip"><input v-model="selected" type="checkbox" :value="tag.id">{{ tag.name }} <small>{{ tag.count }}</small></label></fieldset><button @click="page = 0; perform(loadSongs)">应用分类</button><button @click="selected = []; page = 0; perform(loadSongs)">清除分类</button><small>数量为全库数量；同维度任选，跨维度同时满足。</small></details>
-        <div class="section-heading"><h2>你的曲库</h2><span>{{ total }} 首</span></div>
-        <div v-if="!songs.length" class="empty">{{ busy ? '正在找歌…' : '没有找到歌曲，试试其他关键词或分类。' }}</div>
-        <article v-for="song in songs" :key="song.id" class="song-row"><SongArtwork :path="song.coverPath" :token="credential?.token" /><div class="song-copy"><h3>{{ song.title }}</h3><p>{{ song.artists.join(' / ') || '歌手未知' }}</p><small>{{ versionNames[song.version] || '版本待确认' }}</small><AudioRolesEditor v-if="credential" :song-id="song.id" :token="credential.token" /></div><button class="add" :aria-label="`点唱 ${song.title}`" :disabled="busy || !snapshot.acceptingRequests || snapshot.status !== 'ACTIVE'" @click="command('ADD', undefined, song.id)">＋</button></article>
-        <div class="pagination"><button :disabled="page === 0 || busy" @click="page--; perform(loadSongs)">上一页</button><span>{{ page + 1 }}</span><button :disabled="(page + 1) * 20 >= total || busy" @click="page++; perform(loadSongs)">下一页</button></div>
-      </section>
-      <section v-else-if="tab === '已点'"><p v-if="!queue.length" class="empty">还没有待唱歌曲，先去找一首喜欢的歌。</p><article v-for="(item, index) in queue" :key="item.id" class="queue-row"><b>{{ String(index + 1).padStart(2, '0') }}</b><div class="song-copy"><h3>{{ item.song.title }}</h3><p>{{ item.ownerName }} · {{ item.status === 'WAITING' ? '待唱' : item.status === 'HANDOFF' ? '等待电视确认' : '正在唱' }}</p></div><div v-if="item.status === 'WAITING'" class="queue-actions"><button v-if="snapshot.host" :disabled="busy" @click="command('TOP', item.id)">置顶</button><button v-if="snapshot.host" :disabled="busy" @click="command('UP', item.id)">上移</button><button v-if="snapshot.host" :disabled="busy" @click="command('DOWN', item.id)">下移</button><button v-if="snapshot.host || item.ownerId === snapshot.actorId" :disabled="busy" @click="command('REMOVE', item.id)">撤回</button></div></article></section>
-      <section v-else class="remote"><div class="record-large">◉</div><h2>{{ stateNames[snapshot.playback?.state || ''] || '等待开唱' }}</h2><p class="muted">播放结果以电视实际回报为准</p><template v-if="snapshot.host"><div class="remote-grid"><button :disabled="busy" @click="command('PAUSE')">暂停</button><button :disabled="busy" @click="command('RESUME')">继续</button><button :disabled="busy" @click="command('RESTART')">重唱</button><button :disabled="busy" @click="command('NEXT')">切歌</button></div></template><p v-else class="empty">遥控需要主人在电视上授予主持权限。你仍可点歌和撤回自己的待唱歌曲。</p></section>
-      <footer><button class="text-button" @click="leave">离开本场</button><small>离开不会撤回已点歌曲或结束聚会。</small></footer>
-      <nav aria-label="聚会导航"><button v-for="entry in ['点歌', '已点', '遥控']" :key="entry" :class="{ active: tab === entry }" @click="tab = entry">{{ entry }}</button></nav>
-    </template>
-    <aside v-if="error || notice || pending" class="feedback" role="status"><p v-if="error">{{ error }}</p><p v-else>{{ notice }}</p><template v-if="pending"><p>结果尚未确认，请先查看已点，避免重复点歌。</p><button :disabled="busy" @click="perform(sendPending)">重试原请求</button><button :disabled="busy" @click="forgetPending">已核对，关闭此请求</button></template><button v-else @click="error = ''; notice = ''">知道了</button></aside>
-  </main>
-</template>
+<template><div class="party-app"><header class="app-header"><div class="header-inner"><a class="brand" href="/party/" aria-label="SingVerse 亲友点歌"><img src="/assets/brand/logo-mark.svg" width="36" height="36" alt=""><span>SingVerse</span></a><span v-if="snapshot" class="header-room"><i class="dot" :class="{ offline: !state.online || !snapshot.tvOnline }" />{{ state.online ? snapshot.tvOnline ? '客厅电视' : '电视离线' : '正在重连' }}</span><nav v-if="snapshot" class="header-nav" aria-label="聚会导航"><button v-for="item in [['songs','grid','点歌'],['queue','queue','已点'],['stage','tv','现场']]" :key="item[0]" :class="{ active: nav === item[0] }" @click="navigate(item[0]!)"><PartyIcon :name="item[1]!" />{{ item[2] }}<span v-if="item[0] === 'queue'" class="count">{{ session.waiting.value.length }}</span></button></nav><button v-if="snapshot" class="icon-btn menu-button" aria-label="本场信息" @click="sheet = 'info'"><PartyIcon name="more" /></button></div></header>
+<main v-if="!snapshot" class="join-layout"><section class="join-panel"><span class="pill">亲友点歌</span><h1>想唱什么，<br>现在就点。</h1><p class="muted">和家人朋友共用一份歌单，<br>好歌，大家轮流唱。</p><form v-if="state.preview" class="stack" @submit.prevent="session.join(name)"><div class="join-room"><PartyIcon name="tv" /><div><strong>{{ state.preview.deviceName }}</strong><p class="muted">{{ serverHost }}</p></div></div><label class="field">大家怎么称呼你<input v-model="name" required maxlength="30" autocomplete="nickname" placeholder="输入昵称"></label><button class="primary full" :disabled="state.loading || !name.trim()">{{ state.loading ? '正在加入…' : '加入，开始点歌' }}</button></form><template v-else><div class="join-room"><PartyIcon name="tv" /><p>用微信扫描电视上的二维码，即可加入本场。</p></div><button v-if="state.credential" class="outline full" :disabled="state.loading" @click="safely(session.refresh)">重新连接</button></template></section></main>
+<main v-else class="layout"><div class="main-content"><div v-if="snapshot.status === 'ENDED'" class="banner">本场聚会已结束。重新扫描电视二维码，加入下一场。</div><div v-else-if="!snapshot.acceptingRequests" class="banner">电视暂时关闭了点歌，已有歌曲仍可继续演唱。</div><div v-if="snapshot.queuePolicy !== 'FAIR'" class="banner">更新 TV 版本后，启用按人轮流、自动开唱和全员遥控。</div>
+<section v-show="nav === 'songs'" class="library"><div class="search-sticky"><form class="search-box" role="search" @submit.prevent="library.load()"><PartyIcon name="search" /><input v-model="catalog.query" type="search" maxlength="200" placeholder="搜索歌曲或歌手" aria-label="搜索歌曲或歌手"><button type="button" @click="sheet = 'missing'">缺歌反馈</button></form><div class="finder" aria-label="找歌方式"><button v-for="finder in finders" :key="finder.id" :class="{ active: catalog.entry === finder.id }" :aria-pressed="catalog.entry === finder.id" @click="entry(finder.id)"><PartyIcon :name="finder.icon" />{{ finder.label }}</button></div></div>
+<template v-if="catalog.entry === 'category'"><div class="filter-line"><button class="chip" :class="{ active: !catalog.selected.length }" @click="catalog.selected = []">全部</button><button v-for="tag in catalog.tags.filter(t => t.dimension === 'LANGUAGE').slice(0, 2)" :key="tag.id" class="chip" :class="{ active: catalog.selected.includes(tag.id) }" @click="library.toggleTag(tag.id)">{{ tag.name }}</button><button class="chip filter-button" :class="{ active: filtersOpen || selectedTags.some(t => t.dimension !== 'LANGUAGE') }" @click="filtersOpen = !filtersOpen"><PartyIcon name="filter" />筛选<span v-if="catalog.selected.length">{{ catalog.selected.length }}</span></button></div><div v-if="filtersOpen" class="filter-panel"><div class="filter-tabs"><button v-for="d in dimensions" :key="d.id" :class="{ active: dimension === d.id }" @click="dimension = d.id">{{ d.label }}</button></div><div class="filter-options"><button v-for="tag in catalog.tags.filter(t => t.dimension === dimension)" :key="tag.id" class="chip" :class="{ active: catalog.selected.includes(tag.id) }" :aria-pressed="catalog.selected.includes(tag.id)" @click="library.toggleTag(tag.id)">{{ tag.name }} <small>{{ tag.count }}</small></button><p v-if="!catalog.tags.some(t => t.dimension === dimension)" class="helper">这个分类还没有标签。</p></div><div v-if="catalog.tags.some(t => t.dimension === 'CUSTOM')" class="filter-options"><span class="helper">自定义</span><button v-for="tag in catalog.tags.filter(t => t.dimension === 'CUSTOM')" :key="tag.id" class="chip" :class="{ active: catalog.selected.includes(tag.id) }" @click="library.toggleTag(tag.id)">{{ tag.name }}</button></div><p class="helper">同一维度任选，跨维度同时满足；数量为全库数量。</p></div><div v-if="selectedTags.length" class="selected-tags"><span v-for="tag in selectedTags" :key="tag.id" class="pill">{{ tag.name }}</span><button class="text-button" @click="catalog.selected = []">清除</button></div></template>
+<div v-if="catalog.entry === 'popular'" class="period-tabs segmented"><button v-for="p in [['30d','近 30 天'],['7d','近 7 天'],['all','全部']]" :key="p[0]" :class="{ active: catalog.period === p[0] }" @click="catalog.period = p[0]!">{{ p[1] }}</button></div><button v-if="catalog.artist" class="artist-back text-button" @click="library.closeArtist()"><PartyIcon name="back" />返回歌手</button><div class="section-head"><h1>{{ title }}</h1><span class="helper">{{ catalog.total }} {{ catalog.entry === 'artists' && !catalog.artist ? '位' : '首' }}</span></div><p v-if="catalog.entry === 'recent' || catalog.entry === 'popular' || catalog.entry === 'favorites'" class="list-context">{{ catalog.entry === 'recent' ? '本 NAS 实际唱过的歌曲，按歌曲去重' : catalog.entry === 'popular' ? '按本 NAS 的实际播放记录排行' : '本 NAS 全家共享，大家都能收藏和移除' }}</p><div v-if="catalog.error" class="read-error" role="alert"><p>{{ catalog.error }}</p><button class="outline" @click="library.load()">重新读取</button></div><div v-else-if="catalog.loading && !catalog.songs.length && !catalog.artists.length" class="empty-state" role="status">正在找歌…</div><div v-else-if="!catalog.total" class="empty-state"><PartyIcon :name="catalog.entry === 'favorites' ? 'heart' : 'search'" /><h3>{{ catalog.query ? '暂时没找到这首歌' : catalog.entry === 'favorites' ? '把全家爱唱的歌放在这里' : '这里还没有歌曲' }}</h3><p>{{ catalog.query ? '试试歌手或更短的关键词，也可以反馈缺歌。' : catalog.entry === 'recent' || catalog.entry === 'popular' ? '唱过之后，这里会逐渐留下大家的好歌。' : '先去分类里挑一首喜欢的歌。' }}</p><button v-if="catalog.query" class="subtle" @click="sheet = 'missing'">反馈缺歌</button></div><div v-else-if="catalog.entry === 'artists' && !catalog.artist" class="artist-grid"><button v-for="artist in catalog.artists" :key="artist.id" class="artist-item" @click="library.openArtist(artist)"><SongArtwork :path="artist.portraitPath" :token="state.credential?.token" :alt="`${artist.name}照片`" :fallback="artist.name" /><span class="song-meta"><strong class="song-title">{{ artist.name }}</strong><span class="song-artist">{{ artist.count }} 首歌曲</span></span><PartyIcon name="chevron" /></button></div><div v-else class="song-list"><SongRow v-for="song in catalog.songs" :key="song.id" :song="song" :token="state.credential?.token" :favorite="state.favoriteIds.includes(song.id)" :favorite-disabled="!state.favoritesReady || state.favoriteBusy.includes(song.id) || !state.online" :add-disabled="!canAdd" :placement="placement(song)" @detail="openDetail" @favorite="favorite" @add="add" /></div><button v-if="(catalog.page + 1) * 30 < catalog.total" class="outline full load-more" :disabled="catalog.loading" @click="library.load(true)">{{ catalog.loading ? '正在读取…' : '再看一些' }}</button><p class="list-note">{{ catalog.entry === 'artists' ? '歌手与歌曲来自当前 NAS 曲库。' : '点歌后留在这里，继续挑选你想唱的歌。' }}</p></section>
+<PartyQueue v-if="nav === 'queue'" :session="session" @priority="priority" @remove="item => command('REMOVE', { itemId: item.id })" @shuffle="command('SHUFFLE')" @detail="item => openDetail(item.song)" />
+<section v-if="nav === 'stage'" class="stage"><div class="page-intro"><h1>把现场交给你</h1><p>遥控电视，也为正在唱的人送上掌声。</p></div><PartyRemote :session="session" @command="command" @confirm="confirmAction" @correct="correct()" @reaction="kind => safely(() => session.react(kind))" /></section>
+</div><aside class="sidebar"><div class="side-section"><div class="side-heading"><h2>客厅正在唱</h2><button class="text-button" @click="sheet = 'remote'">完整遥控</button></div><PartyRemote :session="session" compact @command="command" @confirm="confirmAction" @correct="correct()" @reaction="kind => safely(() => session.react(kind))" /></div><div class="side-next"><div class="side-heading"><h2>接下来</h2><button class="text-button" @click="navigate('queue')">全部 {{ session.waiting.value.length }} 首</button></div><div v-for="(item, index) in session.waiting.value.slice(0, 3)" :key="item.id" class="next-row"><span class="queue-number">{{ index + 1 }}</span><SongArtwork :path="item.song.coverPath" :token="state.credential?.token" /><div class="song-meta"><strong class="song-title">{{ item.song.title }}</strong><span class="song-artist">{{ item.ownerName }}点的{{ item.priority ? ' · 下一首优先' : '' }}</span></div></div><p class="helper side-footnote">好歌轮流唱，每人一首。<br>临时插队唱完后，继续正常轮流。</p></div></aside>
+<div class="mobile-dock"><div class="mobile-tvbar"><button class="now-open" @click="sheet = 'remote'"><SongArtwork :path="current?.song.coverPath" :token="state.credential?.token" /><span class="song-meta"><span class="bar-status">客厅电视 {{ !snapshot.tvOnline ? '离线' : activeCurrent ? snapshot.playback?.state === 'PAUSED' ? '已暂停' : '正在唱' : '等待开唱' }}</span><strong class="song-title">{{ current?.song.title || '点首歌，大家一起唱' }}</strong><span class="bar-owner">{{ current ? `${current.song.artists?.join(' / ')} · ${current.ownerName}点的` : '点击展开电视遥控' }}</span></span></button><button class="icon-btn" :aria-label="snapshot.playback?.state === 'PAUSED' ? '继续电视播放' : '暂停电视播放'" :disabled="!state.online || !snapshot.tvOnline || !activeCurrent || state.busy || !!state.pending || snapshot.queuePolicy !== 'FAIR'" @click="command(snapshot.playback?.state === 'PAUSED' ? 'RESUME' : 'PAUSE')"><PartyIcon :name="snapshot.playback?.state === 'PAUSED' ? 'play' : 'pause'" /></button></div><nav class="bottom-nav" aria-label="手机聚会导航"><button v-for="item in [['songs','grid','点歌'],['queue','queue','已点'],['stage','tv','现场']]" :key="item[0]" :class="{ active: nav === item[0] }" @click="navigate(item[0]!)"><PartyIcon :name="item[1]!" />{{ item[2] }}<span v-if="item[0] === 'queue'" class="count">{{ session.waiting.value.length }}</span></button></nav></div>
+</main><aside v-if="feedback || state.pending" class="feedback" :class="{ 'has-pending': state.pending }" role="status"><div><p>{{ feedback }}</p><template v-if="state.pending"><p>结果尚未确认，重试将沿用同一请求。</p><button :disabled="state.busy" @click="safely(session.sendPending)">重试原请求</button><button :disabled="state.busy" @click="state.pending = null; dismissFeedback()">已核对，关闭请求</button></template></div><button v-if="!state.pending" class="icon-btn" aria-label="关闭提示" @click="dismissFeedback"><PartyIcon name="close" /></button></aside>
+<PartyDialog v-if="sheet" :title="sheet === 'detail' ? '歌曲详情' : sheet === 'correction' ? '纠正原唱 / 伴奏' : sheet === 'missing' ? '反馈缺失歌曲' : sheet === 'confirm' ? confirmCopy.title : sheet === 'remote' ? '电视遥控' : '本场信息'" :locked="state.busy" @close="sheet = ''"><template v-if="sheet === 'detail' && detail"><div class="detail-song"><SongArtwork :path="detail.coverPath" :token="state.credential?.token" /><div class="song-meta"><h3>{{ detail.title }}</h3><p class="muted">{{ detail.artists?.join(' / ') || '歌手未知' }}</p></div></div><div class="detail-actions"><button class="primary" :disabled="!canAdd || detail.available === false" @click="add(detail)">点这首歌</button><button class="outline" :disabled="!state.favoritesReady || state.favoriteBusy.includes(detail.id)" @click="favorite(detail)"><PartyIcon name="heart" />{{ state.favoriteIds.includes(detail.id) ? '已收藏' : '家庭收藏' }}</button></div><p v-if="placement(detail)" class="placement-note">{{ placement(detail) }}</p><button class="correction-entry outline full" @click="correct(detail)"><PartyIcon name="shuffle" />原唱和伴奏不对？纠正标记<PartyIcon name="chevron" /></button></template><AudioRolesEditor v-else-if="sheet === 'correction' && detail" :song-id="detail.id" :session="session" /><MissingSongForm v-else-if="sheet === 'missing'" :keyword="catalog.query" :session="session" /><template v-else-if="sheet === 'confirm'"><p class="confirm-copy">{{ confirmCopy.body }}</p><div class="confirm-actions"><button class="outline" @click="sheet = ''">先不操作</button><button class="primary" :disabled="state.busy" @click="executeConfirmed">{{ confirmCopy.button }}</button></div></template><PartyRemote v-else-if="sheet === 'remote'" :session="session" @command="command" @confirm="confirmAction" @correct="correct()" @reaction="kind => safely(() => session.react(kind))" /><div v-else class="stack"><p><strong>{{ state.credential?.name }}</strong>，欢迎来到客厅。</p><p class="muted">{{ snapshot?.host ? '你是本场主持人，可撤回所有待唱歌曲。' : '可撤回自己点的待唱歌曲。' }} 所有在场亲友都可以遥控电视。</p><p class="muted">散场、清空队列与人员授权在电视端管理。离开本页面不会撤回歌曲。</p><button class="outline full" @click="session.leave()">离开本场</button></div></PartyDialog>
+</div></template>

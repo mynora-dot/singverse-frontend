@@ -25,6 +25,15 @@ afterEach(() => { wrapper?.unmount(); wrapper = undefined; document.body.innerHT
 async function page() { wrapper = mount(MissingFeedbackView, { global: { stubs: { teleport: true } } }); await flushPromises() }
 function button(text: string) { return wrapper!.findAll('button').find(b => b.text() === text)! }
 
+it('亲友缺歌在列表和详情显示亲友来源与服务端提交人', async () => {
+  const party = { ...feedback, source: 'PARTY' as const, submittedBy: '聚会亲友' }
+  vi.mocked(missingFeedback.list).mockResolvedValueOnce({ items: [party], totalElements: 1, page: 0, size: 20 })
+  vi.mocked(missingFeedback.get).mockResolvedValueOnce(party)
+  await page(); expect(wrapper!.get('.feedback-song small').text()).toContain('亲友点歌 · 聚会亲友')
+  await button('查看 / 处理').trigger('click'); await flushPromises()
+  expect(wrapper!.get('.feedback-original small').text()).toContain('聚会亲友 · 亲友点歌')
+})
+
 it('真实空态提供管理员登记入口，读取失败显示重试', async () => {
   vi.mocked(missingFeedback.list).mockResolvedValueOnce({ items: [], totalElements: 0, page: 0, size: 20 })
   await page()

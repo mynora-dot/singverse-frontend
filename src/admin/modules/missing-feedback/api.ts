@@ -8,7 +8,7 @@ export interface MissingFeedback {
   versionLabel: string
   description: string
   submittedBy: string
-  source: 'ADMIN'
+  source: 'ADMIN' | 'PARTY'
   status: FeedbackStatus
   handlingNote: string
   resolvedSongId: string | null
