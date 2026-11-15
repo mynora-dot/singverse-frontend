@@ -2,7 +2,9 @@
 import { ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { useRoute } from 'vue-router'
-import AdminLayout from './app/layouts/AdminLayout.vue'
+import { defineAsyncComponent } from 'vue'
+
+const AdminLayout = defineAsyncComponent(() => import('./app/layouts/AdminLayout.vue'))
 
 const route = useRoute()
 </script>

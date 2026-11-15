@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElPopover } from 'element-plus'
 import TaskGuide from '../../shared/ui/TaskGuide.vue'
 import PageHeader from '../../shared/ui/PageHeader.vue'
+import { useVisiblePolling } from '../../shared/composables/use-visible-polling'
 import { authRequest } from '../../core/auth/api'
 import { base, type Batch, type Node } from './api'
-import { backendName, failure, isRecognition, profileName, profileReady, readiness as evaluate } from './presentation'
+import { backendName, failure, isRecognition, nodeWorking, profileName, profileReady, readiness as evaluate } from './presentation'
 import SongsTab from './components/SongsTab.vue'
 import BatchesTab from './components/BatchesTab.vue'
 import BatchConfirmDialog from './components/BatchConfirmDialog.vue'
@@ -29,7 +30,13 @@ const anyReady = computed(() => readiness.value.ready || node.value?.separation?
 const previewReady = computed(() => preview.value?.kind === 'FAST' ? readiness.value.connected : preview.value?.kind === 'ANALYZE' ? readiness.value.ready : profileReady(node.value?.separation, preview.value?.separationProfile || 'LEGACY_DEMUCS', readiness.value.ready))
 const activeBatches = computed(() => batches.value.filter(batch => ['PREPARING', 'QUEUED'].includes(batch.state)).length)
 const activeRecognitions = computed(() => recognitionBatches.value.filter(batch => ['PREPARING', 'QUEUED'].includes(batch.state)).length)
-let active = true, timer: ReturnType<typeof setTimeout> | undefined, batchRequest = 0, recognitionRequest = 0, previewGeneration = 0
+let active = true, batchRequest = 0, recognitionRequest = 0, previewGeneration = 0
+let firstRefresh = true
+const polling = useVisiblePolling(async () => {
+  const first = firstRefresh; firstRefresh = false
+  await refresh(first)
+}, () => activeBatches.value || activeRecognitions.value || preview.value?.state === 'PREPARING' || nodeWorking(node.value)
+  ? 4000 : nodeError.value || error.value ? 10000 : 30000)
 
 function setup() { void router.push('/system/compute#audio-models') }
 watch(() => route.query.tab, value => { if (value === 'setup') void router.replace('/system/compute#audio-models') }, { immediate: true })
@@ -52,12 +59,12 @@ async function loadNode(refresh = false) {
 async function loadBatches() {
   const turn = ++batchRequest
   const value = await authRequest<{ items: Batch[]; totalElements: number }>(`${base}/batches?kind=SEPARATE&page=${batchPage.value}`)
-  if (active && turn === batchRequest) { batches.value = value.items; batchTotal.value = value.totalElements }
+  if (active && turn === batchRequest) { batches.value = value.items; batchTotal.value = value.totalElements; polling.schedule() }
 }
 async function loadRecognitions() {
   const turn = ++recognitionRequest
   const value = await authRequest<{ items: Batch[]; totalElements: number }>(`${base}/batches?kind=RECOGNIZE&page=${recognitionPage.value}`)
-  if (active && turn === recognitionRequest) { recognitionBatches.value = value.items; recognitionTotal.value = value.totalElements }
+  if (active && turn === recognitionRequest) { recognitionBatches.value = value.items; recognitionTotal.value = value.totalElements; polling.schedule() }
 }
 async function refresh(first = false) {
   const work: Promise<unknown>[] = [loadNode(), loadBatches(), loadRecognitions()]
@@ -68,10 +75,9 @@ async function refresh(first = false) {
   const rejected = results.find(result => result.status === 'rejected') as PromiseRejectedResult | undefined
   error.value = rejected ? failure(rejected.reason, '读取失败') : ''
 }
-async function poll(first = false) { await refresh(first); if (active) timer = setTimeout(() => { void poll() }, 4000) }
 function changeBatchPage(next: number) { batchPage.value = next; void loadBatches().catch(failed => { if (active) error.value = failure(failed) }) }
 function changeRecognitionPage(next: number) { recognitionPage.value = next; void loadRecognitions().catch(failed => { if (active) error.value = failure(failed) }) }
-function showPreview(value: Batch) { previewGeneration++; error.value = ''; preview.value = value }
+function showPreview(value: Batch) { previewGeneration++; error.value = ''; preview.value = value; polling.schedule() }
 async function start() {
   if (!active || starting.value || preview.value?.state !== 'PREVIEW') return
   const id = preview.value.id, turn = ++previewGeneration
@@ -107,8 +113,7 @@ async function cancelPreparation() {
   } catch (failed) { if (active) error.value = failure(failed, '取消准备失败') }
   finally { if (active) starting.value = false }
 }
-onMounted(() => { void poll(true) })
-onBeforeUnmount(() => { active = false; clearTimeout(timer) })
+onBeforeUnmount(() => { active = false })
 </script>
 
 <template>

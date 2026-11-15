@@ -89,6 +89,12 @@ export function isRecognition(batch?: Pick<Batch, 'kind'>) { return batch?.kind 
 export function recognitionName(kind?: string) { return kind === 'ANALYZE' ? '深度识别' : '快速识别' }
 export const backendStates: Record<string, string> = { AVAILABLE: '可用', UNVERIFIED: '待试跑', FAILED: '试跑失败', TESTING: '试跑中', IMAGE_MISSING: '当前镜像未包含', RUNTIME_MISSING: '缺少运行环境', MODEL_MISSING: '缺少模型或固定版本依赖', MODEL_UNSUPPORTED: '当前模型未适配' }
 export const operationStates: Record<string, string> = { IDLE: '空闲', DOWNLOADING: '下载中', IMPORTING: '导入中', VERIFYING: '校验中', TESTING: '试跑中', SUCCEEDED: '已完成', FAILED: '失败', CANCELLED: '已取消' }
+export function nodeWorking(node?: Node) {
+  return ['DOWNLOADING', 'IMPORTING', 'VERIFYING', 'TESTING'].includes(node?.operation.state ?? '')
+    || ['CHECKING', 'WAITING', 'TESTING'].includes(node?.startupCheck?.state ?? '')
+    || ['TESTING', 'WAITING'].includes(node?.separation?.operation?.state ?? '')
+    || [...node?.backends ?? [], ...node?.separation?.backends ?? []].some(backend => backend.state === 'TESTING')
+}
 const backendNames: Record<string, string> = { cpu: 'CPU', cuda: 'NVIDIA 显卡 (CUDA)', tensorrt: 'NVIDIA 显卡 (TensorRT)', rocm: 'AMD 显卡 (ROCm)', migraphx: 'AMD 显卡 (MIGraphX)', mps: 'Mac (MPS)', coreml: 'Mac (Core ML)', mlx: 'Apple 芯片 (MLX)', directml: 'Windows 显卡 (DirectML)', openvino: 'Intel 显卡 (OpenVINO)', 'openvino-cpu': 'CPU (OpenVINO)', rknn: '瑞芯微 NPU (RKNN)' }
 export function backendName(id?: string | null) { return id ? backendNames[id] || id.toUpperCase() : '' }
 export const modelNames: Record<string, { name: string; hint: string }> = {

@@ -31,9 +31,10 @@ export function displayTime(value: string | null) {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
 }
-export function songTags(song: MediaSong, tags: Tag[]) {
+export function indexTags(tags: readonly Tag[]): ReadonlyMap<string, Tag> { return new Map(tags.map(tag => [tag.id, tag])) }
+export function songTags(song: MediaSong, tags: readonly Tag[] | ReadonlyMap<string, Tag>) {
   return Object.entries(song.classification?.dimensions ?? {}).flatMap(([dim, value]) => (value?.tagIds ?? []).map(id => {
-    const tag = tags.find(t => t.id === id)
+    const tag = 'get' in tags ? tags.get(id) : tags.find(t => t.id === id)
     return { id, name: tag?.name ?? '标签信息未加载', dimension: dimensionNames[dim as Dimension] ?? dim, active: tag?.active ?? false, locked: !!value?.locked }
   }))
 }

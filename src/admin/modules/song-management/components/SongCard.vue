@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { ElButton, ElIcon } from 'element-plus'
+import { computed } from 'vue'
 import { VideoPlay, EditPen } from '@element-plus/icons-vue'
 import SongCover from './SongCover.vue'
-import { needsSongReview, songReviewLabel, platformDuration, songTags } from '../presentation'
+import { needsSongReview, songReviewLabel, platformDuration, indexTags, songTags } from '../presentation'
 import { songTitle, songArtists } from '../../metadata/utils'
 import type { Tag } from '../../classification/types'
 import type { MediaSong } from '../../media-library/types'
-withDefaults(defineProps<{ song: MediaSong; tags?: Tag[]; selectionMode?: boolean; selected?: boolean }>(), { tags: () => [], selectionMode: false, selected: false })
+const props = withDefaults(defineProps<{ song: MediaSong; tags?: Tag[]; tagIndex?: ReadonlyMap<string, Tag>; selectionMode?: boolean; selected?: boolean }>(), { tags: () => [], selectionMode: false, selected: false })
+const tagIndex = computed(() => props.tagIndex ?? indexTags(props.tags))
+const classifications = computed(() => songTags(props.song, tagIndex.value))
 const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSong, selected: boolean] }>()
 </script>
 <template>
@@ -18,7 +21,7 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
       <button class="cover-play" :aria-label="`播放 ${songTitle(song)}`" @click="emit('play')"><ElIcon><VideoPlay /></ElIcon></button>
     </div>
     <button class="song-card-title" @click="emit('click')"><strong :title="songTitle(song)">{{ songTitle(song) }}</strong><span :title="songArtists(song).join('、')">{{ songArtists(song).join('、') || '歌手待补充' }}</span></button>
-    <div class="song-card-context"><span v-if="song.metadata?.stale" class="song-status review">信息已过期 · 需重审</span><span v-else class="song-status" :class="{ review: needsSongReview(song) }">{{ songReviewLabel(song) }}</span><span v-if="songTags(song, tags)[0]" class="card-tag">{{ songTags(song, tags)[0]?.name }}</span></div>
+    <div class="song-card-context"><span v-if="song.metadata?.stale" class="song-status review">信息已过期 · 需重审</span><span v-else class="song-status" :class="{ review: needsSongReview(song) }">{{ songReviewLabel(song) }}</span><span v-if="classifications[0]" class="card-tag">{{ classifications[0].name }}</span></div>
     <div class="song-card-actions"><span :title="song.sourceName">{{ song.sourceName }}</span><ElButton text :icon="EditPen" :aria-label="`${needsSongReview(song) ? '复核' : '编辑'} ${songTitle(song)}`" @click="emit('edit')">{{ needsSongReview(song) ? '复核' : '编辑' }}</ElButton></div>
   </article>
 </template>

@@ -6,6 +6,7 @@ import { parserProfiles } from '../../filename-parser/api/rules'
 import type { ParserWorkspace } from '../../filename-parser/types'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import PageHeader from '../../../shared/ui/PageHeader.vue'
+import { useVisiblePolling } from '../../../shared/composables/use-visible-polling'
 import { media, type MediaSource, type SourceType, type ScanTask } from '../api/media'
 
 import WebDavMetadataDialog from '../components/WebDavMetadataDialog.vue'
@@ -86,18 +87,29 @@ const tasks = reactive<Record<string, ScanTask | undefined>>({})
 const taskVersions: Record<string, number> = {}
 const taskErrors = reactive<Record<string, string>>({})
 const cancelling = reactive<Record<string, boolean>>({})
-let taskTimer: ReturnType<typeof setTimeout> | undefined, taskGeneration = 0, loadGeneration = 0
+let taskGeneration = 0, loadGeneration = 0, latestTasksRequested = false
 function enhancing(id: string) { const s = summaries[id]; return !!s?.enabled && !s.paused && (s.counts.PENDING ?? 0) + (s.counts.QUEUED ?? 0) + (s.counts.RUNNING ?? 0) > 0 }
 function ingestActive(id: string) { return ['QUEUED', 'RUNNING'].includes(ingests[id]?.state ?? '') }
 function taskActive(task?: ScanTask) { return !!task && ['QUEUED', 'RUNNING'].includes(task.status) }
+const taskPolling = useVisiblePolling(async reason => {
+  if (reason === 'resume') latestTasksRequested = true
+  do {
+    const latest = latestTasksRequested; latestTasksRequested = false
+    await readTasks(latest)
+  } while (active && !document.hidden && latestTasksRequested)
+}, () => items.value.some(item => ingestActive(item.id) || enhancing(item.id) || taskActive(tasks[item.id]))
+  ? 2000 : items.value.some(item => taskErrors[item.id]) ? 10000 : undefined, { immediate: false })
 function scheduleTasks(token = taskGeneration) {
-  clearTimeout(taskTimer)
   if (!active || token !== taskGeneration) return
-  if (items.value.some(item => ingestActive(item.id) || enhancing(item.id) || taskActive(tasks[item.id]) || taskErrors[item.id])) {
-    taskTimer = setTimeout(() => { void refreshTasks(false, token) }, 2000)
-  }
+  taskPolling.schedule()
 }
-async function refreshTasks(latest: boolean, token = taskGeneration) {
+function refreshTasks(latest: boolean): Promise<void> {
+  latestTasksRequested ||= latest
+  return taskPolling.refresh().then((): Promise<void> | undefined => {
+    if (active && !document.hidden && latestTasksRequested) return refreshTasks(false)
+  })
+}
+async function readTasks(latest: boolean, token = taskGeneration) {
   const sources = items.value
   await Promise.all(sources.map(async item => {
     const previous = tasks[item.id], version = taskVersions[item.id] ?? 0
@@ -110,7 +122,6 @@ async function refreshTasks(latest: boolean, token = taskGeneration) {
       if (active && token === taskGeneration && version === (taskVersions[item.id] ?? 0)) taskErrors[item.id] = e instanceof Error ? e.message : '读取扫描状态失败'
     }
   }))
-  scheduleTasks(token)
 }
 async function cancelScan(item: MediaSource) {
   const task = tasks[item.id]
@@ -175,7 +186,7 @@ async function load(append = false, openLinkedSource = true) {
       metadataSource.value = selected
     }
     sourcePage.value = next; moreSources.value = (next + 1) * 100 < result.totalElements; loaded.value = true
-    clearTimeout(taskTimer); taskGeneration++; void refreshTasks(true)
+    taskPolling.clear(); taskGeneration++; void refreshTasks(true)
   } catch (e) { if (active && token === loadGeneration) error.value = e instanceof Error ? e.message : '读取媒体库失败' }
   finally { if (active && token === loadGeneration) loading.value = false }
 }
@@ -342,7 +353,7 @@ onMounted(() => {
   const add = route.query.add
   if (add === 'LOCAL' || add === 'WEBDAV') { open(add); const query = { ...route.query }; delete query.add; delete query.download; void router.replace({ query }) }
 })
-onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; loadGeneration++; clearTimeout(taskTimer); draft.password = ''; window.removeEventListener('beforeunload', beforeUnload) })
+onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; loadGeneration++; draft.password = ''; window.removeEventListener('beforeunload', beforeUnload) })
 </script>
 
 <template>

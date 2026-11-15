@@ -14,7 +14,7 @@ import { singleReview } from '../../metadata/api/single-review'
 import SongVideoDialog from '../components/SongVideoDialog.vue'
 import SongCard from '../components/SongCard.vue'
 import SongLibraryTable from '../components/SongLibraryTable.vue'
-import { songColumns, defaultSongColumns, songTags, needsSongReview, identityReviewed, type SongColumn } from '../presentation'
+import { songColumns, defaultSongColumns, indexTags, songTags, needsSongReview, identityReviewed, type SongColumn } from '../presentation'
 import SongDetailDrawer from '../components/SongDetailDrawer.vue'
 import { songs } from '../api/songs'
 import type { MediaSong, MediaSource } from '../../media-library/types'
@@ -44,12 +44,13 @@ const visibleRange = computed(() => items.value.length ? `${(page.value - 1) * p
 const items = ref<MediaSong[]>([]), sources = ref<MediaSource[]>([]), total = ref(0), page = ref(1)
 const pageSize = ref(20)
 const tags = ref<Tag[]>([]), tagIds = ref<string[]>([]), unclassified = ref(false), classificationError = ref(''), editingClasses = ref<string[]>([])
+const tagIndex = computed(() => indexTags(tags.value))
 async function loadTags() { try { const result = await classification.tags(); if (!active) return; tags.value = result; tagsLoaded.value = true; classificationError.value = '' } catch (e) { classificationError.value = e instanceof Error ? e.message : '分类词表读取失败' } }
 async function changeSize() { await apply(1) }
 const sourceId = ref(''), keyword = ref(''), status = ref('ALL')
 const loading = ref(false), loaded = ref(false), error = ref(''), sourcesError = ref('')
 const playing = ref<MediaSong | null>(null)
-const detailSong = ref<MediaSong | null>(null), scraping = ref<MediaSong | null>(null)
+const detailSong = ref<MediaSong | null>(null), scrapingSongId = ref<string | null>(null)
 const selectionMode = ref(false), selectedIds = ref<string[]>([])
 
 // 批量操作模式
@@ -67,30 +68,25 @@ function classifySelected() { router.push({ path: '/library/classification', que
 function openScrape() { router.push({ path: '/library/songs/metadata', query: selectedIds.value.length ? { songIds: selectedIds.value.join(',') } : {} }) }
 
 function openDetail(song: MediaSong) { detailSong.value = song }
-function openReview(song: MediaSong) { detailSong.value = null; scraping.value = song }
+function openReview(song: MediaSong) { detailSong.value = null; scrapingSongId.value = song.id }
 
 const filtered = computed(() => !!route.query.sourceId || !!route.query.q || !!route.query.search || (typeof route.query.status === 'string' && route.query.status !== 'ALL') || !!route.query.tagIds || route.query.unclassified === 'true')
 const returnBatch = computed(() => (typeof route.query.returnBatch === 'string' ? route.query.returnBatch : ''))
 
 // 统计
 const reviewCount = computed(() => items.value.filter(needsSongReview).length)
-const unclassifiedCount = computed(() => items.value.filter(s => !songTags(s, tags.value).some(tag => tag.active)).length)
+const unclassifiedCount = computed(() => items.value.filter(s => !songTags(s, tagIndex.value).some(tag => tag.active)).length)
 const reviewedCount = computed(() => items.value.filter(identityReviewed).length)
 const matchedCount = computed(() => items.value.filter(s => !s.result.needsReview && !identityReviewed(s)).length)
 
-let active = true, generation = 0, reviewGeneration = 0, detailGeneration = 0
+let active = true, generation = 0, detailGeneration = 0
 watch(() => route.query.detailSongId, async id => {
   const token = ++detailGeneration
   if (typeof id !== 'string') return
   try { const context = await singleReview.load(id); if (active && token === detailGeneration) detailSong.value = context.song }
   catch (failure) { if (active && token === detailGeneration) error.value = failure instanceof Error ? failure.message : '读取单曲失败' }
 }, { immediate: true })
-watch(() => route.query.reviewSongId, async id => {
-  const token = ++reviewGeneration
-  if (typeof id !== 'string') return
-  try { const context = await singleReview.load(id); if (active && token === reviewGeneration) scraping.value = context.song }
-  catch (failure) { if (active && token === reviewGeneration) error.value = failure instanceof Error ? failure.message : '读取单曲失败' }
-}, { immediate: true })
+watch(() => route.query.reviewSongId, id => { scrapingSongId.value = typeof id === 'string' ? id : null }, { immediate: true })
 
 async function load() {
   const token = ++generation
@@ -131,7 +127,12 @@ function openFormalLens() {
 async function reset() {
   sourceId.value = ''; keyword.value = ''; status.value = 'ALL'; tagIds.value = []; unclassified.value = false; await apply()
 }
-watch(() => route.query, query => {
+watch([
+  () => route.query.tagIds, () => route.query.unclassified, () => route.query.sourceId,
+  () => route.query.q, () => route.query.search, () => route.query.status,
+  () => route.query.size, () => route.query.page,
+], () => {
+  const query = route.query
   tagIds.value = typeof query.tagIds === 'string' ? query.tagIds.split(',').filter(Boolean) : []
   unclassified.value = query.unclassified === 'true'
   sourceId.value = typeof query.sourceId === 'string' ? query.sourceId : ''
@@ -255,8 +256,8 @@ onBeforeUnmount(() => { active = false; generation++ })
 
     <ElSkeleton v-if="loading && !items.length" :rows="5" animated aria-label="正在加载歌曲" />
     <div v-if="items.length" :aria-busy="loading" class="songs-results">
-      <SongLibraryTable v-if="view === 'list'" class="desktop-song-table" :items="items" :tags="tags" :columns="columns" :compact="compact" :selection-mode="selectionMode" :selected-ids="selectedIds" @play="playing = $event" @review="openReview" @detail="openDetail" @select="toggleSelection" @select-page="selectedIds = $event ? items.map(song => song.id) : []" />
-      <div v-if="view === 'covers'" class="songs-grid"><SongCard v-for="song in items" :key="song.id" :song="song" :tags="tags" :selection-mode="selectionMode" :selected="selectedIds.includes(song.id)" @play="playing = song" @edit="openReview(song)" @click="openDetail(song)" @select="toggleSelection" /></div>
+      <SongLibraryTable v-if="view === 'list'" class="desktop-song-table" :items="items" :tags="tags" :tag-index="tagIndex" :columns="columns" :compact="compact" :selection-mode="selectionMode" :selected-ids="selectedIds" @play="playing = $event" @review="openReview" @detail="openDetail" @select="toggleSelection" @select-page="selectedIds = $event ? items.map(song => song.id) : []" />
+      <div v-if="view === 'covers'" class="songs-grid"><SongCard v-for="song in items" :key="song.id" :song="song" :tags="tags" :tag-index="tagIndex" :selection-mode="selectionMode" :selected="selectedIds.includes(song.id)" @play="playing = song" @edit="openReview(song)" @click="openDetail(song)" @select="toggleSelection" /></div>
     </div>
     <ElEmpty v-if="loaded && total > 0 && !items.length && !loading && !error" description="这一页已经没有歌曲"><ElButton @click="apply(1)">返回第一页</ElButton></ElEmpty>
 
@@ -299,7 +300,7 @@ onBeforeUnmount(() => { active = false; generation++ })
     />
 
     <!-- 元数据刮削弹窗 -->
-    <SingleSongScrapeDialog :song="scraping" @close="scraping = null" @applied="load" />
+    <SingleSongScrapeDialog :song-id="scrapingSongId" @close="scrapingSongId = null" @applied="load" />
 
     <!-- 分类编辑器 -->
     <ClassificationEditor

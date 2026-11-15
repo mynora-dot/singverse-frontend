@@ -254,19 +254,37 @@ describe('歌曲管理集中展示扫描数据及详情', () => {
   })
 
   it('批次手工处理深链接复用现有单曲弹窗并保留返回批次入口', async () => {
-    await router.push('/library/songs?reviewSongId=song-1')
+    wrapper.unmount()
     vi.mocked(singleReview.load).mockResolvedValue({
       song: pending('Crazy'),
       fingerprint: 'fp-1',
       version: '1',
       values: { title: 'Crazy', artists: [], album: null, releaseDate: null, aliases: [], durationMs: null, cover: null }
     })
-    wrapper?.unmount()
+    await router.push('/library/songs?reviewSongId=song-1&returnBatch=batch-1')
     wrapper = mount(SongsView, { global: { plugins: [router, ElementPlus] } })
     await flushPromises()
+    expect(singleReview.load).toHaveBeenCalledTimes(1)
     expect(singleReview.load).toHaveBeenCalledWith('song-1')
     const dialog = wrapper.findComponent({ name: 'SingleSongScrapeDialog' })
-    expect(dialog.props('song')).toBeDefined()
+    expect(dialog.props('songId')).toBe('song-1')
+    expect(wrapper.text()).toContain('返回批次')
+  })
+
+  it('更改复核或返回入口不会重新读取列表或清空本页选择', async () => {
+    vi.mocked(singleReview.load).mockResolvedValue({ song: song(), fingerprint: 'fp', version: '1', values: { title: '晴天', artists: ['周杰伦'], album: null, releaseDate: null, aliases: [], durationMs: null, cover: null } })
+    await wrapper.findAll('button').find(item => item.text() === '批量操作')!.trigger('click')
+    await wrapper.get('input[aria-label="选择 晴天"]').setValue(true)
+    const calls = vi.mocked(songs.list).mock.calls.length
+    await router.push('/library/songs?reviewSongId=song-1&returnBatch=batch-1')
+    await flushPromises()
+    expect(singleReview.load).toHaveBeenCalledTimes(1)
+    expect(songs.list).toHaveBeenCalledTimes(calls)
+    expect((wrapper.get('input[aria-label="选择 晴天"]').element as HTMLInputElement).checked).toBe(true)
+    await router.push('/library/songs?reviewSongId=song-1&returnBatch=batch-2')
+    await flushPromises()
+    expect(singleReview.load).toHaveBeenCalledTimes(1)
+    expect(songs.list).toHaveBeenCalledTimes(calls)
   })
 
   it('待复核行提供明显入口，打开当前歌曲的现有元数据审核工作台', async () => {
@@ -284,7 +302,7 @@ describe('歌曲管理集中展示扫描数据及详情', () => {
     await editBtn.trigger('click')
     await flushPromises()
     const dialog = wrapper.findComponent({ name: 'SingleSongScrapeDialog' })
-    expect(dialog.props('song')).toBeDefined()
+    expect(dialog.props('songId')).toBe('pending-1')
   })
 
   it('详情中的复核入口关闭详情并打开同一歌曲的审核窗口', async () => {
@@ -304,7 +322,7 @@ describe('歌曲管理集中展示扫描数据及详情', () => {
     await editBtn.trigger('click')
     await flushPromises()
     expect(wrapper.findComponent({ name: 'SongDetailDrawer' }).props('visible')).toBe(false)
-    expect(wrapper.findComponent({ name: 'SingleSongScrapeDialog' }).props('song')).toBeDefined()
+    expect(wrapper.findComponent({ name: 'SingleSongScrapeDialog' }).props('songId')).toBe('pending-1')
   })
 
   it('分类筛选链接兼容并可用重置按钮清除', async () => {
@@ -456,6 +474,19 @@ describe('歌曲明细表信息与交互', () => {
     row.classification = { songId: row.id, revision: 1, dimensions: { GENRE: { tagIds: ['pop'], origin: 'MANUAL', locked: true, confirmed: true } } }
     const w = mount(SongLibraryTable, { props: { ...props(), items: [row], tags: [{ id: 'pop', dimension: 'GENRE', name: '流行', aliases: [], active: true, revision: 1, count: 1 }] } })
     expect(w.text()).toContain('流行'); expect(w.text()).not.toContain('尚未分类'); expect(w.text()).toContain(row.relativePath); expect(w.text()).toContain('大小未提供'); expect(fileSize(0)).toBe('0 B'); w.unmount()
+  })
+  it('分类词表更新后刷新名称和启用状态，保留锁定和未加载标签提示', async () => {
+    const row = song()
+    row.classification = { songId: row.id, revision: 1, dimensions: { GENRE: { tagIds: ['pop', 'missing'], origin: 'MANUAL', locked: true, confirmed: true } } }
+    const tag: Tag = { id: 'pop', dimension: 'GENRE', name: '流行', aliases: [], active: true, revision: 1, count: 1 }
+    const w = mount(SongLibraryTable, { props: { ...props(), items: [row], tags: [tag] } })
+    expect(w.get('.classification-chip').attributes('title')).toContain('已锁定')
+    expect(w.text()).toContain('标签信息未加载')
+    await w.setProps({ tags: [{ ...tag, name: '流行音乐', active: false, revision: 2 }] })
+    expect(w.get('.classification-chip').text()).toBe('流行音乐')
+    expect(w.get('.classification-chip').classes()).toContain('inactive')
+    expect(w.get('.classification-chip').attributes('title')).toContain('已锁定')
+    w.unmount()
   })
   it('勾选本页和单曲通过事件通知父级，部分选择显示半选', async () => {
     const w = mount(SongLibraryTable, { props: { ...props(), items: [song('one'), song('two')], selectionMode: true, selectedIds: ['one'] } })

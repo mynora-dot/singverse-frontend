@@ -52,7 +52,13 @@ function openFilesLens() {
   if (page.value > 1) query.page = String(page.value)
   void router.replace({ path: '/library/songs', query })
 }
-watch(() => route.query, query => { search.value = typeof query.search === 'string' ? query.search : ''; sourceId.value = typeof query.sourceId === 'string' ? query.sourceId : ''; page.value = Math.max(1, Number(query.page) || 1); void load() }, { immediate: true })
+watch([() => route.query.search, () => route.query.sourceId, () => route.query.page], () => {
+  const query = route.query
+  search.value = typeof query.search === 'string' ? query.search : ''
+  sourceId.value = typeof query.sourceId === 'string' ? query.sourceId : ''
+  page.value = Math.max(1, Number(query.page) || 1)
+  void load()
+}, { immediate: true })
 void songs.sources().then(value => { if (active) sources.value = value }).catch(() => { if (active) error.value = '媒体来源读取失败，请刷新重试' })
 void refreshCounts()
 async function openSong(id: string, childPage = 0) {

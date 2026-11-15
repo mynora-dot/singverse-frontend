@@ -55,6 +55,34 @@ async function prepareGeneration() {
 }
 function requested(fragment: string) { return vi.mocked(authRequest).mock.calls.some(([path]) => path.includes(fragment)) }
 
+it('空闲页面降低更新频率，后台暂停，恢复可见时立即读取', async () => {
+  let hidden = false
+  const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+  const original = vi.mocked(authRequest).getMockImplementation()!
+  vi.mocked(authRequest).mockImplementation(async (path, ...args) => path.includes('/batches?') ? { items: [], totalElements: 0 } as never : original(path, ...args))
+  const nodeCalls = () => vi.mocked(authRequest).mock.calls.filter(([path]) => path.includes('/node')).length
+  try {
+    await open(); expect(nodeCalls()).toBe(1)
+    await vi.advanceTimersByTimeAsync(4000); expect(nodeCalls()).toBe(1)
+    await vi.advanceTimersByTimeAsync(26000); expect(nodeCalls()).toBe(2)
+    hidden = true; document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(60000); expect(nodeCalls()).toBe(2)
+    hidden = false; document.dispatchEvent(new Event('visibilitychange')); await flushPromises()
+    expect(nodeCalls()).toBe(3)
+  } finally { visibility.mockRestore() }
+})
+
+it('节点慢响应完成前不启动下一轮轮询', async () => {
+  let resolve!: (value: Node) => void
+  const original = vi.mocked(authRequest).getMockImplementation()!
+  vi.mocked(authRequest).mockImplementation((path, ...args) => path.includes('/node') ? new Promise(done => { resolve = done }) : original(path, ...args))
+  await open(); await vi.advanceTimersByTimeAsync(60000)
+  expect(vi.mocked(authRequest).mock.calls.filter(([path]) => path.includes('/node'))).toHaveLength(1)
+  vi.mocked(authRequest).mockImplementation(original)
+  resolve(node()); await flushPromises(); await vi.advanceTimersByTimeAsync(4000)
+  expect(vi.mocked(authRequest).mock.calls.filter(([path]) => path.includes('/node'))).toHaveLength(2)
+})
+
 it('任务中心的批次深链接直接打开指定批次详情', async () => {
   router.route.query = { tab: 'tasks', batch: 'batch' }
   await open()

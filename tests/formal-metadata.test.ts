@@ -51,6 +51,17 @@ it('歌曲、版本、文件分别计数，待核验文件不能试听', async (
  expect(formalLibrary.detail).toHaveBeenCalledWith(doc.id, 0); expect(formalLibrary.detail).toHaveBeenCalledWith(variant.id, 0)
  expect(document.body.textContent).toContain('中文 空格.mkv'); expect(document.body.textContent).toContain('实际媒体时长 123 秒'); expect(button('试听检查').attributes('disabled')).toBeDefined()
 })
+it('正式曲库仅在真实搜索字段改变时重新查询', async () => {
+ vi.mocked(formalLibrary.statistics).mockResolvedValue({ SONG: 1, VARIANT: 0, MEDIA: 0 }); vi.mocked(formalLibrary.list).mockResolvedValue({ items: [doc], totalElements: 1 })
+ const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/library/songs', component: FormalSongsView }] }); await router.push('/library/songs?lens=formal&sourceId=source-1')
+ wrapper = mount(FormalSongsView, { global: { plugins: [ElementPlus, router], stubs: { SongVideoDialog: true } } }); await flushPromises()
+ expect(formalLibrary.list).toHaveBeenCalledTimes(1)
+ await router.replace('/library/songs?lens=formal&sourceId=source-1&returnBatch=batch'); await flushPromises()
+ expect(formalLibrary.list).toHaveBeenCalledTimes(1)
+ await router.replace('/library/songs?lens=formal&sourceId=source-1&search=新歌&page=2'); await flushPromises()
+ expect(formalLibrary.list).toHaveBeenCalledTimes(2)
+ expect(formalLibrary.list).toHaveBeenLastCalledWith('新歌', 1, 'source-1')
+})
 
 it('高级歌曲视图展开来源筛选不提交查询，搜索仍保留正式透镜', async () => {
  vi.mocked(formalLibrary.statistics).mockResolvedValue({ SONG: 1, VARIANT: 2, MEDIA: 3 }); vi.mocked(formalLibrary.list).mockResolvedValue({ items: [doc], totalElements: 1 })

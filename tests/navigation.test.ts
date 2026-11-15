@@ -5,6 +5,7 @@ import App from '../src/admin/App.vue'
 import { router } from '../src/admin/app/router/index'
 import { navigationGroups, navigationContext } from '../src/admin/app/navigation'
 
+async function settleLayout() { await vi.dynamicImportSettled(); await flushPromises() }
 beforeEach(() => {
   vi.stubGlobal('scrollTo', vi.fn())
   vi.stubGlobal('fetch', vi.fn().mockImplementation((path: string) => Promise.resolve(path.includes('/background-tasks/batch-1') ? Response.json({detail:'任务不存在'}, {status:404}) : Response.json((path.includes('/ai/') || path.endsWith('/classification/tags')) ? [] : path.includes('/auth/session') ? { username: 'admin', defaultPassword: true, mfaEnabled: false, recoveryCodesRemaining: 0 } : { status: 'UP', items: [], totalElements: 0 }))))
@@ -13,17 +14,17 @@ afterEach(() => vi.unstubAllGlobals())
 it('键盘跳转主要内容不会破坏 hash 路由', async () => {
   await router.push('/overview')
   const wrapper = mount(App, { attachTo: document.body, global: { plugins: [router] } })
-  await flushPromises(); await wrapper.get('.skip-link').trigger('click')
+  await settleLayout(); await wrapper.get('.skip-link').trigger('click')
   expect(document.activeElement?.id).toBe('main-content'); expect(router.currentRoute.value.path).toBe('/overview')
   wrapper.unmount()
 })
 it('未知链接提供返回空间的入口', async () => {
-  await router.push('/missing-page'); const wrapper = mount(App, { global: { plugins: [router] } }); await flushPromises()
+  await router.push('/missing-page'); const wrapper = mount(App, { global: { plugins: [router] } }); await settleLayout()
   expect(wrapper.text()).toContain('页面不存在'); await wrapper.get('.text-link').trigger('click'); await flushPromises()
   expect(router.currentRoute.value.path).toBe('/overview'); expect(wrapper.get('h1').text()).toBe('曲库概览'); wrapper.unmount()
 })
 it('窄屏全部导航切页后关闭，Escape 恢复焦点并限制键盘范围', async () => {
-  await router.push('/overview'); const wrapper = mount(App, { attachTo: document.body, global: { plugins: [router] } }); await flushPromises()
+  await router.push('/overview'); const wrapper = mount(App, { attachTo: document.body, global: { plugins: [router] } }); await settleLayout()
   const toggle = wrapper.get('.mobile-nav-toggle'); await toggle.trigger('click'); await flushPromises()
   expect(toggle.attributes('aria-expanded')).toBe('true'); expect(wrapper.get('.navigation-dialog').attributes('aria-modal')).toBe('true')
   expect(wrapper.get('.workspace').attributes('inert')).toBeDefined()
@@ -36,7 +37,7 @@ it('窄屏全部导航切页后关闭，Escape 恢复焦点并限制键盘范围
   expect(wrapper.find('.navigation-dialog').exists()).toBe(false); wrapper.unmount()
 })
 it('精简主导航与当前分区提供全部现有管理功能', async () => {
-  await router.push('/library/songs'); const wrapper = mount(App, { global: { plugins: [router] } }); await flushPromises()
+  await router.push('/library/songs'); const wrapper = mount(App, { global: { plugins: [router] } }); await settleLayout()
   expect(wrapper.findAll('.primary-navigation a').map(a => a.text())).toEqual(['首页','曲库','加歌','整理','客厅'])
   expect(wrapper.findAll('.section-navigation a').map(a => a.text())).toEqual(['歌曲','歌手','歌单','收藏','分类标签'])
   const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/favorites','/library/classification','/library/media','/library/downloads','/library/media/recognition','/library/songs/metadata','/library/audio-processing','/system/tv-settings','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai','/system']
@@ -46,7 +47,7 @@ it('精简主导航与当前分区提供全部现有管理功能', async () => {
   wrapper.unmount()
 })
 it('设置子路由与任务批次深链接高亮所属入口', async () => {
-  await router.push('/system/ai/features'); const wrapper = mount(App, { global: { plugins: [router] } }); await flushPromises()
+  await router.push('/system/ai/features'); const wrapper = mount(App, { global: { plugins: [router] } }); await settleLayout()
   expect(wrapper.get('.section-navigation [aria-current="page"]').text()).toBe('AI 与助手')
   expect(wrapper.get('.settings-link').attributes('aria-current')).toBe('page')
   await router.push('/system/tasks/batch-1'); await flushPromises()
@@ -75,7 +76,7 @@ it('音乐平台在设置中直接可达并高亮，显示真实五平台配置'
     return Response.json({ username: 'admin', status: 'UP', items: [], totalElements: 0 })
   })
   await router.push('/system/music-platforms')
-  const wrapper = mount(App, { global: { plugins: [router] } }); await flushPromises()
+  const wrapper = mount(App, { global: { plugins: [router] } }); await settleLayout()
   expect(wrapper.get('.settings-link').attributes('aria-current')).toBe('page')
   expect(wrapper.get('.section-navigation [aria-current="page"]').text()).toBe('音乐平台')
   expect(wrapper.get('h1').text()).toBe('音乐平台')
@@ -86,7 +87,7 @@ it('音乐平台在设置中直接可达并高亮，显示真实五平台配置'
 
 it('顶栏全局搜索跳转到歌曲工作区并携带搜索词与透镜', async () => {
   await router.push('/overview')
-  const wrapper = mount(App, { global: { plugins: [router] } }); await flushPromises()
+  const wrapper = mount(App, { global: { plugins: [router] } }); await settleLayout()
   await wrapper.get('.search-input').setValue('周杰伦')
   await wrapper.get('.masthead-search').trigger('submit'); await flushPromises()
   expect(router.currentRoute.value.path).toBe('/library/songs')
@@ -100,7 +101,7 @@ it('电视授权页和入口已移除，客厅入口直接进入电视首页设�
   await router.push('/system/tv-devices')
   const wrapper = mount(App, { global: { plugins: [router] } })
   try {
-    await flushPromises()
+    await settleLayout()
     expect(wrapper.text()).toContain('页面不存在')
     expect(wrapper.findAll('a').some(link => link.attributes('href')?.includes('/system/tv-devices'))).toBe(false)
     expect(vi.mocked(fetch).mock.calls.some(([path]) => String(path).includes('/device-authorizations') || String(path).includes('/tv-devices'))).toBe(false)
