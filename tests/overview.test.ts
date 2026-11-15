@@ -68,6 +68,7 @@ it('使用聚合接口统计真实数字，并把待办链接到对应页面', a
     await review.trigger('click'); await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/library/songs?status=REVIEW')
     expect(fetchMock.mock.calls.every(([path]) => String(path).startsWith('/api/'))).toBe(true)
+    expect(fetchMock.mock.calls.find(([path]) => path.startsWith('/api/v1/background-tasks'))?.[0]).toBe('/api/v1/background-tasks?view=ACTIVE&page=0&size=3')
   } finally { wrapper.unmount() }
 })
 

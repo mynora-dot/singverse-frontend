@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { type DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import AudioModelSettings from '../src/admin/modules/compute-settings/AudioModelSettings.vue'
+import AudioModelsHarness from './fixtures/AudioModelsHarness.vue'
 import View from '../src/admin/modules/audio-processing/AudioProcessingView.vue'
 import { authRequest } from '../src/admin/core/auth/api'
 import { confirmDanger } from '../src/admin/shared/ui/confirm'
@@ -255,7 +255,7 @@ it('没有合格后端时禁止生成，并引导到节点与模型下载模型'
   expect(wrapper!.text()).toContain('还没有安装分离模型')
   await button('去准备环境').trigger('click'); await flushPromises()
   expect(router.push).toHaveBeenCalledWith('/system/compute#audio-models')
-  wrapper!.unmount(); wrapper = mount(AudioModelSettings, { global: { stubs } }); await flushPromises()
+  wrapper!.unmount(); wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
   expect(wrapper!.text()).toContain('下载到节点')
   expect(wrapper!.text()).toContain('RK3566')
   await button('下载到节点').trigger('click'); await flushPromises()
@@ -285,7 +285,7 @@ it('隐藏部署信息，OpenVINO模型下载使用独立清单', async () => {
     } as never
     return previous(...args)
   })
-  wrapper = mount(AudioModelSettings, { global: { stubs } }); await flushPromises()
+  wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
   expect(wrapper!.text()).not.toContain('运行环境、镜像与安装命令')
   expect(wrapper!.text()).not.toContain('singverse-compute:0.1.0-openvino')
   expect(wrapper!.text()).toContain('当前镜像未包含')
@@ -309,7 +309,7 @@ it.each([true, false])('NVIDIA 节点仅显示适配模型，CPU 降级为 %s', 
     ],
     backends: [{ id: 'cuda', detected: true, state: 'UNVERIFIED' }, { id: 'cpu', state: 'UNVERIFIED' }, { id: 'rknn', detected: false, state: 'IMAGE_MISSING' }],
   } as never : previous(...args))
-  wrapper = mount(AudioModelSettings, { global: { stubs } }); await flushPromises()
+  wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
   expect(wrapper!.find('[data-model="htdemucs"]').exists()).toBe(true)
   expect(wrapper!.find('[data-model="htdemucs-openvino"]').exists()).toBe(false)
   expect(wrapper!.find('[data-model="uvr-mdxnet-9482-rknn"]').exists()).toBe(false)
@@ -322,7 +322,7 @@ it('瑞芯微模型仅提示节点本地部署，不提供不支持的网页导�
     models: [{ ...node().model, id: 'uvr-mdxnet-9482-rknn', installed: false }],
     backends: [{ id: 'rknn', detected: true, state: 'MODEL_MISSING' }],
   } as never : previous(...args))
-  wrapper = mount(AudioModelSettings, { global: { stubs } }); await flushPromises()
+  wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
   const model = wrapper!.get('[data-model="uvr-mdxnet-9482-rknn"]')
   expect(model.text()).toContain('瑞芯微 NPU 分离模型')
   expect(model.text()).toContain('manifest.json 和 uvr.rknn')
@@ -376,7 +376,7 @@ it('伴奏页可保存 CPU 自动降级策略，并保留视频加速方式和�
     if (args[0] === '/api/v1/transcoding/hardware-settings') return { backend: 'deployment', revision: 9 } as never
     return previous(...args)
   })
-  wrapper = mount(AudioModelSettings, { global: { stubs } }); await flushPromises()
+  wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
   await wrapper.get('.fallback-toggle input').setValue(false); await flushPromises()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/transcoding/hardware-settings', 'POST', { backend: 'deployment', revision: 9, cpuFallback: false }, 45000)
   expect(wrapper!.text()).not.toContain('固定使用')
@@ -396,7 +396,7 @@ it('快速分类模型独立展示，GPU 节点也可下载且不提供设备选
     } as never
     return previous(...args)
   })
-  wrapper = mount(AudioModelSettings, { global: { stubs } }); await flushPromises()
+  wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
   const fast = wrapper!.get('[data-model="panns-cnn6"]')
   expect(fast.text()).toContain('快速人声分类模型')
   expect(fast.find('select').exists()).toBe(false)

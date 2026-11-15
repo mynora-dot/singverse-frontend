@@ -8,7 +8,6 @@ import { computeNode } from '../src/admin/modules/compute-settings/api'
 import type { NodeSettings, NodeCheck } from '../src/admin/modules/compute-settings/types'
 vi.mock('../src/admin/modules/compute-settings/api')
 vi.mock('../src/admin/modules/compute-settings/HardwareSettings.vue', () => ({ default: { template: '<div data-test="hardware-settings">硬件设置内容</div>' } }))
-vi.mock('../src/admin/modules/compute-settings/AudioModelSettings.vue', () => ({ default: { template: '<div data-test="audio-model-settings">模型设置内容</div>' } }))
 const settings: NodeSettings = { mode: 'AUTO', endpoint: '', hasToken: false, mappings: [], automaticEndpoint: 'http://singverse-compute:8090', automaticHasToken: true, revision: 0 }
 const ready: NodeCheck = { status: 'AVAILABLE', message: '连接与认证成功', capabilities: ['media-remote-tags'], elapsedMs: 12 }
 let wrapper: VueWrapper, router: Router

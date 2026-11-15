@@ -21,11 +21,11 @@ export interface TaskItem { id: string; songId: string | null; title: string; st
 export interface TaskPage { items: BackgroundTask[]; page: number; size: number; totalElements: number; observedAt: string }
 export interface ChildPage extends TaskPage { counts: Record<string, number> }
 export interface ItemPage { items: TaskItem[]; page: number; size: number; totalElements: number; counts: Record<string, number> }
-export interface TaskFilter { view: string; type: string; status: string; q: string; page: number }
+export interface TaskFilter { view: string; type: string; status: string; q: string; page: number; size?: number }
 const base = '/api/v1/background-tasks'
 export const backgroundTasks = {
   list: (filter: TaskFilter) => {
-    const query = new URLSearchParams({ view: filter.view, page: String(filter.page), size: '20' })
+    const query = new URLSearchParams({ view: filter.view, page: String(filter.page), size: String(filter.size ?? 20) })
     for (const key of ['type', 'status', 'q'] as const) if (filter[key]) query.set(key, filter[key])
     return authRequest<TaskPage>(base + '?' + query)
   },

@@ -10,7 +10,6 @@ import type { NodeSettings, NodeDiscovery } from '../src/admin/modules/compute-s
 
 vi.mock('../src/admin/modules/compute-settings/api')
 vi.mock('../src/admin/modules/compute-settings/HardwareSettings.vue', () => ({ default: { template: '<div>硬件设置</div>' } }))
-vi.mock('../src/admin/modules/compute-settings/AudioModelSettings.vue', () => ({ default: { template: '<div>伴奏设置</div>' } }))
 const initial: NodeSettings = { mode: 'AUTO', endpoint: '', hasToken: false, mappings: [], automaticEndpoint: 'http://singverse-compute:8090', automaticHasToken: true, revision: 4 }
 const found: NodeDiscovery = { message: '扫描完成，找到 2 个节点', items: [
   { id: 'discovery-ticket-1', nodeId: 'node1', name: '客厅性能节点', endpoint: 'http://192.168.1.20:18090', pairingAvailable: true, message: '可配对' },

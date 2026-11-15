@@ -27,7 +27,7 @@ async function fill<T>(target: Load<T>, task: () => Promise<T>) {
   catch (error) { if (active && turns.get(target) === turn) { target.state = 'error'; target.error = error instanceof Error ? error.message : '读取失败' } }
 }
 function refreshOverview() { return fill(data, loadOverview) }
-function refreshTasks() { return fill(tasks, async () => (await backgroundTasks.list({ view: 'ACTIVE', type: '', status: '', q: '', page: 0 })).items.slice(0, 3)) }
+function refreshTasks() { return fill(tasks, async () => (await backgroundTasks.list({ view: 'ACTIVE', type: '', status: '', q: '', page: 0, size: 3 })).items.slice(0, 3)) }
 function refresh() { void refreshOverview(); void refreshTasks() }
 function pageVisible() { return document.visibilityState !== 'hidden' }
 let timer: ReturnType<typeof setTimeout> | undefined
