@@ -11,6 +11,7 @@ export function useVisiblePolling(
   let mounted = false
   let timer: ReturnType<typeof setTimeout> | undefined
   let pending: Promise<void> | undefined
+  let resumeRequested = false
 
   function clear() { clearTimeout(timer); timer = undefined }
   function schedule() {
@@ -22,12 +23,19 @@ export function useVisiblePolling(
   function refresh(reason: PollReason = 'manual'): Promise<void> {
     clear()
     if (!mounted || document.hidden) return Promise.resolve()
-    if (pending) return pending
+    if (pending) {
+      if (reason === 'resume') resumeRequested = true
+      return pending
+    }
     // 页面负责展示读取错误；失败后仍按当前间隔重试，避免后台 Promise 未处理。
     pending = Promise.resolve().then(() => {
       if (mounted && !document.hidden) return task(reason)
     }).catch(() => undefined).then(() => {
       pending = undefined
+      if (resumeRequested) {
+        resumeRequested = false
+        if (mounted && !document.hidden) return refresh('resume')
+      }
       schedule()
     })
     return pending

@@ -359,6 +359,33 @@ it('轮询期间刷新来源会在当前请求结束后补读最新状态', asyn
     expect(wrapper.text()).toContain('扫描完成')
   } finally { vi.useRealTimers() }
 })
+it('隐藏前慢轮询尚未完成时恢复页面，完成后补读最新任务一次', async () => {
+  vi.useFakeTimers()
+  let hidden = false
+  vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
+  let resolve!: (value: ReturnType<typeof task>) => void
+  try {
+    vi.mocked(media.list).mockResolvedValue({ items: [remote], page: 0, size: 20, totalElements: 1 })
+    vi.mocked(media.latestTask).mockResolvedValue(task())
+    vi.mocked(media.task).mockImplementation(() => new Promise(done => { resolve = done }))
+    wrapper = mount(MediaLibraryView, { global: { plugins: [router], stubs: { teleport: true, ...dropdownStubs } } }); await flushPromises()
+    await vi.advanceTimersByTimeAsync(2000)
+    for (let index = 0; index < 2; index++) {
+      hidden = true; document.dispatchEvent(new Event('visibilitychange'))
+      hidden = false; document.dispatchEvent(new Event('visibilitychange'))
+    }
+    await flushPromises()
+    expect(media.latestTask).toHaveBeenCalledTimes(1)
+    expect(media.task).toHaveBeenCalledTimes(1)
+    vi.mocked(media.latestTask).mockResolvedValue({ ...task('SUCCEEDED'), id: 'latest-job' })
+    resolve(task()); await flushPromises()
+    expect(media.latestTask).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('扫描完成')
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(media.latestTask).toHaveBeenCalledTimes(2)
+    expect(media.task).toHaveBeenCalledTimes(1)
+  } finally { vi.useRealTimers() }
+})
 it('WebDAV 创建后台任务并展示进度，完成后不自动跳页', async () => {
   vi.useFakeTimers()
   try {

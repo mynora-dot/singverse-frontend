@@ -13,7 +13,7 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks(); vi.useRealTimers() })
 function visibility(value: boolean) { hidden = value; document.dispatchEvent(new Event('visibilitychange')) }
-function start(task: () => Promise<unknown>, delay: () => number | undefined = () => 4000, immediate = true) {
+function start(task: Parameters<typeof useVisiblePolling>[0], delay: () => number | undefined = () => 4000, immediate = true) {
   let polling!: ReturnType<typeof useVisiblePolling>
   wrapper = mount(defineComponent({ setup() { polling = useVisiblePolling(task, delay, { immediate }); return () => h('div') } }))
   return polling
@@ -32,16 +32,31 @@ it('隐藏页面不启动轮询，恢复可见后立即更新并重新计时', a
   expect(task).toHaveBeenCalledTimes(3)
 })
 
-it('慢请求未完成时计时、手动刷新和恢复可见都不会重叠发起请求', async () => {
+it('慢请求期间重复恢复合并为一次串行补读，手动刷新和计时不会重叠请求', async () => {
   let resolve!: () => void
-  const task = vi.fn(() => new Promise<void>(done => { resolve = done }))
+  const task = vi.fn().mockImplementationOnce(() => new Promise<void>(done => { resolve = done })).mockResolvedValue(undefined)
   const polling = start(task); await flushPromises()
   const manual = polling.refresh()
-  visibility(true); visibility(false); await vi.advanceTimersByTimeAsync(60000)
+  visibility(true); visibility(false); visibility(true); visibility(false)
+  await vi.advanceTimersByTimeAsync(60000)
   expect(task).toHaveBeenCalledTimes(1)
   resolve(); await manual; await flushPromises()
-  await vi.advanceTimersByTimeAsync(3999); expect(task).toHaveBeenCalledTimes(1)
-  await vi.advanceTimersByTimeAsync(1); expect(task).toHaveBeenCalledTimes(2)
+  expect(task).toHaveBeenCalledTimes(2)
+  expect(task.mock.calls.map(([reason]) => reason)).toEqual(['initial', 'resume'])
+  await vi.advanceTimersByTimeAsync(3999); expect(task).toHaveBeenCalledTimes(2)
+  await vi.advanceTimersByTimeAsync(1); expect(task).toHaveBeenCalledTimes(3)
+})
+
+it('请求完成时再次隐藏会保留暂停，下一次恢复才补读且不会循环触发', async () => {
+  let resolve!: () => void
+  const task = vi.fn().mockImplementationOnce(() => new Promise<void>(done => { resolve = done })).mockResolvedValue(undefined)
+  start(task, () => undefined); await flushPromises()
+  visibility(true); visibility(false); visibility(true)
+  resolve(); await flushPromises(); await vi.advanceTimersByTimeAsync(60000)
+  expect(task).toHaveBeenCalledTimes(1)
+  visibility(false); await flushPromises(); await vi.advanceTimersByTimeAsync(60000)
+  expect(task).toHaveBeenCalledTimes(2)
+  expect(task).toHaveBeenLastCalledWith('resume')
 })
 
 it('根据完成后的状态降频，停止任务后不继续计时，恢复可见仍能更新一次', async () => {
