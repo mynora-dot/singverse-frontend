@@ -99,7 +99,7 @@ const backendNames: Record<string, string> = { cpu: 'CPU', cuda: 'NVIDIA 显卡 
 export function backendName(id?: string | null) { return id ? backendNames[id] || id.toUpperCase() : '' }
 export const modelNames: Record<string, { name: string; hint: string }> = {
   'panns-cnn6': { name: '快速人声分类模型', hint: '扫描时识别双音轨，不分离人声，无需 GPU' },
-  htdemucs: { name: '标准分离模型', hint: '适用于 CPU、NVIDIA、AMD 和 Apple 芯片' },
+  htdemucs: { name: '标准分离模型', hint: '适用于 NVIDIA、AMD 和 Apple 芯片，内置 CPU 降级' },
   'htdemucs-openvino': { name: 'Intel 优化模型', hint: '用于 Intel 显卡的 OpenVINO 转换版本' },
   'uvr-mdxnet-9482-rknn': { name: '瑞芯微 NPU 分离模型', hint: '仅适用于 RKNN，需在节点本地部署转换模型' },
   'uvr-mdxnet-9482': { name: '轻量两轨分离模型', hint: '干净档；先验证独立 CPU，再启用对应加速设备' },
@@ -111,7 +111,7 @@ export function profileReady(capabilities: SeparationCapabilities | undefined, p
 }
 export function profileBackends(capabilities: SeparationCapabilities | undefined, profile: SeparationProfile, legacy: import('./api').Backend[]) {
   if (profile === 'DSP_FAST') return [{ id: 'cpu', state: 'AVAILABLE', reason: '' }]
-  return (profile === 'AI_CLEAN' ? capabilities?.backends || [] : legacy).filter(item => item.state === 'AVAILABLE')
+  return (profile === 'AI_CLEAN' ? capabilities?.backends || [] : legacy).filter(item => item.state === 'AVAILABLE' && !['cpu', 'openvino-cpu'].includes(item.id))
 }
 
 /** 批次进度：已完成/跳过/失败/取消都算处理完毕。 */

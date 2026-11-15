@@ -15,6 +15,7 @@ const emit = defineEmits<{
   'update:profile': [value: SeparationProfile]; 'update:backend': [value: string]; 'update:recognitionKind': [value: 'FAST' | 'ANALYZE']
 }>()
 const recognizing = computed(() => props.mode === 'recognize')
+const devices = computed(() => props.backends.filter(item => !['cpu', 'openvino-cpu'].includes(item.id)))
 const available = computed(() => recognizing.value ? props.recognitionReady : props.ready)
 const generationHint = computed(() => props.separation?.profiles.find(item => item.id === props.profile)?.reason || [props.readiness.title, props.readiness.hint].filter(Boolean).join('。'))
 </script>
@@ -35,7 +36,7 @@ const generationHint = computed(() => props.separation?.profiles.find(item => it
       <template v-else>
         <p class="option-hint">单条原唱音轨可生成独立伴奏。已有伴奏、正在处理等歌曲会在预览中说明。</p>
         <SeparationControls v-if="separation" :profile="profile" :backend="backend" :backends="backends" :disabled="busy" cards @update:profile="emit('update:profile', $event)" @update:backend="emit('update:backend', $event)" />
-        <label v-else-if="backends.length > 1" class="legacy-device">使用设备<select :value="backend" aria-label="生成伴奏使用的设备" :disabled="busy" @change="emit('update:backend', ($event.target as HTMLSelectElement).value)"><option value="">自动选择</option><option v-for="item in backends" :key="item.id" :value="item.id">{{ backendName(item.id) }}</option></select></label>
+        <label v-else-if="devices.length > 1" class="legacy-device">使用设备<select :value="backend" aria-label="生成伴奏使用的设备" :disabled="busy" @change="emit('update:backend', ($event.target as HTMLSelectElement).value)"><option value="">自动选择</option><option v-for="item in devices" :key="item.id" :value="item.id">{{ backendName(item.id) }}</option></select></label>
         <p v-else class="option-hint">使用已通过试跑的设备生成 AAC 伴奏。可先在单曲面板中生成 12 秒试听。</p>
       </template>
       <ElAlert v-if="!available" type="warning" :closable="false" show-icon title="所选处理方式尚未就绪"><p>{{ recognizing ? recognitionKind === 'ANALYZE' ? '深度识别需要先准备好分离环境。' : '请先连接可用的计算节点。' : generationHint }}</p><ElButton link type="primary" :disabled="busy" @click="emit('setup')">去准备环境</ElButton></ElAlert>

@@ -378,14 +378,14 @@ it('表格展示封面音轨与任务信息，调整分页后回到首页', asyn
   pager.vm.$emit('size-change', 50); await flushPromises()
   expect(requested('page=0&size=50')).toBe(true)
 })
-it('硬件存在时仍允许主动选择已合格的 CPU', async () => {
+it('生成伴奏只提供加速设备选项，CPU 保留为自动降级', async () => {
   const previous = vi.mocked(authRequest).getMockImplementation()!
   vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/node') ? { ...node(), backends: [{ id: 'cpu', state: 'AVAILABLE' }, { id: 'cuda', state: 'AVAILABLE', detected: true }, { id: 'mps', state: 'AVAILABLE', detected: true }] } as never : previous(...args))
   await open()
   await wrapper!.get('input[aria-label="选择a"]').setValue(true)
   await configureGeneration()
   const choices = wrapper!.get('[aria-label="生成伴奏使用的设备"]')
-  expect(choices.find('option[value="cpu"]').exists()).toBe(true)
+  expect(choices.find('option[value="cpu"]').exists()).toBe(false)
   expect(choices.find('option[value="cuda"]').exists()).toBe(true)
 })
 it('刷新后总量缩减，自动回到最后有效页', async () => {
@@ -457,20 +457,23 @@ it('选歌后才显示处理栏，打开配置或取消均不会创建批次', a
   expect(wrapper!.find('.selection-bar').exists()).toBe(false)
 })
 
-it('新版方案卡保留显式 CPU 设备与方案请求，极速档不依赖 Demucs', async () => {
+it('新版方案卡只选择加速设备并保留方案请求，极速档不依赖 Demucs', async () => {
   ready = false
   const previous = vi.mocked(authRequest).getMockImplementation()!
   vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/node') ? { ...node(), separation: { version: 1,
     profiles: [{ id: 'DSP_FAST', ready: true }, { id: 'AI_CLEAN', ready: true }, { id: 'LEGACY_DEMUCS', ready: false }],
-    backends: [{ id: 'cpu', state: 'AVAILABLE' }, { id: 'mps', state: 'AVAILABLE' }],
+    backends: [{ id: 'cpu', state: 'AVAILABLE' }, { id: 'openvino-cpu', state: 'AVAILABLE' }, { id: 'mlx', state: 'AVAILABLE' }],
   } } as never : previous(...args))
   await open(); await wrapper!.get('input[aria-label="选择a"]').setValue(true)
   await configureGeneration()
   expect(button('预览处理范围').attributes('disabled')).toBeUndefined()
   await wrapper!.get('.profile-card input[value="AI_CLEAN"]').setValue(true)
-  await wrapper!.get('select[aria-label="生成伴奏使用的设备"]').setValue('cpu')
+  const devices = wrapper!.get('select[aria-label="生成伴奏使用的设备"]')
+  expect(devices.find('option[value="cpu"]').exists()).toBe(false)
+  expect(devices.find('option[value="openvino-cpu"]').exists()).toBe(false)
+  await devices.setValue('mlx')
   await button('预览处理范围').trigger('click'); await flushPromises()
-  expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/batches/preview', 'POST', expect.objectContaining({ ids: ['a'], all: false, backend: 'cpu', separationProfile: 'AI_CLEAN', outputFormat: 'aac' }), 120000)
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/batches/preview', 'POST', expect.objectContaining({ ids: ['a'], all: false, backend: 'mlx', separationProfile: 'AI_CLEAN', outputFormat: 'aac' }), 120000)
   expect(requested('/submit')).toBe(false)
 })
 

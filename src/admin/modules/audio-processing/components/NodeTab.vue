@@ -90,11 +90,11 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
         <p class="muted">{{ node.cpuFallback !== false ? '允许自动使用 CPU，处理可能较慢；关闭后，加速不可用的任务会失败。' : '已关闭 CPU 降级，加速不可用时停止处理。' }}此设置也用于视频转码。</p>
         <details class="resource-details"><summary>内存与存储</summary><p class="muted">{{ node.environment.processor || node.environment.system }} · {{ node.environment.architecture }}</p><p class="muted">可用内存 {{ bytes(node.memoryAvailableBytes) }} · 工作目录剩余 {{ bytes(node.diskFreeBytes) }}</p></details>
         <div v-for="backend in visibleBackends" :key="backend.id" class="backend-row">
-          <div class="backend-copy"><strong>{{ backendName(backend.id) }}</strong><span class="muted">{{ backend.device?.name || '设备信息未提供' }}<template v-if="backend.reason"> · {{ backend.reason }}</template><template v-if="backend.elapsedMs"> · 试跑 {{ backend.elapsedMs }} ms</template></span></div>
+          <div class="backend-copy"><strong>{{ backend.id === 'cpu' ? 'CPU 自动降级' : backendName(backend.id) }}</strong><span class="muted">{{ backend.device?.name || '设备信息未提供' }}<template v-if="backend.reason"> · {{ backend.reason }}</template><template v-if="backend.elapsedMs"> · 试跑 {{ backend.elapsedMs }} ms</template></span></div>
           <ElTag :type="backendTone(backend.state)" effect="light" size="small">{{ node.selected === backend.id ? '使用中' : backendStates[backend.state] || backend.state }}</ElTag>
           <div class="backend-actions">
             <ElButton v-if="['UNVERIFIED', 'FAILED', 'AVAILABLE'].includes(backend.state)" size="small" :disabled="busy || modelBusy" @click="backendAction('test', backend.id)">{{ backend.id === 'cpu' ? '验证自动降级' : backend.state === 'AVAILABLE' ? '重新试跑' : '试跑' }}</ElButton>
-            <ElButton v-if="backend.state === 'AVAILABLE' && node.selection !== backend.id" size="small" :disabled="busy || modelBusy" @click="backendAction('select', backend.id)">选用此设备</ElButton>
+            <ElButton v-if="backend.id !== 'cpu' && backend.state === 'AVAILABLE' && node.selection !== backend.id" size="small" :disabled="busy || modelBusy" @click="backendAction('select', backend.id)">选用此设备</ElButton>
           </div>
         </div>
         <p v-if="detected.length && node.selected === 'cpu'" class="muted">加速设备暂不可用，已自动降级到 CPU。</p><p class="selection">{{ auto ? '自动选择可用设备' : '当前使用固定设备设置' }}<ElButton v-if="!auto" link type="primary" :disabled="busy" @click="backendAction('select', 'auto')">改为自动选择</ElButton></p>
@@ -102,7 +102,7 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
     </ol>
     <section v-if="node?.separation && !modelsOnly" class="step" aria-label="极速与轻量伴奏">
       <header><h3>极速与轻量伴奏</h3></header>
-      <p class="muted">极速档只需要 FFmpeg。干净档需在节点配置独立 CPU 环境并安装轻量模型，先试跑 CPU，再试跑加速设备。高级模型沿用上方配置。</p>
+      <p class="muted">极速档只需要 FFmpeg。四种加速镜像均内置独立 CPU 降级环境；干净档安装轻量模型后，先验证 CPU 降级，再试跑加速设备。高级模型沿用上方配置。</p>
       <p v-if="node.separation.operation?.state === 'TESTING' || node.separation.operation?.state === 'WAITING'" role="status" class="muted">轻量模型正在等待或进行试跑…</p>
       <p v-if="node.separation.operation?.error" class="inline-error">{{ node.separation.operation.error }}</p>
       <div v-for="backend in node.separation.backends.filter(item => item.detected || item.id === 'cpu')" :key="backend.id" class="backend-row">
