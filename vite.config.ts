@@ -1,7 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath } from 'node:url'
-import { readFileSync } from 'node:fs'
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'SINGVERSE_')
@@ -9,7 +8,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: './',
-    define: { __APP_VERSION__: JSON.stringify(readFileSync(new URL('./VERSION', import.meta.url), 'utf8').trim()) },
+    define: { __APP_VERSION__: JSON.stringify(env.SINGVERSE_VERSION || '0.0.0') },
     appType: 'mpa',
     plugins: [vue()],
     server: {

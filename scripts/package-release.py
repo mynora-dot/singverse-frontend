@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""Create the complete portable frontend; VERSION is the only product version."""
+"""Create the complete portable frontend at the version injected by Actions."""
 import gzip
 import io
 import hashlib
 import os
+import sys
 from pathlib import Path
 import re
 import tarfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from build_version import build_version
 ROOT = Path(__file__).resolve().parents[1]
-version = (ROOT / "VERSION").read_text().strip()
-if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version):
-    raise SystemExit("Release VERSION must be stable SemVer")
-tag = os.environ.get("GITHUB_REF_NAME")
-if tag and tag != "v" + version:
-    raise SystemExit("Release tag must equal v${VERSION}")
+version = build_version(required=True)
 for entry in ("admin/index.html", "party/index.html", "downloads/index.html"):
     if not (ROOT / "dist" / entry).is_file():
         raise SystemExit("Missing frontend entry: " + entry)

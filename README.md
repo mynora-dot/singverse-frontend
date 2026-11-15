@@ -1,6 +1,6 @@
 # SingVerse 网页前端
 
-本仓库独立维护 Vue / TypeScript / Vite / Element Plus 管理页、亲友 H5 和客户端下载页。源码位于仓库根目录，依赖由 package-lock.json 锁定，产品版本只读取根 VERSION。
+本仓库独立维护 Vue / TypeScript / Vite / Element Plus 管理页、亲友 H5 和客户端下载页。源码位于仓库根目录，依赖由 package-lock.json 锁定，正式版本由 GitHub Release 标签决定并通过 `SINGVERSE_VERSION` 注入，本地开发默认 `0.0.0`。
 
 ## 开发与检查
 
@@ -20,11 +20,11 @@ Node.js 要求见 package.json；使用 npm ci，不改全局工具。联调时�
 
 管理端“客厅 → 客户端下载”与公开下载页复用组件，登录页也提供下载入口。两端分别显示可用版本、APK大小、ABI、最低系统和校验信息；读取失败可重试，缺包保持真实空态。二维码通过当前 NAS Go 服务生成；本机/回环地址会提示改用其他设备可达的 NAS 地址。
 
-Vite 一次构建完整 dist，必须包含 admin、party、downloads 三个入口及所有资源。Go 仓库显式固定前端 Release 版本，下载静态包并嵌入二进制，再与客户端 APK 一起组装平台镜像。前端仓库不构建管理平台 Docker。
+Vite 一次构建完整 dist，必须包含 admin、party、downloads 三个入口及所有资源。Go 仓库首次打包时解析最新正式前端 Release，并在组件锁中固定该版本，下载静态包并嵌入二进制，再与客户端 APK 一起组装平台镜像。前端仓库不构建管理平台 Docker。
 
 登录窗口提供“记住密码”“自动登录”和“忘记密码”。记住密码由浏览器密码管理器处理，HTTP 局域网页面需在浏览器自身的保存提示中确认；应用存储只保存账号与选择偏好。自动登录在完整认证（含已启用的 MFA）后保持 30 天，重新打开首页先校验服务端会话再进入管理中心，退出登录会关闭此偏好。忘记密码使用部署主机生成的 15 分钟一次性重置码，页面内可查看和复制对应部署命令；重置保留 MFA 并撤销所有会话。完整协议见[登录与密码重置](contracts/auth-login.md)。
 
-正式 GitHub Release 的标签必须为 v + 根 VERSION，例如 v0.1.0。CI 验证后发布完整静态包和校验文件；固定资产不覆盖不同内容。普通 push/PR 只验证。
+正式 GitHub Release 标签使用 `vMAJOR.MINOR.PATCH`，例如 `v0.0.2`。Actions 从标签注入版本，直接构建并发布完整静态包和校验文件，不运行测试、类型检查或 lint；固定资产不覆盖不同内容。普通 push/PR、草稿和 Pre-release 不执行发布。本地指定版本可用 `SINGVERSE_VERSION=0.0.2 npm exec -- vite build`，再以相同环境运行 `python3 scripts/package-release.py`。
 
 完整品牌源素材在 [assets/branding](assets/branding/README.md)，部署图片已在 public/assets/brand，不依赖 CDN 或跨仓库源码。契约快照及来源见 [contracts/SOURCE.json](contracts/SOURCE.json)，以 Go 仓库为权威。相关技能从用户技能目录读取，仓库不内置副本。NAS、微信、真实手机和电视的可达性与安装兼容需要单独验收。
 

@@ -3,14 +3,16 @@
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 import subprocess
 import tempfile
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from build_version import release_version
+
 ROOT = Path(__file__).resolve().parents[1]
-tag = "v" + (ROOT / "VERSION").read_text().strip()
-if os.environ.get("GITHUB_REF_NAME") != tag:
-    raise SystemExit("Release tag must match VERSION")
+tag = "v" + release_version()
 repository = os.environ["GITHUB_REPOSITORY"]
 release = json.loads(subprocess.check_output(["gh", "api", "repos/" + repository + "/releases/tags/" + tag]))
 if release["draft"] or release["prerelease"]:
