@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount, nextTick } from 'vue'
-import { ElAlert, ElButton, ElDialog, ElIcon, ElMessage } from 'element-plus'
+import { ElAlert, ElButton, ElDialog, ElIcon } from 'element-plus'
 import { VideoPlay, VideoPause, Microphone, Headset, Setting, FullScreen, MuteNotification, Bell, Loading } from '@element-plus/icons-vue'
 import type Hls from 'hls.js'
 import type { MediaSong } from '../../media-library/types'
 import { accompanimentUrl, type AudioRoles } from '../../audio-processing/api'
 import { songTitle } from '../../metadata/utils'
-import { playback, type Resource, type OfflineTask, type SourceTrack } from '../../transcoding/playback'
+import { playback, type Resource, type SourceTrack } from '../../transcoding/playback'
 import { AdminPlaybackActivity } from '../../transcoding/activity'
 
 const props = defineProps<{ song: MediaSong | null }>()
@@ -17,16 +17,16 @@ const quality = ref('auto'), encoding = ref('auto'), role = ref<'original' | 'ba
 const settingsOpen = ref(false), playing = ref(false), buffering = ref(false), volume = ref(70), muted = ref(false)
 const mediaElement = ref<HTMLMediaElement | null>(null), backingElement = ref<HTMLAudioElement | null>(null), playerElement = ref<HTMLElement | null>(null)
 const resource = ref<Resource | null>(null), position = ref(0), tracks = ref<SourceTrack[]>([]), sourceDuration = ref(0), roles = ref<AudioRoles>()
-const tasks = ref<OfflineTask[]>([])
 let generation = 0, songGeneration = 0, waitingForBacking = false, hls: Hls | undefined, timer: ReturnType<typeof setInterval> | undefined
+let backingFailed = false, backingPlayAttempt = 0, removeAudioTrackListener: (() => void) | undefined
 let compatibilityRetried = false
 let activity: AdminPlaybackActivity | undefined
 let activeMedia: { element: HTMLMediaElement; turn: number; compatible: boolean; resumePlayback: boolean } | undefined
-const currentTasks = computed(() => tasks.value.filter(t => t.songId === props.song?.id))
 const backingAvailable = computed(() => !!roles.value?.backingResource || (roles.value?.state === 'CONFIRMED' && !!roles.value.backingId))
+const backingUrl = computed(() => resource.value ? resource.value.backingUrl || (props.song && roles.value?.backingResource ? accompanimentUrl(props.song.id, roles.value.backingResource.jobId) : '') : '')
 const subtitles = computed(() => tracks.value.filter(t => t.kind === 'subtitle'))
+const hasSettings = computed(() => !isAudio.value || subtitles.value.length > 0)
 const stateLabel = computed(() => failed.value ? '播放失败' : loading.value ? '正在准备…' : buffering.value ? '正在缓冲…' : `${playing.value ? '正在播放' : '已暂停'} · ${role.value === 'backing' ? '伴奏' : '原唱'}`)
-const taskLabels: Record<string, string> = { QUEUED: '等待中', RUNNING: '生成中', STARTING: '准备中', SUCCEEDED: '已生成', FAILED: '生成失败', CANCELLED: '已取消' }
 function formatTime(value: number) {
   const s = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
@@ -35,12 +35,13 @@ function release() {
   activity?.transition('PREPARING')
   // Invalidate callbacks before load()/destroy() can queue abort and error events.
   activeMedia = undefined
+  ++backingPlayAttempt; removeAudioTrackListener?.(); removeAudioTrackListener = undefined
   hls?.destroy(); hls = undefined; clearInterval(timer); timer = undefined
   for (const element of [mediaElement.value, backingElement.value]) {
     if (element) { element.pause(); element.removeAttribute('src'); element.load() }
   }
   if (resource.value?.id) void playback.cancel(resource.value.id).catch(() => {})
-  resource.value = null; playing.value = false; buffering.value = false; waitingForBacking = false
+  resource.value = null; playing.value = false; buffering.value = false; waitingForBacking = false; backingFailed = false
 }
 function mediaFailed(reason: string) { activity?.transition('ERROR'); ++generation; failed.value = true; loading.value = false; message.value = reason; release() }
 function decodeFailed(reason: string, turn: number) {
@@ -63,18 +64,27 @@ function onMediaError(event: Event) {
 }
 function onBackingError(event: Event) {
   if (event.currentTarget !== backingElement.value || loading.value || !activeMedia || activeMedia.turn !== generation || backingElement.value?.error?.code === 1) return
-  mediaFailed('伴奏暂时无法播放，请重新加载或切换原唱')
+  backingFailed = true; backingElement.value?.pause()
+  if (role.value === 'backing') restoreOriginal('伴奏暂时无法播放，已恢复原唱，请再次切换重试')
+}
+function restoreOriginal(reason: string) {
+  const shouldResume = waitingForBacking
+  waitingForBacking = false; buffering.value = false; role.value = 'original'; notice.value = reason; applyVolume()
+  if (shouldResume) void resume()
 }
 function applyVolume() {
-  if (mediaElement.value) { mediaElement.value.volume = volume.value / 100; mediaElement.value.muted = !!resource.value?.backingUrl || muted.value }
-  if (backingElement.value) { backingElement.value.volume = volume.value / 100; backingElement.value.muted = muted.value }
+  if (mediaElement.value) { mediaElement.value.volume = volume.value / 100; mediaElement.value.muted = (role.value === 'backing' && !!backingUrl.value) || muted.value }
+  if (backingElement.value) { backingElement.value.volume = volume.value / 100; backingElement.value.muted = role.value !== 'backing' || muted.value }
 }
 function syncBacking() {
   const main = mediaElement.value, backing = backingElement.value
   if (!main || !backing || backing.readyState === 0) return
   const time = main.currentTime + (resource.value?.offset ?? 0)
-  if (Math.abs(backing.currentTime - time) > .25) backing.currentTime = time
-  backing.playbackRate = main.playbackRate
+  const drift = time - backing.currentTime
+  if (Math.abs(drift) > .25) backing.currentTime = time
+  // Small clock drift is corrected gradually so the warm audio does not seek
+  // and refill its decoder every time the browser reports playback progress.
+  backing.playbackRate = main.playbackRate * (Math.abs(drift) > .04 && Math.abs(drift) <= .25 ? (drift > 0 ? 1.03 : .97) : 1)
 }
 function updatePosition() {
   const element = mediaElement.value; if (!element) return
@@ -82,7 +92,7 @@ function updatePosition() {
   if (Number.isFinite(element.duration) && !sourceDuration.value) sourceDuration.value = element.duration + (resource.value?.offset ?? 0)
   syncBacking()
 }
-function pause() { activity?.transition('PAUSED'); waitingForBacking = false; mediaElement.value?.pause(); backingElement.value?.pause(); playing.value = false; buffering.value = false }
+function pause() { activity?.transition('PAUSED'); ++backingPlayAttempt; waitingForBacking = false; mediaElement.value?.pause(); backingElement.value?.pause(); playing.value = false; buffering.value = false }
 function onPause(event: Event) {
   if (event.target !== mediaElement.value || loading.value || mediaElement.value?.error) return
   backingElement.value?.pause()
@@ -90,20 +100,28 @@ function onPause(event: Event) {
   if (!waitingForBacking) playing.value = false
 }
 function backingWaiting() {
-  if (!mediaElement.value || mediaElement.value.paused) return
+  if (role.value !== 'backing' || !mediaElement.value || mediaElement.value.paused) return
   waitingForBacking = true; buffering.value = true; mediaElement.value.pause()
 }
 function backingReady() {
-  syncBacking()
-  if (waitingForBacking) { waitingForBacking = false; buffering.value = false; void resume() }
+  applyVolume(); syncBacking()
+  if ((backingElement.value?.readyState ?? 0) < 3) return
+  if (waitingForBacking && role.value === 'backing') { waitingForBacking = false; buffering.value = false; void resume() }
   else void playBacking()
 }
 async function playBacking() {
   const backing = backingElement.value, turn = generation
-  if (!backing || mediaElement.value?.paused || buffering.value) return
-  syncBacking()
-  try { await backing.play() }
-  catch { if (turn === generation && backing === backingElement.value) { pause(); notice.value = '伴奏未能播放，请点击播放重试' } }
+  if (!backing || backingFailed || mediaElement.value?.paused || mediaElement.value?.seeking || buffering.value) return
+  applyVolume(); syncBacking()
+  if (!backing.paused) return
+  const attempt = ++backingPlayAttempt
+  try {
+    await backing.play()
+    if (turn !== generation || backing !== backingElement.value || mediaElement.value?.paused) backing.pause()
+  }
+  catch {
+    if (attempt === backingPlayAttempt && turn === generation && backing === backingElement.value && !mediaElement.value?.paused && role.value === 'backing') restoreOriginal('伴奏未能播放，已恢复原唱，请再次切换重试')
+  }
 }
 function onPlaying(event?: Event) {
   if (event && event.currentTarget !== mediaElement.value) return
@@ -123,27 +141,27 @@ async function resume() {
   catch { if (turn === generation && element === mediaElement.value) { pause(); notice.value = '请点击播放继续' } }
 }
 function togglePlay() { if (playing.value) pause(); else void resume() }
-async function start(force = false, startAt = position.value, resumePlayback = playing.value, recovering = false) {
+async function start(force = false, startAt = position.value, resumePlayback = playing.value, recovering = false, switchableAudio = true) {
   const song = props.song; if (!song) return
   const turn = ++generation
   if (!recovering) compatibilityRetried = false
   loading.value = true; failed.value = false; notice.value = recovering ? '当前格式不兼容，正在自动切换兼容播放…' : ''; release(); position.value = startAt
   message.value = '正在选择播放方式…'
   try {
-    const selectedId = roles.value?.state === 'CONFIRMED' ? (role.value === 'original' ? roles.value.originalId : roles.value.backingId) : undefined
-    // Raw browser playback cannot select a source stream; Java must select/remux it.
+    // Independent backing audio shares the original media clock. Keep the main
+    // source on original audio, including after seeks and compatibility retries.
+    const mainRole = roles.value?.backingResource ? 'original' : role.value
+    const selectedId = roles.value?.state === 'CONFIRMED' ? (mainRole === 'original' ? roles.value.originalId : roles.value.backingId) : undefined
+    // Raw browser playback cannot reliably select a source stream; Go selects/remuxes it.
     if (encoding.value === 'source' && ((selectedId && (roles.value?.streams?.length ?? 0) > 1) || subtitleId.value || quality.value !== 'auto')) {
       encoding.value = 'auto'; notice.value = '当前音轨、画质或字幕需要处理，已切换为自动编码'
     }
     let value: Resource
-    if (isAudio.value && role.value === 'backing' && roles.value?.backingResource) {
-      value = { mode: 'DIRECT', status: 'READY', offset: 0, url: accompanimentUrl(song.id, roles.value.backingResource.jobId) }
-    } else if (encoding.value === 'source') {
-      value = { mode: 'DIRECT', status: 'READY', offset: 0, url: `/api/v1/media-songs/${encodeURIComponent(song.id)}/video`,
-        ...(role.value === 'backing' && roles.value?.backingResource ? { backingUrl: accompanimentUrl(song.id, roles.value.backingResource.jobId) } : {}) }
+    if (encoding.value === 'source') {
+      value = { mode: 'DIRECT', status: 'READY', offset: 0, url: `/api/v1/media-songs/${encodeURIComponent(song.id)}/video` }
     } else {
       value = await playback.start(song.id, {
-        quality: quality.value, force: force || encoding.value === 'compatible', start: startAt, audioRole: role.value,
+        quality: quality.value, force: force || encoding.value === 'compatible', start: startAt, audioRole: mainRole, switchableAudio,
         ...((force || encoding.value === 'compatible') && !isAudio.value ? { codec: 'h264' } : {}),
         ...(subtitleId.value ? { subtitle_id: subtitleId.value, burn_subtitle: ['ass', 'ssa', 'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub'].includes(tracks.value.find(t => t.id === subtitleId.value)?.codec ?? '') } : {}),
       })
@@ -162,24 +180,28 @@ async function start(force = false, startAt = position.value, resumePlayback = p
     const deadline = Date.now() + 60000
     while (value.status !== 'READY') {
       if (['FAILED', 'CANCELLED'].includes(value.state ?? '')) throw new Error(value.execution?.error || value.error || '转换失败')
-      if (!value.id || Date.now() > deadline) throw new Error('转换准备超时，请降低画质或生成兼容版本')
+      if (!value.id || Date.now() > deadline) throw new Error('转换准备超时，请降低画质或稍后重试')
       await new Promise(resolve => setTimeout(resolve, 500))
       if (turn !== generation) return
       const next = await playback.status(value.id)
       if (turn !== generation) return
       applyResource(next)
     }
-    if (role.value === 'backing' && !value.backingUrl && !roles.value?.backingId && !(isAudio.value && roles.value?.backingResource)) throw new Error('伴奏已失效，请重新加载歌曲')
+    if (role.value === 'backing' && !value.backingUrl && !roles.value?.backingId && !roles.value?.backingResource) throw new Error('伴奏已失效，请重新加载歌曲')
     loading.value = false
     await nextTick(); if (turn !== generation) return
     const element = mediaElement.value; if (!element) return
     element.addEventListener('loadedmetadata', () => {
       if (turn !== generation) return
       element.currentTime = Math.max(0, startAt - value.offset)
-      applyVolume(); updatePosition(); if (resumePlayback) void resume()
+      selectAudioRole(role.value); applyVolume(); updatePosition(); if (resumePlayback) void resume()
     }, { once: true })
     applyVolume()
     activeMedia = { element, turn, compatible: force || encoding.value === 'compatible', resumePlayback }
+    const nativeTracks = (element as MediaWithAudioTracks).audioTracks
+    const onTracks = () => { if (turn === generation) selectAudioRole(role.value) }
+    nativeTracks?.addEventListener?.('addtrack', onTracks)
+    removeAudioTrackListener = () => nativeTracks?.removeEventListener?.('addtrack', onTracks)
     if (value.mode === 'HLS') {
       const { default: Hls } = await import('hls.js')
       if (turn !== generation) return
@@ -188,12 +210,13 @@ async function start(force = false, startAt = position.value, resumePlayback = p
         hls = new Hls()
         hls.on(Hls.Events.ERROR, (_event, data) => {
           if (turn !== generation || !data.fatal) return
-          if (data.type === 'mediaError') decodeFailed('兼容播放解码失败，请生成兼容版本或检查媒体文件', turn)
+          if (data.type === 'mediaError') decodeFailed('兼容播放解码失败，请检查媒体文件或更换浏览器重试', turn)
           else mediaFailed(data.type === 'networkError' ? '兼容播放网络中断，请检查连接后重新加载' : '兼容播放中断，请重新加载')
         })
+        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, onTracks)
         hls.loadSource(value.url); hls.attachMedia(element)
       } else if (element.canPlayType('application/vnd.apple.mpegurl')) element.src = value.url
-      else throw new Error('当前浏览器无法播放 HLS，请生成兼容版本')
+      else throw new Error('当前浏览器不支持此播放方式，请更换浏览器重试')
     } else {
       element.src = value.url
     }
@@ -202,7 +225,6 @@ async function start(force = false, startAt = position.value, resumePlayback = p
     timer = setInterval(() => {
       if (turn !== generation) return
       if (resource.value?.id) void playback.status(resource.value.id).catch(() => {})
-      void refreshTasks(songGeneration)
     }, 10000)
   } catch (error) { if (turn === generation) mediaFailed(error instanceof Error ? error.message : '播放失败') }
   finally { if (turn === generation) loading.value = false }
@@ -212,24 +234,43 @@ async function loadRoles(turn: number) {
   try { const value = await playback.roles(props.song.id); if (turn === songGeneration && value && !roles.value) roles.value = value }
   catch { /* Role lookup must not prevent original-file playback. */ }
 }
-async function refreshTasks(turn = songGeneration) {
-  try { const value = await playback.tasks(); if (turn === songGeneration) tasks.value = value }
-  catch { /* Playback remains independent of background tasks. */ }
-}
-async function offline() {
-  if (!props.song) return
-  const turn = songGeneration
-  try { await playback.offline([props.song.id], quality.value); if (turn === songGeneration) { await refreshTasks(turn); ElMessage.success('已加入兼容版本转换队列') } }
-  catch (error) { if (turn === songGeneration) ElMessage.error(error instanceof Error ? error.message : '提交失败') }
-}
-async function manageTask(id: string, remove: boolean) {
-  const turn = songGeneration
-  try { if (remove) await playback.deleteOffline(id); else await playback.cancelOffline(id); await refreshTasks(turn) }
-  catch (error) { if (turn === songGeneration) ElMessage.error(error instanceof Error ? error.message : '操作失败') }
-}
 function changeRole(value: 'original' | 'backing') {
   if (value === role.value || loading.value || (value === 'backing' && !backingAvailable.value)) return
-  role.value = value; void start()
+  if (backingUrl.value && mediaElement.value && !failed.value) {
+    const shouldResume = waitingForBacking
+    role.value = value; waitingForBacking = false; notice.value = ''; applyVolume(); syncBacking()
+    if (backingFailed && value === 'backing') { backingFailed = false; backingElement.value?.load() }
+    if (shouldResume) { buffering.value = false; void resume() }
+    else if (value === 'backing' && (backingElement.value?.readyState ?? 0) < 3) backingWaiting()
+    void playBacking()
+  } else if (selectAudioRole(value)) { role.value = value; notice.value = '' }
+  // A browser without usable alternate tracks must ask Go to select one role.
+  // Reusing a multi-track resource there could silently play its default audio.
+  else { role.value = value; void start(false, position.value, playing.value, false, false) }
+}
+type NativeAudioTrack = { label: string; enabled: boolean }
+type MediaWithAudioTracks = HTMLMediaElement & { audioTracks?: EventTarget & ArrayLike<NativeAudioTrack> }
+function selectAudioRole(value: 'original' | 'backing') {
+  if (backingUrl.value || resource.value?.mode !== 'HLS') return false
+  const sourceId = value === 'original' ? roles.value?.originalId : roles.value?.backingId
+  const mapping = resource.value.execution?.trackMapping?.filter(track => track.kind === 'audio') ?? []
+  const index = mapping.findIndex(track => !!sourceId && track.sourceId === sourceId)
+  if (index < 0) return false
+  if (hls) {
+    // FFmpeg rendition names are not source stream IDs. The mapping and URI
+    // identify the right role even when source indices or playlist order differ.
+    const track = hls.audioTracks?.findIndex(track => new RegExp(`/stream_audio${index}\\.m3u8(?:[?#]|$)`).test(track.url)) ?? -1
+    if (track < 0) return false
+    if (hls.audioTrack !== track) hls.audioTrack = track
+    return true
+  }
+  const native = (mediaElement.value as MediaWithAudioTracks | null)?.audioTracks
+  if (!native || native.length !== mapping.length) return false
+  const tracks = Array.from(native)
+  const track = tracks.find(item => item.label === `audio_${mapping[index]!.outputIndex}`) ?? tracks[index]
+  if (!track) return false
+  tracks.forEach(item => { item.enabled = item === track })
+  return true
 }
 function seek(event: Event) {
   const value = Number((event.target as HTMLInputElement).value)
@@ -245,13 +286,13 @@ async function fullscreen() {
   }
   catch { notice.value = '当前浏览器不支持全屏播放' }
 }
-watch([volume, muted], applyVolume)
+watch([volume, muted, backingUrl], applyVolume)
 watch(() => props.song?.id, () => {
   activity?.transition('STOPPED'); activity = undefined
   ++generation; ++songGeneration; loading.value = false; release()
   quality.value = 'auto'; encoding.value = 'auto'; role.value = 'original'; subtitleId.value = ''; tracks.value = []; roles.value = undefined
-  sourceDuration.value = 0; position.value = 0; tasks.value = []; notice.value = ''; settingsOpen.value = false
-  if (props.song) { void start(false, 0, false); void loadRoles(songGeneration); void refreshTasks(songGeneration) }
+  sourceDuration.value = 0; position.value = 0; notice.value = ''; settingsOpen.value = false
+  if (props.song) { void start(false, 0, false); void loadRoles(songGeneration) }
 }, { immediate: true })
 onBeforeUnmount(() => { activity?.transition('STOPPED'); activity = undefined; ++generation; ++songGeneration; release() })
 </script>
@@ -265,7 +306,7 @@ onBeforeUnmount(() => { activity?.transition('STOPPED'); activity = undefined; +
           @timeupdate="updatePosition" @loadedmetadata="updatePosition" @play="playing = true" @playing="onPlaying" @pause="onPause" @ended="onEnded" @waiting="onWaiting" @seeking="onSeeking" @seeked="onSeeked" @ratechange="syncBacking" @error="onMediaError">
           <track v-if="resource?.subtitleUrl" kind="subtitles" :src="resource.subtitleUrl" label="字幕" default />当前浏览器不支持此媒体播放。
         </component>
-        <audio v-if="!failed && !loading && resource?.backingUrl" :key="generation" ref="backingElement" class="backing-audio" :src="resource.backingUrl" preload="auto" aria-label="独立伴奏" @loadedmetadata="syncBacking" @canplay="backingReady" @waiting="backingWaiting" @error="onBackingError" />
+        <audio v-if="!failed && !loading && backingUrl" :key="generation" ref="backingElement" class="backing-audio" :src="backingUrl" :muted="muted || role !== 'backing'" preload="auto" aria-label="独立伴奏" @loadedmetadata="backingReady" @canplay="backingReady" @waiting="backingWaiting" @error="onBackingError" />
         <ElAlert v-if="failed" class="player-error" title="媒体暂时无法播放" type="error" :closable="false" show-icon><span>{{ message }}</span><ElButton text @click="retry">重新加载</ElButton></ElAlert>
         <div v-else-if="loading" class="stage-overlay" role="status"><ElIcon class="is-loading"><Loading /></ElIcon><span>正在准备播放…</span></div>
         <button v-else-if="isAudio" type="button" class="audio-visual" :aria-label="playing ? '暂停' : '播放'" @click="togglePlay"><span class="audio-disc"><ElIcon><Headset /></ElIcon></span><span>音频播放</span></button>
@@ -274,9 +315,12 @@ onBeforeUnmount(() => { activity?.transition('STOPPED'); activity = undefined; +
       <div class="player-controls">
         <div class="timeline"><span>{{ formatTime(position) }}</span><input type="range" :value="position" :max="sourceDuration || 1" min="0" step="1" :disabled="loading || failed || !sourceDuration" aria-label="播放进度" @change="seek"><span>{{ formatTime(sourceDuration) }}</span></div>
         <div class="transport"><button type="button" class="main-play" :disabled="loading || failed" :aria-label="playing ? '暂停' : '播放'" @click="togglePlay"><ElIcon><VideoPause v-if="playing" /><VideoPlay v-else /></ElIcon></button><span class="transport-state" role="status">{{ stateLabel }}</span><div class="transport-space" /><button type="button" class="icon-button" :aria-label="muted ? '取消静音' : '静音'" @click="muted = !muted"><ElIcon><MuteNotification v-if="muted || volume === 0" /><Bell v-else /></ElIcon></button><input v-model.number="volume" class="volume" type="range" min="0" max="100" aria-label="音量"><button v-if="!isAudio" type="button" class="icon-button" aria-label="全屏" @click="fullscreen"><ElIcon><FullScreen /></ElIcon></button></div>
-        <div class="feature-row"><div class="role-picker" aria-label="声音切换"><button type="button" :aria-pressed="role === 'original'" :disabled="loading" @click="changeRole('original')"><ElIcon><Microphone /></ElIcon>原唱</button><button type="button" :aria-pressed="role === 'backing'" :disabled="loading || !backingAvailable" @click="changeRole('backing')"><ElIcon><Headset /></ElIcon>伴奏</button></div><label class="encoding"><span>编码</span><select v-model="encoding" aria-label="播放编码" :disabled="loading" @change="start()"><option value="auto">自动选择</option><option value="source">原始编码</option><option value="compatible">{{ isAudio ? 'AAC · 兼容' : 'H.264 / AAC · 兼容' }}</option></select></label><button type="button" class="settings-button" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><ElIcon><Setting /></ElIcon>设置</button></div>
+        <div class="feature-row"><div class="role-picker" aria-label="声音切换"><button type="button" :aria-pressed="role === 'original'" :disabled="loading" @click="changeRole('original')"><ElIcon><Microphone /></ElIcon>原唱</button><button type="button" :aria-pressed="role === 'backing'" :disabled="loading || !backingAvailable" @click="changeRole('backing')"><ElIcon><Headset /></ElIcon>伴奏</button></div><label class="encoding"><span>编码</span><select v-model="encoding" aria-label="播放编码" :disabled="loading" @change="start()"><option value="auto">自动选择</option><option value="source">原始编码</option><option value="compatible">{{ isAudio ? 'AAC · 兼容' : 'H.264 / AAC · 兼容' }}</option></select></label><button v-if="hasSettings" type="button" class="settings-button" :aria-expanded="settingsOpen" @click="settingsOpen = !settingsOpen"><ElIcon><Setting /></ElIcon>设置</button></div>
         <p v-if="!backingAvailable && !loading" class="player-notice">伴奏未就绪</p>
-        <section v-if="settingsOpen" class="play-settings" aria-label="播放设置"><label v-if="!isAudio">画质<select v-model="quality" aria-label="播放画质" :disabled="loading" @change="start()"><option value="auto">自动</option><option v-for="q in ['1080p', '720p', '480p']" :key="q" :value="q">{{ q }}</option></select></label><label v-if="subtitles.length">字幕<select v-model="subtitleId" aria-label="字幕" :disabled="loading" @change="start()"><option value="">关闭</option><option v-for="t in subtitles" :key="t.id" :value="t.id">{{ t.title || `${t.language || '字幕'} · ${t.codec}` }}</option></select></label><ElButton :disabled="loading" @click="offline">生成兼容版本</ElButton><div v-for="task in currentTasks" :key="task.id" class="offline-task"><span>兼容版本：{{ taskLabels[task.state] || task.state }} {{ task.error }}</span><ElButton v-if="!['SUCCEEDED', 'FAILED', 'CANCELLED'].includes(task.state)" text @click="manageTask(task.id, false)">取消</ElButton><ElButton v-else text @click="manageTask(task.id, true)">删除</ElButton></div></section>
+        <section v-if="hasSettings && settingsOpen" class="play-settings" aria-label="播放设置">
+          <label v-if="!isAudio">画质<select v-model="quality" aria-label="播放画质" :disabled="loading" @change="start()"><option value="auto">自动</option><option v-for="q in ['1080p', '720p', '480p']" :key="q" :value="q">{{ q }}</option></select></label>
+          <label v-if="subtitles.length">字幕<select v-model="subtitleId" aria-label="字幕" :disabled="loading" @change="start()"><option value="">关闭</option><option v-for="t in subtitles" :key="t.id" :value="t.id">{{ t.title || `${t.language || '字幕'} · ${t.codec}` }}</option></select></label>
+        </section>
         <p v-if="notice" class="player-notice" role="status">{{ notice }}</p>
       </div>
     </section>
@@ -297,7 +341,7 @@ onBeforeUnmount(() => { activity?.transition('STOPPED'); activity = undefined; +
 .player-controls{padding:24px 24px 24px}.timeline{display:flex;align-items:center;gap:12px;color:var(--sv-text-tertiary);font-size:12px;font-variant-numeric:tabular-nums}.timeline input{flex:1;min-width:0;accent-color:var(--sv-accent-primary)}.timeline>span{white-space:nowrap}
 .transport{display:flex;align-items:center;gap:12px;margin-top:16px}.main-play{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;border:0;background:var(--sv-accent-primary);color:var(--sv-on-accent);font-size:24px;cursor:pointer}.transport-state{font-size:12px;color:var(--sv-text-tertiary)}.transport-space{flex:1}.icon-button{display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:var(--sv-text-secondary);font-size:19px;cursor:pointer}.icon-button:hover{background:var(--sv-surface-3)}.volume{width:64px;accent-color:var(--sv-accent-primary)}
 .feature-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:24px;padding-top:20px;border-top:1px solid var(--sv-border-subtle)}.role-picker{display:flex;gap:4px;padding:4px;border-radius:8px;background:var(--sv-surface-3)}.role-picker button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:40px;padding:8px 12px;border:0;border-radius:8px;background:transparent;color:var(--sv-text-tertiary);font-size:13px;cursor:pointer}.role-picker button[aria-pressed=true]{background:var(--sv-surface-2);color:var(--sv-accent-primary);box-shadow:var(--sv-shadow-sm)}.encoding{display:flex;align-items:center;gap:8px;flex:1;min-width:180px;font-size:12px;color:var(--sv-text-tertiary)}.encoding>span{white-space:nowrap}.encoding select{flex:1;min-width:0}select{max-width:100%;padding:8px 12px;border:1px solid var(--sv-border-default);border-radius:8px;background:var(--sv-surface-2);color:var(--sv-text-primary);font:inherit;font-size:13px}.settings-button{display:flex;align-items:center;gap:4px;padding:12px 0;background:transparent;border:0;color:var(--sv-text-tertiary);font:inherit;font-size:12px;cursor:pointer}
-button:disabled{opacity:.45;cursor:not-allowed}.play-settings{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:16px;padding:16px;background:var(--sv-surface-3);border-radius:8px}.play-settings label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sv-text-secondary)}.offline-task{flex-basis:100%;display:flex;align-items:center;gap:8px;font-size:12px;overflow-wrap:anywhere}.player-notice{margin:12px 0 0;font-size:12px;line-height:1.6;color:var(--sv-text-tertiary)}
+button:disabled{opacity:.45;cursor:not-allowed}.play-settings{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:16px;padding:16px;background:var(--sv-surface-3);border-radius:8px}.play-settings label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sv-text-secondary)}.player-notice{margin:12px 0 0;font-size:12px;line-height:1.6;color:var(--sv-text-tertiary)}
 @media(max-width:600px){.feature-row{gap:12px}.role-picker{flex:1}.role-picker button{flex:1}.encoding{order:3;flex-basis:100%}.volume{display:none}.player-controls{padding:20px}.transport{gap:8px}:global(.song-player-dialog .el-dialog__header){padding:16px 48px 16px 20px}}
 @media(pointer:coarse){button{min-height:44px}select{font-size:16px}}
 /* Video controls share the media viewport, including fullscreen. */

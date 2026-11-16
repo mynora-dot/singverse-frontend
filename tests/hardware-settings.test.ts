@@ -46,7 +46,7 @@ it('读取失败可重试，保存冲突显示错误且不宣告成功', async (
   } finally { wrapper.unmount() }
 })
 
-it('能力按当前方式优先展示，无关硬件和 CPU 不出现在选择及能力列表', async () => {
+it('能力按当前方式优先展示，无关硬件和手选 CPU 不出现在选择及能力列表', async () => {
   vi.mocked(authRequest).mockImplementation(async path => path.endsWith('/capabilities') ? {
     backends: [
       { backend: 'software', installed: true, samplePassed: true, codecs: { h264: { samplePassed: true } } },
@@ -60,7 +60,7 @@ it('能力按当前方式优先展示，无关硬件和 CPU 不出现在选择�
     await wrapper.findAll('button').find(b => b.text() === '检测当前硬件')!.trigger('click'); await flushPromises()
     const rows = wrapper.findAll('tbody tr')
     expect(rows).toHaveLength(1)
-    expect(rows[0]!.text()).toContain('Apple（VideoToolbox）')
+    expect(rows[0]!.text()).toContain('Mac（VideoToolbox）')
     expect(rows[0]!.text()).toContain('当前使用')
     expect(rows[0]!.findAll('.codec-tag').map(tag => tag.text())).toEqual(['H264', 'HEVC'])
     expect(rows[0]!.findAll('.stage-tag.verified').map(tag => tag.text())).toEqual(['硬解已验证', '零拷贝已验证'])
@@ -73,5 +73,54 @@ it('能力按当前方式优先展示，无关硬件和 CPU 不出现在选择�
     await wrapper.findAll('button').find(b => b.text() === '保存硬件加速设置')!.trigger('click'); await flushPromises()
     expect(authRequest).toHaveBeenCalledWith('/api/v1/transcoding/hardware-settings', 'POST', expect.objectContaining({ cpuFallback: false }), 45000)
     expect(wrapper.find('.deployment-note').exists()).toBe(false)
+  } finally { wrapper.unmount() }
+})
+
+it('Intel 节点只显示检测到的编码方式，编码详情默认收起', async () => {
+  vi.mocked(authRequest).mockResolvedValue({ ...initial, effectiveBackend: 'qsv', detectedBackends: ['qsv', 'vaapi'] })
+  const wrapper = mount(HardwareSettings, { props: { hideFallback: true } })
+  try {
+    await flushPromises()
+    expect(wrapper.findAll('option').map(option => option.attributes('value'))).toEqual(['deployment', 'auto', 'qsv', 'vaapi'])
+    expect(wrapper.text()).not.toMatch(/Mac|NVIDIA|AMD|Rockchip/)
+    expect(wrapper.text()).toContain('VA-API（Linux）')
+    expect(wrapper.get('details.encoder-section').attributes('open')).toBeUndefined()
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
+    expect(authRequest).toHaveBeenCalledTimes(1)
+  } finally { wrapper.unmount() }
+})
+
+it('无加速硬件时保留 CPU，未知检测结果不会展示所有厂商', async () => {
+  vi.mocked(authRequest).mockResolvedValueOnce({ ...initial, detectedBackends: [] })
+  const wrapper = mount(HardwareSettings)
+  try {
+    await flushPromises()
+    expect(wrapper.findAll('option').map(option => option.attributes('value'))).toEqual(['deployment', 'auto', 'software'])
+    expect(wrapper.get('.current-backend').text()).toContain('CPU 软件处理')
+    vi.mocked(authRequest).mockResolvedValueOnce(initial)
+    await wrapper.findAll('button').find(button => button.text() === '重新读取设置')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('option').map(option => option.attributes('value'))).toEqual(['deployment', 'auto', 'software'])
+    expect(wrapper.text()).toContain('尚未确认硬件')
+    expect(wrapper.text()).not.toMatch(/Mac|NVIDIA|Intel|AMD|Rockchip/)
+  } finally { wrapper.unmount() }
+})
+
+it('已保存但未检测到的方式仅提示失效，选择可用方式后才能保存', async () => {
+  vi.mocked(authRequest).mockResolvedValue({ ...initial, backend: 'nvenc', effectiveBackend: 'nvenc', detectedBackends: ['qsv', 'vaapi'] })
+  const wrapper = mount(HardwareSettings)
+  try {
+    await flushPromises()
+    const savedOption = wrapper.get('option[value="nvenc"]')
+    expect(savedOption.attributes('disabled')).toBeDefined()
+    expect(savedOption.text()).toBe('已配置方式未检测到')
+    expect(wrapper.text()).not.toContain('NVIDIA')
+    expect(wrapper.get('.current-backend').text()).toContain('所配置的加速设备未检测到')
+    const save = wrapper.findAll('button').find(button => button.text() === '保存硬件加速设置')!
+    expect(save.attributes('disabled')).toBeDefined()
+    expect(authRequest).toHaveBeenCalledTimes(1)
+    await wrapper.get('select').setValue('auto')
+    expect(save.attributes('disabled')).toBeUndefined()
+    expect(authRequest).toHaveBeenCalledTimes(1)
   } finally { wrapper.unmount() }
 })

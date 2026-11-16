@@ -14,6 +14,7 @@ import MetadataFieldComparison from './MetadataFieldComparison.vue'
 import SingleMetadataEditor from './SingleMetadataEditor.vue'
 import SingleCoverPicker from './SingleCoverPicker.vue'
 import MetadataCover from './MetadataCover.vue'
+import SingleSongReviewWorkspace from './SingleSongReviewWorkspace.vue'
 const props = defineProps<{ song?: MediaSong | null; songId?: string | null; initialCandidates?: MetadataCandidate[]; batchId?: string; itemId?: string; autoSelectThreshold?: number; presentation?: 'dialog' | 'drawer' }>()
 const emit = defineEmits<{ close: []; applied: [] }>()
 const isDrawer = computed(() => props.presentation === 'drawer')
@@ -33,6 +34,7 @@ const resultCover = computed(() => {
 })
 const skippedLabels = computed(() => result.value?.skipped.map(f => fieldNames[f]).join('、') ?? '')
 const retainedLabels = computed(() => result.value?.retained.map(f => fieldNames[f]).join('、') ?? '')
+const changedLabels = computed(() => changed.value.map(field => fieldNames[field]).join('、'))
 const currentCover = computed(() => review.value?.values.cover ? metadata.songCover(review.value.song.id) : null)
 const fileFormat = computed(() => (review.value?.song.relativePath.split('.').pop() ?? '').toUpperCase())
 const fileSize = computed(() => review.value?.song.fileSize == null ? '大小未知' : `${(review.value.song.fileSize / 1024 / 1024).toFixed(1)} MB`)
@@ -93,12 +95,13 @@ function chooseCover(value: CoverSelection) { state.chooseCover(value); mobilePa
 async function apply() { resultCoverFailed.value = false; await state.apply(props.batchId && props.itemId ? (_songId, input) => singleReview.applyBatch(props.batchId!, props.itemId!, input) : singleReview.apply); if (result.value) emit('applied') }
 </script>
 <template>
-  <component :is="isDrawer ? ElDrawer : ElDialog" :model-value="!!activeSongId" title="核对歌曲信息" :width="isDrawer ? undefined : result ? 'min(780px, calc(100vw - 32px))' : 'min(1240px, calc(100vw - 32px))'" :size="isDrawer ? 'min(680px, 100vw)' : undefined" top="4vh" :class="['single-scrape-dialog', { 'single-scrape-success': !!result, 'single-scrape-drawer': isDrawer }]" :close-on-click-modal="false" :close-on-press-escape="!applying" :show-close="!applying" :before-close="close">
+  <component :is="isDrawer ? ElDrawer : ElDialog" :model-value="!!activeSongId" title="核对歌曲信息" :width="isDrawer ? undefined : result ? 'min(780px, calc(100vw - 32px))' : 'min(1368px, calc(100vw - 48px))'" :size="isDrawer ? 'min(680px, 100vw)' : undefined" top="3vh" :class="['single-scrape-dialog', { 'single-scrape-success': !!result, 'single-scrape-drawer': isDrawer, 'single-review-dialog': !isDrawer }]" :close-on-click-modal="false" :close-on-press-escape="!applying" :show-close="!applying" :before-close="close">
     <div v-if="result" class="review-success" role="status"><CircleCheckFilled class="success-icon" /><h2>元数据已应用成功</h2><p>本次更新 {{ result.updated.length }} 项，跳过 {{ result.skipped.length }} 项，保留 {{ result.retained.length }} 项。</p><table><thead><tr><th>字段</th><th>应用前</th><th>应用后</th></tr></thead><tbody><tr v-for="field in result.updated" :key="field"><td>{{ fieldNames[field] }}</td><td>{{ display(result.before[field as ReviewField], field) }}</td><td><template v-if="field === 'cover' && resultCover && !resultCoverFailed"><img class="result-cover" :src="resultCover" alt="已实际应用的歌曲封面" @error="resultCoverFailed = true" /><span>封面已应用</span></template><template v-else>{{ field === 'cover' && resultCoverFailed ? '封面已应用，图片暂不可预览' : display(result.after[field as ReviewField], field) }}</template></td></tr></tbody></table><p v-if="result.skipped.length">跳过（无变化或无值）：{{ skippedLabels }}</p><p>保留：{{ retainedLabels || '无' }}。原始媒体文件未修改。</p></div>
-    <div v-else class="review-body" :class="{ 'review-mode': isDrawer || mobilePane === 'review', 'drawer-mode': isDrawer }">
+    <div v-else class="review-body" :class="{ 'review-mode': isDrawer, 'drawer-mode': isDrawer, 'review-dialog-mode': !isDrawer }">
       <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton text :disabled="applying" @click="reload">重新加载歌曲</ElButton><span>重新加载会提示放弃草稿；网络失败可直接重试应用。</span></ElAlert>
       <p v-if="loading" class="workspace-hint" role="status">正在读取当前歌曲与确认元数据…</p>
       <template v-if="review && draft">
+        <template v-if="isDrawer">
         <div class="song-context"><div class="file-context"><MetadataCover :src="currentCover" alt="当前有效封面"  :empty-text="isDrawer ? '暂无封面' : '尚未选择封面'" retryable :retry-key="coverRetryKey" /><div><span class="section-caption">当前歌曲 · 入库信息</span><h3>{{ display(review.values.title) }}</h3><p>{{ display(review.values.artists) }}</p><div class="file-badges"><span>{{ fileFormat || '格式未知' }}</span><span>{{ fileSize }}</span><span v-if="review.values.durationMs">平台时长 {{ display(review.values.durationMs, 'durationMs') }}</span></div><details class="context-file"><summary>文件位置</summary><p class="file-path">{{ review.song.sourceName }} / {{ review.song.relativePath }}</p></details></div></div>
           <details v-if="!isDrawer" class="existing-context"><summary class="section-caption">查看当前有效信息</summary><dl><dt>专辑</dt><dd>{{ display(review.values.album) }}</dd><dt>发行日期</dt><dd>{{ display(review.values.releaseDate) }}</dd><dt>别名</dt><dd>{{ display(review.values.aliases) }}</dd><dt>封面</dt><dd>{{ currentCover ? '已有确认封面' : '未确认' }}</dd></dl><small v-if="review.song.metadata?.stale" class="stale-note">媒体属性已变化，需重新核验媒体；已保存的歌曲资料继续保留。</small></details></div>
         <component :is="isDrawer ? 'details' : 'div'" class="search-disclosure"><summary v-if="isDrawer">重新搜索或更换平台</summary>
@@ -119,11 +122,16 @@ async function apply() { resultCoverFailed.value = false; await state.apply(prop
           <p v-if="Object.values(review.song.metadata?.origins ?? {}).some(origin => origin.kind === 'FILE')" class="selection-hint">人工确认的字段会直接保存为正式资料，重新扫描、提取和共享更新均保留本地决定。</p><div class="comparison-title"><strong>将更新的字段</strong><span>共 {{ changed.length }} 项</span></div><MetadataFieldComparison :before="review.values" :draft="draft" :fields="fields" :edits="edits" :disabled="applying" @change="fields = $event" />
           <p class="overwrite-note">勾选“将修改”的字段会覆盖当前确认值；未勾选、无变化及空值均保留现状。</p>
         </div></section></div>
+        </template>
+        <SingleSongReviewWorkspace v-else :state="state" :version-warning="versionWarning" @search="search" @settings="openSettings" @choose="choose" @clear="clearSelection" @edit="editorOpen = true" @cover="coverOpen = true" />
         <SingleMetadataEditor :open="editorOpen" :before="review.values" :draft="draft" :original="selected ? candidateValues(selected) : null" @close="editorOpen = false" @save="saveEdits" @cover="coverOpen = true" />
         <SingleCoverPicker :open="coverOpen" :song-id="review.song.id" :fingerprint="review.fingerprint" :keyword="coverKeyword" :candidates="candidates" :providers="providers" :available="available" :enabled="enabled" :current-url="currentCover" :current-value="review.values.cover as string | null" :selection="cover" @close="coverOpen = false" @select="chooseCover" />
       </template>
     </div>
-    <template #footer><div class="workspace-footer"><p class="footer-full">仅应用已勾选且有效的变更；搜索和上传不会自动写入歌曲，原始文件保持只读。</p><p class="footer-short">确认只更新勾选字段，媒体原件保持只读。</p><div><ElButton :disabled="applying" @click="close">{{ result ? '关闭' : '取消' }}</ElButton><ElButton v-if="!result" type="primary" :loading="applying" :disabled="!changed.length || loading || searching" @click="apply">确认应用（{{ changed.length }} 项）</ElButton></div></div></template>
+    <template #footer>
+      <div v-if="!isDrawer && !result" class="review-dialog-footer"><div class="change-summary" role="status" aria-live="polite"><p><strong>{{ changed.length }}</strong> 项变更已勾选</p><small>{{ changed.length ? `将应用${changedLabels}` : '勾选需要应用的字段' }}</small></div><div class="footer-actions"><ElButton :disabled="applying" @click="close">取消</ElButton><ElButton type="primary" :loading="applying" :disabled="!changed.length || loading || searching" @click="apply">确认应用（{{ changed.length }} 项）</ElButton></div></div>
+      <div v-else class="workspace-footer"><p class="footer-full">仅应用已勾选且有效的变更；搜索和上传不会自动写入歌曲，原始文件保持只读。</p><p class="footer-short">确认只更新勾选字段，媒体原件保持只读。</p><div><ElButton :disabled="applying" @click="close">{{ result ? '关闭' : '取消' }}</ElButton><ElButton v-if="!result" type="primary" :loading="applying" :disabled="!changed.length || loading || searching" @click="apply">确认应用（{{ changed.length }} 项）</ElButton></div></div>
+    </template>
   </component>
 </template>
 <style scoped>
@@ -894,4 +902,37 @@ async function apply() { resultCoverFailed.value = false; await state.apply(prop
   .drawer-mode.review-mode .workspace-search { display: flex; }.drawer-mode.review-mode .platform-notice { display: flex; }.drawer-mode .review-workspace.review-mode .candidate-pane { display: flex; }.drawer-mode .preview-pane { display: flex; }.drawer-mode .existing-context dl { grid-template-columns: 52px minmax(0,1fr); }
 }
 
+
+:global(.single-review-dialog.el-dialog:not(.single-scrape-success)) { height: 94vh; height: 94dvh; max-height: 94vh; max-height: 94dvh; margin: 3vh auto 0; margin-top: 3dvh; background: var(--sv-surface-2); }
+:global(.single-review-dialog.el-dialog > .el-dialog__header) { min-height: 68px; padding: 20px 64px 20px 24px; }
+:global(.single-review-dialog.el-dialog .el-dialog__title) { color: var(--sv-text-primary); font-size: 20px; font-weight: 600; line-height: 28px; }
+:global(.single-review-dialog.el-dialog > .el-dialog__header .el-dialog__headerbtn) { top: 12px; right: 16px; width: 44px; height: 44px; }
+:global(.single-review-dialog.el-dialog:not(.single-scrape-success) > .el-dialog__body) { padding: 0; overflow: hidden; }
+:global(.single-review-dialog.el-dialog > .el-dialog__footer) { padding: 14px 24px max(14px, env(safe-area-inset-bottom)); }
+.review-dialog-mode { flex: 1; min-height: 0; gap: 0; }
+.review-dialog-mode > .single-review-workspace { flex: 1; min-height: 0; }
+.review-dialog-mode > .el-alert, .review-dialog-mode > .workspace-hint { flex: none; margin: 12px 24px; }
+.review-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-width: 0; }
+.change-summary { min-width: 0; text-align: left; }
+.change-summary p { margin: 0; font-size: 14px; color: var(--sv-text-primary); }
+.change-summary strong { margin-right: 4px; font-size: 22px; line-height: 1.4; font-weight: 600; color: var(--sv-accent-muted); font-variant-numeric: tabular-nums; }
+.change-summary small { display: block; margin-top: 2px; font-size: 12px; color: var(--sv-text-tertiary); line-height: 1.6; overflow-wrap: anywhere; }
+.footer-actions { display: flex; flex: none; gap: 10px; }
+.footer-actions .el-button { min-height: 44px; min-width: 92px; margin: 0; font-size: 14px; }
+.footer-actions .el-button--primary { min-width: 168px; }
+@media (max-width: 700px) {
+  :global(.single-review-dialog.el-dialog:not(.single-scrape-success)) { width: 100% !important; max-width: 100vw; height: 100vh; height: 100dvh; max-height: 100vh; max-height: 100dvh; margin: 0; border-radius: 0; }
+  :global(.single-review-dialog.el-dialog > .el-dialog__header) { min-height: 64px; padding: 18px 60px 18px 16px; }
+  :global(.single-review-dialog.el-dialog .el-dialog__title) { font-size: 18px; }
+  :global(.single-review-dialog.el-dialog > .el-dialog__header .el-dialog__headerbtn) { top: 10px; right: 8px; }
+  :global(.single-review-dialog.el-dialog > .el-dialog__footer) { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); }
+  .review-dialog-footer { gap: 10px; flex-wrap: wrap; }
+  .change-summary { width: 100%; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .change-summary p { flex: none; }
+  .change-summary strong { font-size: 20px; }
+  .change-summary small { text-align: right; }
+  .footer-actions { width: 100%; gap: 8px; }
+  .footer-actions .el-button { font-size: 16px; min-width: 80px; }
+  .footer-actions .el-button--primary { flex: 1; }
+}
 </style>

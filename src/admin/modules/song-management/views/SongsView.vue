@@ -4,7 +4,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElEmpty, ElInput, ElPagination, ElSelect, ElOption, ElSkeleton, ElPopover } from 'element-plus'
 import { RefreshRight, Search, EditPen, Grid, List, Plus, Filter, MoreFilled } from '@element-plus/icons-vue'
-import { playback as transcoding } from '../../transcoding/playback'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { classification } from '../../classification/api/classification'
 import ClassificationEditor from '../../classification/components/ClassificationEditor.vue'
@@ -63,7 +62,6 @@ function toggleSelection(song: MediaSong, selected: boolean) {
     selectedIds.value = selectedIds.value.filter(id => id !== song.id)
   }
 }
-async function convertSelected() { try { await transcoding.offline(selectedIds.value, '1080p'); ElMessage.success('已加入兼容版本转换队列') } catch (failure) { ElMessage.error(failure instanceof Error ? failure.message : '提交失败') } }
 function classifySelected() { router.push({ path: '/library/classification', query: selectedIds.value.length ? { songIds: selectedIds.value.join(',') } : {} }) }
 function openScrape() { router.push({ path: '/library/songs/metadata', query: selectedIds.value.length ? { songIds: selectedIds.value.join(',') } : {} }) }
 
@@ -234,7 +232,6 @@ onBeforeUnmount(() => { active = false; generation++ })
           <ElButton :disabled="!selectedIds.length || refreshingEmbedded" @click="refreshEmbedded()">刷新内嵌元数据</ElButton>
           <ElButton :disabled="!selectedIds.length || refreshingEmbedded" @click="refreshEmbedded(true)">深度提取</ElButton>
           <ElButton :disabled="!selectedIds.length" @click="classifySelected">AI 分类</ElButton>
-          <ElButton :disabled="!selectedIds.length" @click="convertSelected">生成兼容版本</ElButton>
           <ElButton @click="exitSelectionMode">取消</ElButton>
         </div>
       </div>

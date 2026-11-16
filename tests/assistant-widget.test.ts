@@ -7,7 +7,10 @@ import AssistantWidget from '../src/admin/modules/ai-settings/components/Assista
 import { ai } from '../src/admin/modules/ai-settings/api/ai'
 import { updateAssistantSettings } from '../src/admin/modules/ai-settings/assistant-state'
 import type { Feature } from '../src/admin/modules/ai-settings/types'
+import { assistantApi } from '../src/admin/modules/assistant/api'
+import { resetAssistant } from '../src/admin/modules/assistant/state'
 vi.mock('../src/admin/modules/ai-settings/api/ai')
+vi.mock('../src/admin/modules/assistant/api')
 let wrapper: VueWrapper
 const feature: Feature = { id: 'assistant', enabled: false, modelServiceId: null, searchServiceId: null, intervalSeconds: 3, revision: 1, displayMode: 'PET', petId: 'music-sprite' }
 async function widget(value = feature) {
@@ -15,7 +18,7 @@ async function widget(value = feature) {
   wrapper = mount(AssistantWidget, { attachTo: document.body, global: { stubs: { RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } } })
   await flushPromises()
 }
-beforeEach(() => { updateAssistantSettings(null); vi.clearAllMocks() })
+beforeEach(() => { updateAssistantSettings(null); resetAssistant(); vi.clearAllMocks(); vi.mocked(assistantApi.status).mockResolvedValue({ready:false,message:'请配置助手模型',model:'',toolCount:67,settingsPage:'/system/ai/features/assistant'});vi.mocked(assistantApi.conversations).mockResolvedValue([]);vi.mocked(assistantApi.tools).mockResolvedValue([]) })
 afterEach(() => { wrapper?.unmount(); document.body.innerHTML = '' })
 it('默认关闭不显示入口，保存启用配置后即时出现宠物', async () => {
   await widget(); expect(wrapper.find('[aria-label="打开 AI 助手"]').exists()).toBe(false)
@@ -23,10 +26,11 @@ it('默认关闭不显示入口，保存启用配置后即时出现宠物', asyn
   expect(wrapper.find('.pet-launcher').exists()).toBe(true)
   expect(ai.test).not.toHaveBeenCalled()
 })
-it('宠物展开可通过 Escape 收起并恢复焦点，不伪造对话或工具能力', async () => {
+it('宠物展开真实对话组件，可通过 Escape 收起并恢复焦点', async () => {
   await widget({ ...feature, enabled: true })
   await wrapper.get('[aria-label="打开 AI 助手"]').trigger('click'); await flushPromises()
-  expect(wrapper.get('[role="dialog"]').text()).toContain('对话与工具能力尚未开放')
+  expect(wrapper.get('[role="dialog"]').text()).toContain('查询直接执行，写入由你确认')
+  expect(wrapper.get('[role="dialog"]').text()).toContain('请配置助手模型')
   expect(document.activeElement).toBe(wrapper.get('[aria-label="收起 AI 助手"]').element)
   expect(wrapper.find('a[href="/system/ai/features/assistant"]').exists()).toBe(true)
   await wrapper.get('[role="dialog"]').trigger('keydown', { key: 'Escape' }); await flushPromises()
@@ -78,7 +82,7 @@ it('所选内置形象即时切换，面板与入口一致，未知形象回退�
     updateAssistantSettings({ ...feature, enabled: true, petId: pet.id }); await flushPromises()
     expect(wrapper.get('.pet-launcher img').attributes('src')).toBe(pet.src)
     await wrapper.get('[aria-label="打开 AI 助手"]').trigger('click'); await flushPromises()
-    expect(wrapper.get('.assistant-welcome img').attributes('src')).toBe(pet.src)
+    expect(wrapper.get('.assistant-panel-icon img').attributes('src')).toBe(pet.src)
     expect(wrapper.get('.pet-launcher img').attributes('draggable')).toBe('false')
   }
   updateAssistantSettings({ ...feature, enabled: true, petId: 'unknown-pet' }); await flushPromises()

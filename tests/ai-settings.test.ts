@@ -6,7 +6,7 @@ import { ElMessageBox } from 'element-plus'
 import { assistantPets } from '../src/admin/modules/ai-settings/pets'
 import AiSettingsView from '../src/admin/modules/ai-settings/views/AiSettingsView.vue'
 import { ai } from '../src/admin/modules/ai-settings/api/ai'
-import type { AiService, Feature } from '../src/admin/modules/ai-settings/types'
+import type { AiService, Feature, ModelDiscoveryResult } from '../src/admin/modules/ai-settings/types'
 vi.mock('../src/admin/modules/ai-settings/api/ai')
 const model: AiService = { id: 'model-1', kind: 'MODEL', name: '分类模型', provider: 'custom', protocol: 'CHAT_COMPLETIONS', endpoint: 'https://example.test/chat/completions', model: 'fixture', outputMode: 'JSON_SCHEMA', enabled: true, hasKey: true, timeoutSeconds: 60, maxResults: 5, revision: 1 }
 const search: AiService = { ...model, id: 'search-1', kind: 'SEARCH', name: '搜索服务', provider: 'custom-search', protocol: 'CUSTOM-SEARCH', model: '' }
@@ -26,6 +26,7 @@ beforeEach(() => {
   vi.mocked(ai.save).mockResolvedValue(model)
   vi.mocked(ai.bind).mockImplementation(async f => ({ ...f, revision: f.revision + 1 }))
   vi.mocked(ai.test).mockResolvedValue({ success: true, message: '查询成功', elapsedMs: 15, results: [{ title: '测试结果', url: 'https://example.test/result', snippet: '返回摘要' }] })
+  vi.mocked(ai.discoverModels).mockResolvedValue({ items: [{ id: 'local-model', name: '本地模型' }], truncated: false })
 })
 afterEach(() => { wrapper?.unmount(); vi.clearAllMocks(); vi.restoreAllMocks(); document.body.innerHTML = '' })
 it('模型配置和分类任务分离，编辑密钥不回填，保存不会自动请求模型', async () => {
@@ -107,4 +108,85 @@ it('内置形象可从选择列表保存并重新进入读取', async () => {
   await router.push('/system/ai/features/assistant'); await flushPromises()
   expect((wrapper.get('input[value="alien-traveler"]').element as HTMLInputElement).checked).toBe(true)
   expect(ai.test).not.toHaveBeenCalled()
+})
+
+it('助手可绑定模型与可选搜索，保存配置不会请求上游',async()=>{
+ await page('features/assistant');const selects=wrapper.findAllComponents({name:'ElSelect'});selects[0]!.vm.$emit('update:modelValue','model-1');selects[1]!.vm.$emit('update:modelValue','search-1');await flushPromises();await button('保存助手配置').trigger('click');await flushPromises();expect(ai.bind).toHaveBeenCalledWith(expect.objectContaining({id:'assistant',modelServiceId:'model-1',searchServiceId:'search-1'}));expect(ai.test).not.toHaveBeenCalled()
+})
+it('模型设置提供无业务副作用的原生工具调用连接测试',async()=>{
+ await page();await button('测试服务').trigger('click');await flushPromises();const selects=wrapper.findAllComponents({name:'ElSelect'});selects.at(-1)!.vm.$emit('update:modelValue','tools');await flushPromises();await button('开始测试').trigger('click');await flushPromises();expect(ai.test).toHaveBeenCalledWith(model,'tools','')
+})
+
+it('未保存的基础地址和密钥可获取模型，单个结果自动选用而不保存或生成', async () => {
+  await page(); await button('添加模型服务').trigger('click'); await flushPromises()
+  await wrapper.get('input[aria-label="服务地址"]').setValue('http://10.0.0.16:8080/v1')
+  await wrapper.get('input[type="password"]').setValue('draft-key')
+  expect(wrapper.text()).toContain('http://10.0.0.16:8080/v1/chat/completions')
+  expect(ai.discoverModels).not.toHaveBeenCalled()
+  await button('获取模型列表').trigger('click'); await flushPromises()
+  expect(ai.discoverModels).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ endpoint: 'http://10.0.0.16:8080/v1', protocol: 'CHAT_COMPLETIONS', apiKey: 'draft-key' }))
+  expect(wrapper.find('.ai-model-picker').findComponent({ name: 'ElSelect' }).props('modelValue')).toBe('local-model')
+  expect(wrapper.text()).toContain('已获取 1 个模型')
+  expect(ai.save).not.toHaveBeenCalled(); expect(ai.test).not.toHaveBeenCalled()
+})
+
+it('编辑已有服务时使用服务标识和修订获取模型，密钥不回填', async () => {
+  await page(); await button('编辑').trigger('click'); await flushPromises()
+  await button('获取模型列表').trigger('click'); await flushPromises()
+  expect(ai.discoverModels).toHaveBeenCalledWith(expect.objectContaining({ serviceId: model.id, revision: model.revision, apiKey: '', endpoint: model.endpoint }))
+  expect((wrapper.get('input[type="password"]').element as HTMLInputElement).value).toBe('')
+  expect(wrapper.find('.ai-model-picker').findComponent({ name: 'ElSelect' }).props('modelValue')).toBe('fixture')
+})
+
+it('获取结果可搜索选择，同时保留未列出的自定义模型 ID', async () => {
+  vi.mocked(ai.discoverModels).mockResolvedValue({ items: [{ id: 'model-a', name: '模型 A' }, { id: 'model-b', name: '模型 B' }], truncated: false })
+  await page(); await button('编辑').trigger('click'); await flushPromises()
+  await button('获取模型列表').trigger('click'); await flushPromises()
+  const select = wrapper.find('.ai-model-picker').findComponent({ name: 'ElSelect' })
+  expect(select.props('filterable')).toBe(true); expect(select.props('allowCreate')).toBe(true)
+  select.vm.$emit('update:modelValue', 'model-b'); await flushPromises()
+  await button('保存服务').trigger('click'); await flushPromises()
+  expect(ai.save).toHaveBeenLastCalledWith('MODEL', expect.objectContaining({ model: 'model-b' }), model.id)
+  await button('编辑').trigger('click'); await flushPromises()
+  wrapper.find('.ai-model-picker').findComponent({ name: 'ElSelect' }).vm.$emit('update:modelValue', 'private-unlisted')
+  await flushPromises(); await button('保存服务').trigger('click'); await flushPromises()
+  expect(ai.save).toHaveBeenLastCalledWith('MODEL', expect.objectContaining({ model: 'private-unlisted' }), model.id)
+})
+
+it('地址或凭据改变后丢弃迟到的列表，避免旧服务覆盖当前选择', async () => {
+  let resolve!: (result: ModelDiscoveryResult) => void
+  vi.mocked(ai.discoverModels).mockReturnValueOnce(new Promise(done => { resolve = done }))
+  await page(); await button('编辑').trigger('click'); await flushPromises()
+  await button('获取模型列表').trigger('click'); await flushPromises()
+  await wrapper.get('input[aria-label="服务地址"]').setValue('https://other.test/v1')
+  await wrapper.get('input[type="password"]').setValue('new-key')
+  resolve({ items: [{ id: 'stale-model', name: '旧服务模型' }], truncated: false }); await flushPromises()
+  expect(wrapper.text()).not.toContain('已获取 1 个模型')
+  expect(wrapper.find('.ai-model-picker').findAllComponents({ name: 'ElOption' }).map((option: VueWrapper) => (option.props() as { value: string }).value)).not.toContain('stale-model')
+  expect(wrapper.find('.ai-model-picker').findComponent({ name: 'ElSelect' }).props('modelValue')).toBe('fixture')
+})
+
+it('列表不支持时明确提示并保留手填及保存功能', async () => {
+  vi.mocked(ai.discoverModels).mockRejectedValueOnce(new Error('服务未提供模型列表'))
+  await page(); await button('编辑').trigger('click'); await flushPromises()
+  await button('获取模型列表').trigger('click'); await flushPromises()
+  expect(wrapper.text()).toContain('服务未提供模型列表')
+  expect(wrapper.text()).toContain('也可手动输入模型 ID')
+  await button('保存服务').trigger('click'); await flushPromises()
+  expect(ai.save).toHaveBeenCalledWith('MODEL', expect.objectContaining({ model: 'fixture' }), model.id)
+})
+
+it('空列表不捏造候选，关闭编辑器后迟到结果不进入下一次编辑', async () => {
+  vi.mocked(ai.discoverModels).mockResolvedValueOnce({ items: [], truncated: false })
+  await page(); await button('编辑').trigger('click'); await flushPromises()
+  await button('获取模型列表').trigger('click'); await flushPromises()
+  expect(wrapper.text()).toContain('服务未返回可选模型')
+  let resolve!: (result: ModelDiscoveryResult) => void
+  vi.mocked(ai.discoverModels).mockReturnValueOnce(new Promise(done => { resolve = done }))
+  await button('获取模型列表').trigger('click'); await flushPromises()
+  await button('取消').trigger('click'); await flushPromises()
+  resolve({ items: [{ id: 'closed-model', name: '迟到模型' }], truncated: false }); await flushPromises()
+  await button('编辑').trigger('click'); await flushPromises()
+  expect(wrapper.text()).not.toContain('已获取 1 个模型')
+  expect(wrapper.find('.ai-model-picker').findAllComponents({ name: 'ElOption' }).map((option: VueWrapper) => (option.props() as { value: string }).value)).not.toContain('closed-model')
 })

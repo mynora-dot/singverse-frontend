@@ -237,7 +237,7 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
 
 <template>
   <section class="song-cache-page">
-    <PageHeader title="存储与缓存" description="查看缓存容量、固定常听歌曲，按需回收空间。WebDAV 原片按需读取，兼容缓存与原片共用容量；离线兼容版本仍在歌曲播放设置中管理。" />
+    <PageHeader title="存储与缓存" description="查看缓存容量、固定常听歌曲，按需回收空间。WebDAV 原片按需读取，兼容缓存与原片共用容量。" />
     <div v-if="error" role="alert" class="cache-feedback cache-error">{{ error }}<ElButton v-if="conflict" text :disabled="busy || loading" @click="reloadSettings">重新读取设置</ElButton></div>
     <p v-if="notice" role="status" class="cache-feedback cache-success">{{ notice }}</p>
     <template v-if="result">
@@ -303,7 +303,7 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
             </article>
           </div>
           <div class="cache-list-footer"><span v-if="result.totalElements">本页 {{ filteredEntries.length }} / {{ result.items.length }} 份<span v-if="keyword.trim() || typeFilter !== 'ALL'">（已筛选）</span></span><span v-else>共 0 份缓存</span><ElPagination v-if="result.totalElements" :current-page="page" :page-size="20" :total="result.totalElements" :disabled="busy || loading" layout="prev, pager, next" @current-change="value => { page = value; load() }" /></div>
-          <details class="cache-explanation"><summary>关于缓存与保护规则</summary><p>原片可部分缓存，整曲缓存支持跳转复用。不同画质、音轨、字幕或独立生成的片段可能有多份缓存。</p><p>固定对同曲现有及未来缓存生效，不强制下载。自动回收和批量清理会跳过固定、近 24 小时实际播放及使用中的副本。近期播放副本如需单独删除，必须明确确认覆盖保护。</p><p>清理只删除本地缓存，不修改原始歌曲。离线兼容版本仍在歌曲播放设置中管理。</p></details>
+          <details class="cache-explanation"><summary>关于缓存与保护规则</summary><p>原片可部分缓存，整曲缓存支持跳转复用。不同画质、音轨、字幕或独立生成的片段可能有多份缓存。</p><p>固定对同曲现有及未来缓存生效，不强制下载。自动回收和批量清理会跳过固定、近 24 小时实际播放及使用中的副本。近期播放副本如需单独删除，必须明确确认覆盖保护。</p><p>清理只删除本地缓存，不修改原始歌曲或已有离线兼容版本。</p></details>
         </section>
 
         <section v-show="activeView === 'pins'" id="cache-pins-panel" class="cache-pins" role="tabpanel" aria-labelledby="cache-pins-tab" aria-label="固定的歌曲缓存" :aria-busy="pinsLoading">

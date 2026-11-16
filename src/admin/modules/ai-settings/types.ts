@@ -10,3 +10,9 @@ export interface ServiceInput {
 }
 export interface Feature { id: string; modelServiceId: string | null; searchServiceId: string | null; enabled: boolean; intervalSeconds: number; revision: number; displayMode?: 'PET' | 'CHAT'; petId?: string }
 export interface TestResult { success: boolean; message: string; elapsedMs: number; results: { title: string; url: string; snippet: string }[] }
+export interface ModelOption { id: string; name: string }
+export interface ModelDiscoveryInput {
+  serviceId?: string; revision?: number; provider: string; protocol: string; endpoint: string
+  apiKey: string; clearKey: boolean; timeoutSeconds: number
+}
+export interface ModelDiscoveryResult { items: ModelOption[]; truncated: boolean }

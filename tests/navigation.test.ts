@@ -8,7 +8,12 @@ import { navigationGroups, navigationContext } from '../src/admin/app/navigation
 async function settleLayout() { await vi.dynamicImportSettled(); await flushPromises() }
 beforeEach(() => {
   vi.stubGlobal('scrollTo', vi.fn())
-  vi.stubGlobal('fetch', vi.fn().mockImplementation((path: string) => Promise.resolve(path.includes('/background-tasks/batch-1') ? Response.json({detail:'任务不存在'}, {status:404}) : Response.json((path.includes('/ai/') || path.endsWith('/classification/tags')) ? [] : path.includes('/auth/session') ? { username: 'admin', defaultPassword: true, mfaEnabled: false, recoveryCodesRemaining: 0 } : { status: 'UP', items: [], totalElements: 0 }))))
+  vi.stubGlobal('fetch', vi.fn().mockImplementation((path: string) => {
+    if (path.endsWith('/metadata/settings')) return Promise.resolve(Response.json({ enabled: true, providers: ['NETEASE', 'QQ', 'KUGOU', 'KUWO', 'QISHUI'], autoApply: false, threshold: .8, minIntervalSeconds: 1, maxIntervalSeconds: 2 }))
+    if (path.endsWith('/metadata/batches/latest')) return Promise.resolve(new Response(null, { status: 204 }))
+    if (path.includes('/playback-history/summary')) return Promise.resolve(Response.json({ totalPlays: 0, effectivePlays: 0, playedSongs: 0, playedMs: 0 }))
+    return Promise.resolve(path.includes('/background-tasks/batch-1') ? Response.json({detail:'任务不存在'}, {status:404}) : Response.json((path.includes('/ai/') || path.endsWith('/classification/tags')) ? [] : path.includes('/auth/session') ? { username: 'admin', defaultPassword: true, mfaEnabled: false, recoveryCodesRemaining: 0 } : { status: 'UP', items: [], totalElements: 0 }))
+  }))
 })
 afterEach(() => vi.unstubAllGlobals())
 it('键盘跳转主要内容不会破坏 hash 路由', async () => {
@@ -39,12 +44,33 @@ it('窄屏全部导航切页后关闭，Escape 恢复焦点并限制键盘范围
 it('精简主导航与当前分区提供全部现有管理功能', async () => {
   await router.push('/library/songs'); const wrapper = mount(App, { global: { plugins: [router] } }); await settleLayout()
   expect(wrapper.findAll('.primary-navigation a').map(a => a.text())).toEqual(['首页','曲库','加歌','整理','客厅'])
-  expect(wrapper.findAll('.section-navigation a').map(a => a.text())).toEqual(['歌曲','歌手','歌单','收藏','分类标签'])
-  const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/favorites','/library/classification','/library/media','/library/downloads','/library/media/recognition','/library/songs/metadata','/library/audio-processing','/system/tv-settings','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai','/system']
+  expect(wrapper.findAll('.section-navigation a').map(a => a.text())).toEqual(['歌曲','歌手','歌单','收藏'])
+  const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/favorites','/library/classification','/library/media','/library/downloads','/library/songs/metadata','/library/audio-processing','/system/tv-settings','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai','/system']
   expect(navigationGroups.flatMap(g => g.children.map(e => e.path)).sort()).toEqual(expected.sort())
   await wrapper.get('.mobile-nav-toggle').trigger('click')
-  expect(wrapper.get('#admin-navigation').text()).toContain('账号与安全'); expect(wrapper.get('#admin-navigation').text()).toContain('分类标签')
+  const entries = (group: string) => wrapper.findAll(`[aria-labelledby="nav-group-${group}"] a`).map(a => a.text())
+  expect(entries('add')).toEqual(['歌曲来源','下载歌曲','缺歌心愿'])
+  expect(entries('tidy')).toEqual(['歌曲信息','歌曲分类','原唱与伴奏'])
+  expect(entries('living')).toEqual(['播放与热门','电视首页','客户端下载'])
+  expect(entries('settings')).toEqual(['音乐平台','存储与缓存','计算服务','AI 与助手','账号与安全','服务状态'])
+  expect(wrapper.findAll('#admin-navigation a').some(a => a.text() === '文件名识别')).toBe(false)
   wrapper.unmount()
+})
+it('客厅与设置入口打开分区第一项，账号与安全仍在设置中直接可达', async () => {
+  await router.push('/library/songs')
+  const wrapper = mount(App, { global: { plugins: [router] } })
+  try {
+    await settleLayout()
+    await wrapper.findAll('.primary-navigation a').find(a => a.text() === '客厅')!.trigger('click'); await settleLayout()
+    expect(router.currentRoute.value.path).toBe('/library/playback-history')
+    expect(wrapper.get('.section-navigation a').attributes('aria-current')).toBe('page')
+    await wrapper.get('.settings-link').trigger('click'); await settleLayout()
+    expect(router.currentRoute.value.path).toBe('/system/music-platforms')
+    expect(wrapper.get('.section-navigation a').attributes('aria-current')).toBe('page')
+    await wrapper.findAll('.section-navigation a').find(a => a.text() === '账号与安全')!.trigger('click'); await settleLayout()
+    expect(router.currentRoute.value.path).toBe('/system/parameters')
+    expect(wrapper.get('.section-navigation [aria-current="page"]').text()).toBe('账号与安全')
+  } finally { wrapper.unmount() }
 })
 it('设置子路由与任务批次深链接高亮所属入口', async () => {
   await router.push('/system/ai/features'); const wrapper = mount(App, { global: { plugins: [router] } }); await settleLayout()
@@ -60,12 +86,15 @@ it('旧方案和规则链接归入歌曲来源并保留指定方案、查询与�
   expect(router.currentRoute.value.path).toBe('/library/media/recognition')
   expect(router.currentRoute.value.query).toEqual({ profile: 'chosen', source: 'existing' })
   expect(router.currentRoute.value.hash).toBe('#preview')
-  expect(router.currentRoute.value.meta.activeMenu).toBe('/library/media/recognition')
+  expect(router.currentRoute.value.meta.activeMenu).toBe('/library/media')
   await router.push('/library/filename-parser?profile=chosen')
   expect(router.currentRoute.value.path).toBe('/library/media/recognition/rules')
   expect(router.currentRoute.value.query.profile).toBe('chosen')
-  expect(navigationContext(router.currentRoute.value.path).entry?.label).toBe('文件名识别')
-  expect(navigationContext('/library/filename-parser-profiles').entry?.label).toBe('文件名识别')
+  expect(router.currentRoute.value.meta.activeMenu).toBe('/library/media')
+  for (const path of [router.currentRoute.value.path, '/library/media/recognition', '/library/filename-parser', '/library/filename-parser-profiles']) {
+    expect(navigationContext(path).entry?.label).toBe('歌曲来源')
+    expect(navigationContext(path).group?.label).toBe('加歌')
+  }
 })
 
 it('音乐平台在设置中直接可达并高亮，显示真实五平台配置', async () => {
@@ -85,18 +114,18 @@ it('音乐平台在设置中直接可达并高亮，显示真实五平台配置'
   wrapper.unmount()
 })
 
-it('顶栏全局搜索跳转到歌曲工作区并携带搜索词与透镜', async () => {
-  await router.push('/overview')
+it('其他页面顶栏全局搜索跳转到歌曲工作区并携带搜索词与透镜', async () => {
+  await router.push('/library/songs')
   const wrapper = mount(App, { global: { plugins: [router] } }); await settleLayout()
-  await wrapper.get('.search-input').setValue('周杰伦')
+  await wrapper.get('.masthead-search .search-input').setValue('周杰伦')
   await wrapper.get('.masthead-search').trigger('submit'); await flushPromises()
   expect(router.currentRoute.value.path).toBe('/library/songs')
   expect(router.currentRoute.value.query).toEqual({ lens: 'songs', search: '周杰伦' })
   wrapper.unmount()
 })
 
-it('电视授权页和入口已移除，客厅入口直接进入电视首页设置', async () => {
-  expect(navigationGroups.find(group => group.id === 'living')?.path).toBe('/system/tv-settings')
+it('电视授权页和入口已移除，客厅入口直接进入播放与热门', async () => {
+  expect(navigationGroups.find(group => group.id === 'living')?.path).toBe('/library/playback-history')
   expect(router.getRoutes().some(route => route.path === '/system/tv-devices')).toBe(false)
   await router.push('/system/tv-devices')
   const wrapper = mount(App, { global: { plugins: [router] } })
@@ -105,5 +134,20 @@ it('电视授权页和入口已移除，客厅入口直接进入电视首页设�
     expect(wrapper.text()).toContain('页面不存在')
     expect(wrapper.findAll('a').some(link => link.attributes('href')?.includes('/system/tv-devices'))).toBe(false)
     expect(vi.mocked(fetch).mock.calls.some(([path]) => String(path).includes('/device-authorizations') || String(path).includes('/tv-devices'))).toBe(false)
+  } finally { wrapper.unmount() }
+})
+
+
+it('唱片室首页使用主区搜索，离开首页后恢复全局搜索与默认布局', async () => {
+  await router.push('/overview')
+  const wrapper = mount(App, { global: { plugins: [router] } })
+  try {
+    await settleLayout()
+    expect(wrapper.find('.record-room-shell').exists()).toBe(true)
+    expect(wrapper.find('.masthead-search').exists()).toBe(false)
+    expect(wrapper.find('.home-search').exists()).toBe(true)
+    await router.push('/library/songs'); await settleLayout()
+    expect(wrapper.find('.record-room-shell').exists()).toBe(false)
+    expect(wrapper.find('.masthead-search').exists()).toBe(true)
   } finally { wrapper.unmount() }
 })

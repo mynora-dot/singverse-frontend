@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, reactive, ref, computed, watch, defineAsyncComponent, nextTick } from 'vue'
 import { ElLoading, ElAlert, ElButton, ElDialog, ElDropdown, ElDropdownItem, ElDropdownMenu, ElEmpty, ElForm, ElFormItem, ElInput, ElMessage, ElMessageBox, ElCheckbox } from 'element-plus'
-import { MoreFilled, Plus, RefreshRight, Upload } from '@element-plus/icons-vue'
+import { MagicStick, MoreFilled, Plus, RefreshRight, Upload } from '@element-plus/icons-vue'
 import { parserProfiles } from '../../filename-parser/api/rules'
 import type { ParserWorkspace } from '../../filename-parser/types'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
@@ -365,7 +365,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
           <ElButton type="primary" :icon="Plus" @click="open('LOCAL')">添加来源</ElButton>
           <ElDropdown trigger="click" placement="bottom-end" :teleported="true" :show-arrow="false" popper-class="source-actions-dropdown">
             <ElButton class="media-more-button" text :icon="MoreFilled" aria-label="歌曲来源的更多操作" title="更多操作" />
-            <template #dropdown><ElDropdownMenu><ElDropdownItem :icon="RefreshRight" :disabled="loading" @click="load()">刷新</ElDropdownItem><ElDropdownItem :icon="Upload" @click="open('WEBDAV', undefined, true)">导入资料包</ElDropdownItem></ElDropdownMenu></template>
+            <template #dropdown><ElDropdownMenu><ElDropdownItem :icon="RefreshRight" :disabled="loading" @click="load()">刷新</ElDropdownItem><ElDropdownItem :icon="Upload" @click="open('WEBDAV', undefined, true)">导入资料包</ElDropdownItem><ElDropdownItem :icon="MagicStick" @click="router.push('/library/media/recognition')">文件名识别</ElDropdownItem></ElDropdownMenu></template>
           </ElDropdown>
         </div>
       </template>

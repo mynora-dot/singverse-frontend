@@ -1,5 +1,6 @@
 import type { Backend, Model, Node, SeparationProfile } from '../audio-processing/api'
 import { backendName, backendStates } from '../audio-processing/presentation'
+import { isRelevantBackend } from '../audio-processing/node-hardware'
 
 export const audioPlans: { id: SeparationProfile; label: string }[] = [
   { id: 'DSP_FAST', label: '极速消音' },
@@ -10,7 +11,7 @@ export const modelCatalog = (node: Node): Model[] => node.models || [node.model]
 export const modelForBackend = (node: Node, id?: string | null) => modelCatalog(node).find(model => model.id === (id === 'openvino' ? 'htdemucs-openvino' : id === 'rknn' ? 'uvr-mdxnet-9482-rknn' : 'htdemucs'))
 export function planBackends(node: Node, profile: SeparationProfile): Backend[] {
   const entries = profile === 'AI_CLEAN' ? node.separation?.backends || [] : node.backends
-  return entries.filter(item => item.id === 'cpu' || item.detected || item.device || ['AVAILABLE', 'TESTING', 'FAILED'].includes(item.state))
+  return entries.filter(isRelevantBackend)
 }
 export const canVerify = (backend: Backend) => ['AVAILABLE', 'UNVERIFIED', 'FAILED'].includes(backend.state)
 export const backendStatus = (backend?: Backend) => backend ? backendStates[backend.state] || backend.state : '尚未确认'

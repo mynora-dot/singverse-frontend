@@ -25,14 +25,15 @@ export const videoChoices = [
   { value: 'videotoolbox', label: 'Mac（VideoToolbox）' },
   { value: 'nvenc', label: 'NVIDIA（NVENC）' },
   { value: 'qsv', label: 'Intel（Quick Sync / QSV）' },
-  { value: 'vaapi', label: 'Intel / AMD（Linux VA-API）' },
+  { value: 'vaapi', label: 'VA-API（Linux）' },
   { value: 'amf', label: 'AMD（Windows AMF）' },
   { value: 'rkmpp', label: 'Rockchip（RKMPP）' },
 ]
 export const videoBackendName = (value: string) => videoChoices.find(choice => choice.value === value)?.label ?? value
-export const hardwareFamilies = [
-  { name: 'Mac', video: 'VideoToolbox', audio: 'MPS、Core ML、MLX', ids: ['videotoolbox', 'mps', 'coreml', 'mlx'] },
-  { name: 'NVIDIA', video: 'NVENC', audio: 'CUDA、TensorRT', ids: ['nvenc', 'cuda', 'tensorrt'] },
-  { name: 'Intel', video: 'Quick Sync / VA-API', audio: 'OpenVINO', ids: ['qsv', 'vaapi', 'openvino'] },
-  { name: 'AMD', video: 'VA-API / AMF', audio: 'ROCm、MIGraphX、DirectML', ids: ['vaapi', 'amf', 'rocm', 'migraphx', 'directml'] },
-]
+
+export function currentVideoBackend(settings: HardwareSettingsValue) {
+  const { effectiveBackend: backend, detectedBackends: detected } = settings
+  if (backend === 'auto' && detected?.length === 0) return settings.cpuFallback !== false ? 'CPU 软件处理' : '暂无可用加速设备'
+  if (!['auto', 'software'].includes(backend) && detected && !detected.includes(backend)) return '所配置的加速设备未检测到'
+  return videoBackendName(backend)
+}

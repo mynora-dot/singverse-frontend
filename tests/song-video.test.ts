@@ -4,24 +4,27 @@ import { expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { mockMediaElements } from './media-element-mocks'
 import { playback } from '../src/admin/modules/transcoding/playback'
 import { adminActivity } from '../src/admin/modules/transcoding/activity'
-const hlsAdapter = vi.hoisted(() => ({ supported: vi.fn(), load: vi.fn(), attach: vi.fn(), destroy: vi.fn(), on: vi.fn() }))
+const hlsAdapter = vi.hoisted(() => ({ supported: vi.fn(), load: vi.fn(), attach: vi.fn(), destroy: vi.fn(), on: vi.fn(), select: vi.fn(), audioTrack: -1, tracks: [] as { url: string }[] }))
 vi.mock('hls.js', () => ({ default: class {
-  static Events = { ERROR: 'error' }
+  static Events = { ERROR: 'error', AUDIO_TRACKS_UPDATED: 'audioTracksUpdated' }
   static isSupported = hlsAdapter.supported
   loadSource = hlsAdapter.load
   attachMedia = hlsAdapter.attach
   destroy = hlsAdapter.destroy
   on = hlsAdapter.on
+  get audioTracks() { return hlsAdapter.tracks }
+  get audioTrack() { return hlsAdapter.audioTrack }
+  set audioTrack(value: number) { hlsAdapter.audioTrack = value; hlsAdapter.select(value) }
 } }))
 vi.mock('../src/admin/modules/transcoding/playback')
 beforeEach(() => {
   vi.resetAllMocks()
   hlsAdapter.supported.mockReturnValue(true)
+  hlsAdapter.audioTrack = -1; hlsAdapter.tracks = []
   mockMediaElements()
   vi.spyOn(adminActivity, 'create').mockResolvedValue({ attemptId: 'admin-attempt', writeToken: 'test-write-token', eventSeq: -1, leaseSeconds: 120, startedAt: Date.now(), serverTime: Date.now() })
   vi.spyOn(adminActivity, 'event').mockResolvedValue(undefined)
   vi.mocked(playback.start).mockImplementation(async id => ({ mode: 'DIRECT', status: 'READY', url: `/api/v1/media-songs/${id}/video`, offset: 0 }))
-  vi.mocked(playback.tasks).mockResolvedValue([])
   vi.mocked(playback.roles).mockResolvedValue({ state: 'UNKNOWN', jobs: [] })
   vi.mocked(playback.cancel).mockResolvedValue(undefined)
 })
@@ -85,16 +88,16 @@ it('切换歌曲时丢弃迟到的准备结果并取消旧执行', async () => {
   } finally { wrapper.unmount(); document.body.innerHTML = '' }
 })
 
-it('转换失败展示真实错误，生成兼容版本只提交当前歌曲', async () => {
+it('转换失败展示真实错误，并可通过兼容编码重新加载', async () => {
   vi.mocked(playback.start).mockRejectedValueOnce(new Error('计算节点不可用'))
-  vi.mocked(playback.offline).mockResolvedValue(['offline-task'])
-  const song = { id: 'offline-song', sourceName: '来源', relativePath: 'song.mkv', result: { title: '歌曲', artists: [] } } as unknown as MediaSong
+  const song = { id: 'failed-song', sourceName: '来源', relativePath: 'song.mkv', result: { title: '歌曲', artists: [] } } as unknown as MediaSong
   const wrapper = mount(SongVideoDialog, { props: { song }, global: { stubs: { teleport: true } } })
   try {
     await flushPromises(); expect(wrapper.text()).toContain('计算节点不可用')
-    await wrapper.get('.settings-button').trigger('click')
-    await wrapper.findAll('button').find(button => button.text() === '生成兼容版本')!.trigger('click')
-    await flushPromises(); expect(playback.offline).toHaveBeenCalledWith(['offline-song'], 'auto')
+    await wrapper.findAll('button').find(button => button.text() === '重新加载')!.trigger('click')
+    await flushPromises()
+    expect(playback.start).toHaveBeenLastCalledWith(song.id, expect.objectContaining({ force: true, codec: 'h264' }))
+    expect(wrapper.get('video').attributes('src')).toBe('/api/v1/media-songs/failed-song/video')
   } finally { wrapper.unmount(); document.body.innerHTML = '' }
 })
 
@@ -217,6 +220,87 @@ it('原唱伴奏按共享角色选择，切换保留位置、播放状态和音�
   } finally { wrapper.unmount() }
 })
 
+const dualTrackResource = {
+  id: 'dual-track', mode: 'HLS', status: 'READY', url: '/api/v1/dual/master.m3u8', offset: 0,
+  audioRoles: { ...confirmed, originalId: 'stream:7', backingId: 'stream:11' },
+  execution: { trackMapping: [
+    { sourceId: 'stream:0', outputIndex: 0, kind: 'video' },
+    { sourceId: 'stream:11', outputIndex: 1, kind: 'audio' },
+    { sourceId: 'stream:7', outputIndex: 2, kind: 'audio' },
+  ] },
+}
+
+it('HLS 按源音轨映射切换，同一个视频和会话保留画面、位置与播放状态', async () => {
+  vi.mocked(playback.start).mockResolvedValue(dualTrackResource)
+  const wrapper = mount(SongVideoDialog, { props: { song: videoSong }, global: { stubs: { teleport: true } } })
+  try {
+    await flushPromises()
+    // HLS rendition order can differ from the original source and role order.
+    expect(playback.start).toHaveBeenCalledWith(videoSong.id, expect.objectContaining({ audioRole: 'original', switchableAudio: true }))
+    hlsAdapter.tracks = [{ url: '/api/v1/dual/stream_audio1.m3u8' }, { url: '/api/v1/dual/stream_audio0.m3u8' }]
+    const tracksUpdated = hlsAdapter.on.mock.calls.find(([event]) => event === 'audioTracksUpdated')![1] as () => void
+    tracksUpdated()
+    expect(hlsAdapter.select).toHaveBeenLastCalledWith(0)
+    const video = wrapper.get('video').element
+    video.currentTime = 48; await wrapper.get('video').trigger('timeupdate')
+    await wrapper.get('.main-play').trigger('click'); await flushPromises()
+    await wrapper.get('[aria-label="音量"]').setValue('35')
+    for (const index of [1, 0, 1, 0]) {
+      await wrapper.findAll('.role-picker button')[index]!.trigger('click'); await flushPromises()
+      expect(hlsAdapter.select).toHaveBeenLastCalledWith(index)
+      expect(wrapper.get('video').element).toBe(video)
+      expect(video.currentTime).toBe(48); expect(video.paused).toBe(false)
+      expect(video.volume).toBe(.35)
+    }
+    expect(playback.start).toHaveBeenCalledOnce()
+    expect(playback.cancel).not.toHaveBeenCalled()
+    expect(hlsAdapter.destroy).not.toHaveBeenCalled()
+    await wrapper.get('.main-play').trigger('click'); await flushPromises()
+    await wrapper.findAll('.role-picker button')[1]!.trigger('click'); await flushPromises()
+    expect(video.paused).toBe(true)
+  } finally { wrapper.unmount() }
+})
+
+it('原生 HLS 使用对应音轨标签切换，首次元数据就选择确认的原唱', async () => {
+  hlsAdapter.supported.mockReturnValue(false)
+  vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('probably')
+  vi.mocked(playback.start).mockResolvedValue(dualTrackResource)
+  const wrapper = mount(SongVideoDialog, { props: { song: videoSong }, global: { stubs: { teleport: true } } })
+  try {
+    await flushPromises()
+    const video = wrapper.get('video').element
+    const nativeTracks = [{ label: 'audio_2', enabled: false }, { label: 'audio_1', enabled: true }]
+    Object.defineProperty(video, 'audioTracks', { configurable: true, value: nativeTracks })
+    await wrapper.get('video').trigger('loadedmetadata'); await flushPromises()
+    expect(nativeTracks.map(track => track.enabled)).toEqual([true, false])
+    await wrapper.findAll('.role-picker button')[1]!.trigger('click'); await flushPromises()
+    expect(nativeTracks.map(track => track.enabled)).toEqual([false, true])
+    expect(wrapper.get('video').element).toBe(video)
+    expect(playback.start).toHaveBeenCalledOnce()
+  } finally { wrapper.unmount() }
+})
+
+it('浏览器无法选择 HLS 音轨时回退为服务器单轨选择，不重复申请无法切换的多轨资源', async () => {
+  hlsAdapter.supported.mockReturnValue(false)
+  vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('probably')
+  vi.mocked(playback.start).mockResolvedValueOnce(dualTrackResource).mockResolvedValueOnce({
+    ...dualTrackResource, id: 'selected-backing', url: '/api/v1/selected-backing.m3u8',
+    execution: { trackMapping: [{ sourceId: 'stream:11', kind: 'audio', outputIndex: 1 }] },
+  })
+  const wrapper = mount(SongVideoDialog, { props: { song: videoSong }, global: { stubs: { teleport: true } } })
+  try {
+    await flushPromises()
+    wrapper.get('video').element.currentTime = 12; await wrapper.get('video').trigger('timeupdate')
+    await wrapper.get('.main-play').trigger('click'); await flushPromises()
+    await wrapper.findAll('.role-picker button')[1]!.trigger('click'); await flushPromises()
+    expect(playback.start).toHaveBeenLastCalledWith(videoSong.id, expect.objectContaining({ audioRole: 'backing', start: 12, switchableAudio: false }))
+    expect(wrapper.get('video').attributes('src')).toBe('/api/v1/selected-backing.m3u8')
+    await wrapper.get('video').trigger('loadedmetadata'); await flushPromises()
+    expect(wrapper.get('video').element.currentTime).toBe(12)
+    expect(wrapper.get('video').element.paused).toBe(false)
+  } finally { wrapper.unmount() }
+})
+
 it('未确认的音轨不能切换伴奏，设置默认收起且不展示元数据和路径', async () => {
   vi.mocked(playback.roles).mockResolvedValue({ ...confirmed, state: 'NEEDS_REVIEW' })
   const wrapper = mount(SongVideoDialog, { props: { song: videoSong }, global: { stubs: { teleport: true } } })
@@ -259,20 +343,119 @@ it('多轨原唱不能使用浏览器默认音轨冒充，选择原始编码回�
   } finally { wrapper.unmount() }
 })
 
-it('音频的独立伴奏使用授权地址，切回原唱恢复原媒体', async () => {
+it('音频的独立伴奏提前加载，切换不更换原媒体或重新申请播放', async () => {
   vi.mocked(playback.roles).mockResolvedValue({ state: 'CONFIRMED', originalId: 'stream:0', backingResource: { jobId: 'generated' }, jobs: [] })
   const wrapper = mount(SongVideoDialog, { props: { song: { ...videoSong, relativePath: 'song.flac' } }, global: { stubs: { teleport: true } } })
   try {
     await flushPromises()
-    wrapper.get('audio').element.currentTime = 20; await wrapper.get('audio').trigger('timeupdate')
+    const original = wrapper.get('.song-audio').element as HTMLAudioElement
+    const backing = wrapper.get('.backing-audio').element as HTMLAudioElement
+    Object.defineProperty(backing, 'readyState', { value: 4, configurable: true })
+    expect(backing.getAttribute('src')).toBe('/api/v1/media-songs/roles-song/accompaniment/generated')
+    expect(backing.muted).toBe(true)
+    original.currentTime = 20; await wrapper.get('.song-audio').trigger('timeupdate')
+    await wrapper.get('.main-play').trigger('click'); await flushPromises()
+    expect(backing.paused).toBe(false)
     await wrapper.findAll('.role-picker button')[1]!.trigger('click'); await flushPromises()
-    expect(wrapper.get('audio').attributes('src')).toBe('/api/v1/media-songs/roles-song/accompaniment/generated')
-    expect(wrapper.findAll('audio')).toHaveLength(1)
-    await wrapper.get('audio').trigger('loadedmetadata')
-    expect(wrapper.get('audio').element.currentTime).toBe(20)
+    expect(wrapper.get('.song-audio').element).toBe(original)
+    expect(original.muted).toBe(true); expect(backing.muted).toBe(false)
+    expect(backing.currentTime).toBe(20)
     await wrapper.findAll('.role-picker button')[0]!.trigger('click'); await flushPromises()
-    expect(wrapper.get('audio').attributes('src')).toBe('/api/v1/media-songs/roles-song/video')
-    expect(wrapper.get('audio').element.muted).toBe(false)
+    expect(wrapper.get('.song-audio').element).toBe(original)
+    expect(original.getAttribute('src')).toBe('/api/v1/media-songs/roles-song/video')
+    expect(original.paused).toBe(false); expect(original.muted).toBe(false)
+    expect(backing.paused).toBe(false); expect(backing.muted).toBe(true)
+    expect(playback.start).toHaveBeenCalledOnce()
+    expect(playback.cancel).not.toHaveBeenCalled()
+  } finally { wrapper.unmount() }
+})
+
+const generatedRoles = { state: 'CONFIRMED', originalId: 'stream:0', backingResource: { jobId: 'generated' }, jobs: [] }
+
+it('未选中的伴奏缓冲或预载失败不会打断原唱，伴奏出错也保留画面并恢复原唱', async () => {
+  vi.mocked(playback.roles).mockResolvedValue(generatedRoles)
+  const wrapper = mount(SongVideoDialog, { props: { song: videoSong }, global: { stubs: { teleport: true } } })
+  try {
+    await flushPromises()
+    const video = wrapper.get('video').element, backing = wrapper.get('.backing-audio').element as HTMLAudioElement
+    Object.defineProperty(backing, 'readyState', { configurable: true, value: 4 })
+    await wrapper.get('.main-play').trigger('click'); await flushPromises()
+    await wrapper.get('.backing-audio').trigger('waiting'); await flushPromises()
+    expect(video.paused).toBe(false)
+    mediaError(backing, 2); await flushPromises()
+    expect(video.paused).toBe(false); expect(video.muted).toBe(false)
+    expect(wrapper.find('.player-error').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('已恢复原唱')
+    await wrapper.findAll('.role-picker button')[1]!.trigger('click'); await flushPromises()
+    expect(video.muted).toBe(true)
+    mediaError(backing, 3); await flushPromises()
+    expect(wrapper.get('video').element).toBe(video)
+    expect(video.paused).toBe(false); expect(video.muted).toBe(false)
+    expect(backing.muted).toBe(true)
+    expect(wrapper.text()).toContain('已恢复原唱')
+    expect(playback.start).toHaveBeenCalledOnce()
+  } finally { wrapper.unmount() }
+})
+
+it('伴奏缓冲时切回原唱会继续播放，用户暂停后迟到的就绪事件不会自动续播', async () => {
+  vi.mocked(playback.roles).mockResolvedValue(generatedRoles)
+  const wrapper = mount(SongVideoDialog, { props: { song: videoSong }, global: { stubs: { teleport: true } } })
+  try {
+    await flushPromises()
+    const video = wrapper.get('video').element, backing = wrapper.get('.backing-audio').element as HTMLAudioElement
+    Object.defineProperty(backing, 'readyState', { configurable: true, value: 4 })
+    await wrapper.get('.main-play').trigger('click'); await flushPromises()
+    await wrapper.findAll('.role-picker button')[1]!.trigger('click'); await flushPromises()
+    await wrapper.get('.backing-audio').trigger('waiting'); await flushPromises()
+    expect(video.paused).toBe(true)
+    await wrapper.findAll('.role-picker button')[0]!.trigger('click'); await flushPromises()
+    expect(video.paused).toBe(false); expect(video.muted).toBe(false)
+    await wrapper.findAll('.role-picker button')[1]!.trigger('click'); await flushPromises()
+    await wrapper.get('.backing-audio').trigger('waiting'); await flushPromises()
+    await wrapper.get('.main-play').trigger('click'); await flushPromises()
+    await wrapper.get('.backing-audio').trigger('canplay'); await flushPromises()
+    expect(video.paused).toBe(true); expect(backing.paused).toBe(true)
+    await wrapper.findAll('.role-picker button')[0]!.trigger('click'); await flushPromises()
+    expect(video.paused).toBe(true)
+  } finally { wrapper.unmount() }
+})
+
+it('伴奏只有元数据时不提前续播，缓冲可播放后再恢复原来的播放状态', async () => {
+  vi.mocked(playback.roles).mockResolvedValue(generatedRoles)
+  const wrapper = mount(SongVideoDialog, { props: { song: videoSong }, global: { stubs: { teleport: true } } })
+  try {
+    await flushPromises()
+    const video = wrapper.get('video').element, backing = wrapper.get('.backing-audio').element as HTMLAudioElement
+    let ready = 0
+    Object.defineProperty(backing, 'readyState', { configurable: true, get: () => ready })
+    await wrapper.get('.main-play').trigger('click'); await flushPromises()
+    await wrapper.findAll('.role-picker button')[1]!.trigger('click'); await flushPromises()
+    expect(video.paused).toBe(true)
+    ready = 1; await wrapper.get('.backing-audio').trigger('loadedmetadata'); await flushPromises()
+    expect(video.paused).toBe(true)
+    ready = 4; await wrapper.get('.backing-audio').trigger('canplay'); await flushPromises()
+    expect(video.paused).toBe(false); expect(backing.paused).toBe(false)
+    await wrapper.get('[aria-label="播放编码"]').setValue('compatible'); await flushPromises()
+    expect(playback.start).toHaveBeenLastCalledWith(videoSong.id, expect.objectContaining({ audioRole: 'original', force: true }))
+    await wrapper.get('video').trigger('loadedmetadata'); await flushPromises()
+    expect(wrapper.get('video').element.muted).toBe(true)
+  } finally { wrapper.unmount() }
+})
+
+it('切歌与关闭停止预播伴奏，旧伴奏的迟到事件不会影响新歌曲', async () => {
+  vi.mocked(playback.roles).mockResolvedValueOnce(generatedRoles)
+  const wrapper = mount(SongVideoDialog, { props: { song: videoSong }, global: { stubs: { teleport: true } } })
+  try {
+    await flushPromises()
+    const backing = wrapper.get('.backing-audio').element as HTMLAudioElement
+    await wrapper.get('.main-play').trigger('click'); await flushPromises()
+    expect(backing.paused).toBe(false)
+    await wrapper.setProps({ song: { ...videoSong, id: 'next' } }); await flushPromises()
+    expect(backing.paused).toBe(true); expect(backing.getAttribute('src')).toBeNull()
+    mediaError(backing, 3); backing.dispatchEvent(new Event('canplay')); await flushPromises()
+    expect(wrapper.find('.player-error').exists()).toBe(false)
+    expect(wrapper.get('video').attributes('src')).toBe('/api/v1/media-songs/next/video')
+    expect(wrapper.get('video').element.paused).toBe(true)
   } finally { wrapper.unmount() }
 })
 

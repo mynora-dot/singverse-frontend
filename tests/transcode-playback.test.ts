@@ -8,7 +8,7 @@ import { mockMediaElements } from './media-element-mocks'
 
 const adapter = vi.hoisted(() => ({ supported: vi.fn(), load: vi.fn(), attach: vi.fn(), destroy: vi.fn(), on: vi.fn() }))
 vi.mock('hls.js', () => ({ default: class {
-  static Events = { ERROR: 'error' }
+  static Events = { ERROR: 'error', AUDIO_TRACKS_UPDATED: 'audioTracksUpdated' }
   static isSupported = adapter.supported
   loadSource = adapter.load
   attachMedia = adapter.attach
@@ -22,7 +22,6 @@ beforeEach(() => {
   adapter.supported.mockReturnValue(true)
   mockMediaElements()
   vi.mocked(playback.start).mockResolvedValue({ id: 'execution', mode: 'HLS', status: 'READY', url: '/api/v1/transcoding/sessions/execution/artifacts/master.m3u8', offset: 0 })
-  vi.mocked(playback.tasks).mockResolvedValue([])
   vi.mocked(playback.cancel).mockResolvedValue(undefined)
   vi.mocked(playback.roles).mockResolvedValue({ state: 'UNKNOWN', jobs: [] })
 })
@@ -39,7 +38,11 @@ it('生成的伴奏与视频保持原时间轴同步，静音原声且暂停与�
     Object.defineProperty(backing, 'readyState', { value: 4, configurable: true })
     video.currentTime = 8; await wrapper.get('video').trigger('timeupdate')
     expect(backing.currentTime).toBe(48)
+    expect(video.muted).toBe(false); expect(backing.muted).toBe(true)
+    await wrapper.findAll('.role-picker button')[1]!.trigger('click'); await flushPromises()
     expect(video.muted).toBe(true)
+    expect(backing.muted).toBe(false)
+    expect(playback.start).toHaveBeenCalledOnce()
     await wrapper.get('.main-play').trigger('click'); await flushPromises()
     expect(backing.paused).toBe(false)
     await wrapper.get('video').trigger('waiting')
@@ -148,7 +151,7 @@ it('HLS 解码失败只自动兼容一次，旧 HLS 回调不能打断新执行'
     expect(adapter.destroy).toHaveBeenCalledOnce()
     error('error', { fatal: true, type: 'mediaError' }); await flushPromises()
     expect(wrapper.find('video').exists()).toBe(true)
-    const fallbackError = adapter.on.mock.calls[1]![1] as typeof error
+    const fallbackError = adapter.on.mock.calls.filter(([event]) => event === 'error')[1]![1] as typeof error
     fallbackError('error', { fatal: true, type: 'mediaError' }); await flushPromises()
     expect(playback.start).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('兼容播放解码失败')

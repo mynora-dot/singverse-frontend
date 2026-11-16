@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import PageHeader from '../../../shared/ui/PageHeader.vue'
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { ElAlert, ElButton, ElCard, ElCheckbox, ElDialog, ElEmpty, ElForm, ElFormItem, ElIcon, ElInput, ElInputNumber, ElMessage, ElMessageBox, ElOption, ElRadioButton, ElRadioGroup, ElSelect, ElSwitch, ElTag } from 'element-plus'
 import { ArrowRight, Connection, MagicStick, Plus, RefreshRight, Search, Setting } from '@element-plus/icons-vue'
 import { ai } from '../api/ai'
+import { modelBaseAddress, modelEndpoint } from '../model-endpoint'
 import { updateAssistantSettings } from '../assistant-state'
 import { assistantPets } from '../pets'
-import type { AiService, Feature, Provider, ServiceInput, ServiceKind, TestResult } from '../types'
+import type { AiService, Feature, ModelOption, Provider, ServiceInput, ServiceKind, TestResult } from '../types'
 const route = useRoute()
 const section = computed(() => route.path.split('/')[3] ?? 'models')
 const assistantPage = computed(() => route.path.endsWith('/features/assistant'))
@@ -21,6 +22,8 @@ const editing = ref(false), editingId = ref<string>(), original = ref('')
 const draft = reactive<ServiceInput>({ name: '', provider: '', protocol: '', endpoint: '', model: '', outputMode: 'JSON_SCHEMA', apiKey: '', clearKey: false, enabled: true, timeoutSeconds: 60, maxResults: 5, revision: 0 })
 const editorKind = ref<ServiceKind>('MODEL')
 const editingService = computed(() => [...models.value, ...searches.value].find(s => s.id === editingId.value))
+const modelChoices = ref<ModelOption[]>([]), discovering = ref(false), discovered = ref(false), discoveryError = ref(''), modelsTruncated = ref(false)
+const requestEndpoint = computed(() => editorKind.value === 'MODEL' ? modelEndpoint(draft.protocol, draft.endpoint) : '')
 const availableProviders = computed(() => providers.value.filter(p => p.kind === editorKind.value))
 const services = computed(() => kind.value === 'MODEL' ? models.value : searches.value)
 const classification = reactive<Feature>({ id: 'classification', modelServiceId: null, searchServiceId: null, enabled: false, intervalSeconds: 3, revision: 0 })
@@ -29,7 +32,11 @@ const featureDirty = computed(() => ready.value && originalFeature.value !== JSO
 const editorDirty = computed(() => editing.value && original.value !== JSON.stringify(draft))
 const testing = ref<AiService | null>(null), testingBusy = ref(false), testMode = ref('generation'), query = ref(''), testError = ref(''), testResult = ref<TestResult | null>(null)
 const defaultSearch = computed(() => features.value.find(f => f.id === 'default-search')?.searchServiceId ?? null)
-let active = true, generation = 0, testGeneration = 0
+let active = true, generation = 0, testGeneration = 0, discoveryGeneration = 0
+function resetDiscovery() {
+  discoveryGeneration++; modelChoices.value = []; discovering.value = false; discovered.value = false; discoveryError.value = ''; modelsTruncated.value = false
+}
+watch(() => [editing.value, editingId.value, draft.provider, draft.protocol, draft.endpoint, draft.apiKey, draft.clearKey], resetDiscovery, { flush: 'sync' })
 function providerName(id: string) { return providers.value.find(p => p.id === id)?.name ?? id }
 function message(e: unknown) { return e instanceof Error ? e.message : '请求失败，请重试' }
 async function load() {
@@ -58,6 +65,22 @@ async function changeProvider(id: string) {
   if (!preset) return
   draft.protocol = preset.protocol; draft.endpoint = preset.endpoint; draft.outputMode = preset.outputMode
   draft.apiKey = ''; draft.clearKey = false
+}
+function changeProtocol() {
+  draft.endpoint = modelBaseAddress(draft.endpoint)
+  if (draft.protocol === 'ANTHROPIC') draft.outputMode = 'JSON_SCHEMA'
+}
+async function discoverModels() {
+  if (discovering.value || busy.value || !draft.endpoint.trim()) return
+  const token = ++discoveryGeneration
+  discovering.value = true; discovered.value = false; discoveryError.value = ''
+  try {
+    const result = await ai.discoverModels({ provider: draft.provider, protocol: draft.protocol, endpoint: draft.endpoint.trim(), apiKey: draft.apiKey, clearKey: draft.clearKey, timeoutSeconds: draft.timeoutSeconds, ...(editingId.value ? { serviceId: editingId.value, revision: draft.revision } : {}) })
+    if (!active || !editing.value || token !== discoveryGeneration) return
+    modelChoices.value = result.items; modelsTruncated.value = result.truncated; discovered.value = true
+    if (!draft.model && result.items.length === 1) draft.model = result.items[0]!.id
+  } catch (e) { if (active && editing.value && token === discoveryGeneration) { modelChoices.value = []; discoveryError.value = message(e) } }
+  finally { if (active && token === discoveryGeneration) discovering.value = false }
 }
 async function discard() {
   try { await ElMessageBox.confirm('离开将放弃尚未保存的配置。', '有未保存的配置', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning' }); return true } catch { return false }
@@ -91,7 +114,7 @@ async function saveAssistant() {
   if (busy.value) return
   busy.value = true; error.value = ''
   try {
-    const saved = await ai.bind({ ...assistant })
+    const saved = await ai.bind({ ...assistant, modelServiceId: assistant.modelServiceId || null, searchServiceId: assistant.searchServiceId || null })
     Object.assign(assistant, saved); originalAssistant.value = JSON.stringify(assistant)
     features.value = features.value.map(f => f.id === saved.id ? saved : f)
     updateAssistantSettings(saved); ElMessage.success('助手配置已保存')
@@ -129,7 +152,7 @@ onBeforeRouteLeave(canLeave)
 onBeforeRouteUpdate(canLeave)
 function beforeUnload(event: BeforeUnloadEvent) { if (editorDirty.value || featureDirty.value || assistantDirty.value) event.preventDefault() }
 onMounted(() => { void load(); window.addEventListener('beforeunload', beforeUnload) })
-onBeforeUnmount(() => { active = false; generation++; testGeneration++; draft.apiKey = ''; window.removeEventListener('beforeunload', beforeUnload) })
+onBeforeUnmount(() => { active = false; generation++; testGeneration++; resetDiscovery(); draft.apiKey = ''; window.removeEventListener('beforeunload', beforeUnload) })
 </script>
 
 <template>
@@ -148,9 +171,9 @@ onBeforeUnmount(() => { active = false; generation++; testGeneration++; draft.ap
       <div class="ai-provider-list"><span>支持的服务</span><span v-for="provider in providers.filter(p => p.kind === kind)" :key="provider.id">{{ provider.name }}</span></div>
     </template>
     <template v-if="ready && section === 'features' && !assistantPage">
-      <ElCard shadow="never" class="ai-feature-card sv-content-section"><div class="ai-feature-header"><span class="ai-service-icon"><ElIcon><MagicStick /></ElIcon></span><div><h2>歌曲分类</h2><p class="muted">为分类任务选择模型；任务和词表仍在曲库管理中。</p></div><ElSwitch v-model="classification.enabled" aria-label="启用歌曲 AI 分类" :disabled="busy" /></div><ElForm label-position="top" class="ai-feature-form" @submit.prevent="saveFeature"><ElFormItem label="分类使用的模型服务"><ElSelect v-model="classification.modelServiceId" clearable placeholder="选择已启用的模型服务" aria-label="分类模型服务" :disabled="busy"><ElOption v-for="service in models.filter(m => m.enabled)" :key="service.id" :value="service.id" :label="`${service.name} · ${service.model}`" /></ElSelect></ElFormItem><ElFormItem label="分类任务请求间隔（秒）"><ElInputNumber v-model="classification.intervalSeconds" :min="2" :max="300" :disabled="busy" /></ElFormItem><p class="muted">修改配置将暂停活动分类任务，已有任务继续使用原配置快照。测试连接与结构化输出请在模型服务中执行。</p><div class="ai-feature-actions"><ElButton type="primary" native-type="submit" :loading="busy" :disabled="!featureDirty">保存功能配置</ElButton><RouterLink to="/library/classification">前往歌曲分类 <ElIcon><ArrowRight /></ElIcon></RouterLink></div></ElForm></ElCard>
-      <ElCard shadow="never" class="assistant-feature-entry sv-content-section"><div class="ai-feature-header"><span class="ai-service-icon"><ElIcon><MagicStick /></ElIcon></span><div><h2>AI 助手</h2><p class="muted">管理右下角助手入口、展示形态和宠物形象。</p></div><ElTag :type="assistant.enabled ? 'success' : 'info'">{{ assistant.enabled ? '已开启' : '未开启' }}</ElTag></div><div class="ai-feature-actions"><RouterLink to="/system/ai/features/assistant">配置 AI 助手 <ElIcon><ArrowRight /></ElIcon></RouterLink><span class="muted">对话与工具能力规划中</span></div></ElCard>
-      <p class="feature-note">模型、搜索服务与功能配置独立管理。后续可为助手等功能独立增加模型、搜索及工具能力配置。</p>
+      <ElCard shadow="never" class="ai-feature-card sv-content-section"><div class="ai-feature-header"><span class="ai-service-icon"><ElIcon><MagicStick /></ElIcon></span><div><h2>歌曲分类</h2><p class="muted">为分类任务选择模型；在「整理」的「歌曲分类」中管理任务和词表。</p></div><ElSwitch v-model="classification.enabled" aria-label="启用歌曲 AI 分类" :disabled="busy" /></div><ElForm label-position="top" class="ai-feature-form" @submit.prevent="saveFeature"><ElFormItem label="分类使用的模型服务"><ElSelect v-model="classification.modelServiceId" clearable placeholder="选择已启用的模型服务" aria-label="分类模型服务" :disabled="busy"><ElOption v-for="service in models.filter(m => m.enabled)" :key="service.id" :value="service.id" :label="`${service.name} · ${service.model}`" /></ElSelect></ElFormItem><ElFormItem label="分类任务请求间隔（秒）"><ElInputNumber v-model="classification.intervalSeconds" :min="2" :max="300" :disabled="busy" /></ElFormItem><p class="muted">修改配置将暂停活动分类任务，已有任务继续使用原配置快照。测试连接与结构化输出请在模型服务中执行。</p><div class="ai-feature-actions"><ElButton type="primary" native-type="submit" :loading="busy" :disabled="!featureDirty">保存功能配置</ElButton><RouterLink to="/library/classification">前往歌曲分类 <ElIcon><ArrowRight /></ElIcon></RouterLink></div></ElForm></ElCard>
+      <ElCard shadow="never" class="assistant-feature-entry sv-content-section"><div class="ai-feature-header"><span class="ai-service-icon"><ElIcon><MagicStick /></ElIcon></span><div><h2>AI 助手</h2><p class="muted">管理右下角助手入口、展示形态和宠物形象。</p></div><ElTag :type="assistant.enabled ? 'success' : 'info'">{{ assistant.enabled ? '已开启' : '未开启' }}</ElTag></div><div class="ai-feature-actions"><RouterLink to="/system/ai/features/assistant">配置 AI 助手 <ElIcon><ArrowRight /></ElIcon></RouterLink><span class="muted">查询、工具调用与写入确认</span></div></ElCard>
+      <p class="feature-note">模型、搜索服务与功能配置独立管理。助手支持独立选择模型和搜索服务，写入操作由管理员逐项确认。</p>
     </template>
 
     <template v-if="ready && assistantPage">
@@ -158,25 +181,60 @@ onBeforeUnmount(() => { active = false; generation++; testGeneration++; draft.ap
       <ElCard shadow="never" class="ai-feature-card sv-content-section">
         <div class="ai-feature-header"><span class="ai-service-icon"><ElIcon><MagicStick /></ElIcon></span><div><h2>AI 助手</h2><p class="muted">为你的音乐工作台，添一份陪伴。</p></div><ElSwitch v-model="assistant.enabled" aria-label="启用 AI 助手" :disabled="busy" /></div>
         <ElForm label-position="top" class="assistant-settings-form" @submit.prevent="saveAssistant">
+          <ElFormItem label="助手模型"><ElSelect v-model="assistant.modelServiceId" clearable placeholder="选择支持工具调用的模型" :disabled="busy" aria-label="助手模型"><ElOption v-for="service in models.filter(s => s.enabled)" :key="service.id" :value="service.id" :label="service.name" /></ElSelect></ElFormItem>
+          <ElFormItem label="搜索服务（可选）"><ElSelect v-model="assistant.searchServiceId" clearable placeholder="不使用联网搜索" :disabled="busy" aria-label="助手搜索服务"><ElOption v-for="service in searches.filter(s => s.enabled)" :key="service.id" :value="service.id" :label="service.name" /></ElSelect></ElFormItem>
           <ElFormItem label="助手展示形态"><ElRadioGroup v-model="assistant.displayMode" aria-label="助手展示形态" :disabled="busy"><ElRadioButton value="PET">宠物形态</ElRadioButton><ElRadioButton value="CHAT">聊天框形态</ElRadioButton></ElRadioGroup></ElFormItem>
           <div v-if="assistant.displayMode === 'PET'" class="assistant-pet-options"><h3>宠物形象</h3><ElRadioGroup v-model="assistant.petId" aria-label="宠物形象" :disabled="busy"><ElRadioButton v-for="pet in assistantPets" :key="pet.id" :value="pet.id"><component :is="pet.component" :src="pet.src" still /><strong>{{ pet.name }}</strong><small>{{ pet.description }}</small></ElRadioButton></ElRadioGroup><p class="muted">内置音符团子、音乐熊猫、二次元与科幻角色，选择后保存即可使用。</p></div>
           <div v-else class="assistant-chat-preview"><ElIcon :size="24"><Connection /></ElIcon><div><strong>AI 助手</strong><p>简洁聊天入口，常驻页面右下角。</p></div></div>
-          <ElAlert title="对话与工具能力规划中" description="本次开放助手展示与入口配置，不会调用模型、搜索服务或修改曲库。保存后应用到所有管理页面，亲友 H5 不显示。" type="info" :closable="false" show-icon />
-          <div class="ai-feature-actions"><ElButton type="primary" native-type="submit" :loading="busy" :disabled="!assistantDirty">保存助手配置</ElButton><span class="muted">{{ assistant.enabled ? '保存后显示可拖动的助手入口' : '保存后隐藏助手入口' }}</span></div>
+          <ElAlert title="查询、工具调用与写入确认" description="查询直接执行；创建、修改、删除和任务控制先展示对象与影响，确认后执行。密码、MFA、密钥与文件上传仍在原表单完成。" type="info" :closable="false" show-icon />
+          <div class="ai-feature-actions"><ElButton type="primary" native-type="submit" :loading="busy" :disabled="!assistantDirty">保存助手配置</ElButton><RouterLink to="/system/assistant">打开管理助手与工具目录</RouterLink><span class="muted">{{ assistant.enabled ? '保存后显示可拖动的助手入口' : '保存后隐藏助手入口' }}</span></div>
         </ElForm>
       </ElCard>
     </template>
 
     <ElDialog class="ai-service-dialog" :model-value="editing" :title="`${editingId ? '编辑' : '添加'}${editorKind === 'MODEL' ? '模型' : '搜索'}服务`" width="min(620px, calc(100vw - 32px))" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" :before-close="() => closeEditor()">
-      <ElForm label-position="top" @submit.prevent="saveService"><div class="ai-form-grid"><ElFormItem label="配置名称" required><ElInput v-model="draft.name" maxlength="100" placeholder="例如：日常分类模型" :disabled="busy" /></ElFormItem><ElFormItem label="服务厂商"><ElSelect v-model="draft.provider" :disabled="busy" @change="changeProvider"><ElOption v-for="provider in availableProviders" :key="provider.id" :label="provider.name" :value="provider.id" /></ElSelect></ElFormItem></div><template v-if="editorKind === 'MODEL'"><ElFormItem label="接口协议"><ElSelect v-model="draft.protocol" :disabled="busy" @change="() => { if (draft.protocol === 'ANTHROPIC') draft.outputMode = 'JSON_SCHEMA' }"><ElOption label="OpenAI Responses" value="RESPONSES" /><ElOption label="Chat Completions 兼容" value="CHAT_COMPLETIONS" /><ElOption label="Anthropic Messages" value="ANTHROPIC" /><ElOption label="Gemini GenerateContent" value="GEMINI" /></ElSelect></ElFormItem><ElFormItem label="模型 ID" required><ElInput v-model="draft.model" maxlength="200" placeholder="填写厂商提供的模型 ID" :disabled="busy" /></ElFormItem></template><ElFormItem :label="draft.protocol === 'GEMINI' ? 'API 基础地址（例如 /v1beta）' : '完整服务接口地址'" required><ElInput v-model="draft.endpoint" maxlength="2048" placeholder="https://服务地址/接口路径" :disabled="busy" /></ElFormItem><ElFormItem :label="editingService?.hasKey ? 'API 密钥（留空保留）' : 'API 密钥（本地无鉴权服务可留空）'"><ElInput v-model="draft.apiKey" type="password" show-password autocomplete="new-password" maxlength="4096" :disabled="busy || draft.clearKey" /></ElFormItem><ElCheckbox v-if="editingService?.hasKey" v-model="draft.clearKey" :disabled="busy" @change="draft.apiKey = ''">清除已保存密钥</ElCheckbox><p class="ai-form-hint">更换厂商、协议或地址时，请重填密钥或明确清除。保存配置不会自动调用服务。</p><div class="ai-form-grid"><ElFormItem label="请求超时（秒）"><ElInputNumber v-model="draft.timeoutSeconds" :min="5" :max="180" :disabled="busy" /></ElFormItem><ElFormItem v-if="editorKind === 'MODEL'" label="分类结构化输出模式"><ElSelect v-model="draft.outputMode" :disabled="busy || draft.protocol === 'ANTHROPIC'"><ElOption label="JSON Schema" value="JSON_SCHEMA" /><ElOption label="JSON 模式 + 本地校验" value="JSON_OBJECT" /></ElSelect></ElFormItem><ElFormItem v-else label="最多返回结果"><ElInputNumber v-model="draft.maxResults" :min="1" :max="10" :disabled="busy" /></ElFormItem></div><ElSwitch v-model="draft.enabled" active-text="启用此服务" :disabled="busy" /><ElAlert v-if="formError" :title="formError" type="error" :closable="false" class="ai-form-error" /><div class="dialog-actions"><ElButton :disabled="busy" @click="closeEditor">取消</ElButton><ElButton type="primary" native-type="submit" :loading="busy">保存服务</ElButton></div></ElForm>
+      <ElForm label-position="top" @submit.prevent="saveService">
+        <div class="ai-form-grid">
+          <ElFormItem label="配置名称" required><ElInput v-model="draft.name" maxlength="100" placeholder="例如：日常分类模型" :disabled="busy" /></ElFormItem>
+          <ElFormItem label="服务厂商"><ElSelect v-model="draft.provider" :disabled="busy" @change="changeProvider"><ElOption v-for="provider in availableProviders" :key="provider.id" :label="provider.name" :value="provider.id" /></ElSelect></ElFormItem>
+        </div>
+        <ElFormItem v-if="editorKind === 'MODEL'" label="接口协议"><ElSelect v-model="draft.protocol" aria-label="接口协议" :disabled="busy" @change="changeProtocol"><ElOption label="OpenAI Responses" value="RESPONSES" /><ElOption label="Chat Completions 兼容" value="CHAT_COMPLETIONS" /><ElOption label="Anthropic Messages" value="ANTHROPIC" /><ElOption label="Gemini GenerateContent" value="GEMINI" /></ElSelect></ElFormItem>
+        <ElFormItem :label="editorKind === 'MODEL' ? 'API 基础地址或完整接口地址' : '完整服务接口地址'" required><ElInput v-model="draft.endpoint" maxlength="2048" aria-label="服务地址" placeholder="https://服务地址/接口路径" :disabled="busy" /></ElFormItem>
+        <p v-if="editorKind === 'MODEL'" class="ai-endpoint-hint">支持填写到 /v1 等版本路径，接口路径会自动补全。<template v-if="requestEndpoint">{{ draft.protocol === 'GEMINI' ? '请求基础地址' : '实际请求地址' }}：<code>{{ requestEndpoint }}</code></template></p>
+        <ElFormItem :label="editingService?.hasKey ? 'API 密钥（留空保留）' : 'API 密钥（本地无鉴权服务可留空）'"><ElInput v-model="draft.apiKey" type="password" show-password autocomplete="new-password" maxlength="4096" :disabled="busy || draft.clearKey" /></ElFormItem>
+        <ElCheckbox v-if="editingService?.hasKey" v-model="draft.clearKey" :disabled="busy" @change="draft.apiKey = ''">清除已保存密钥</ElCheckbox>
+        <p class="ai-form-hint">更换厂商、协议或地址时，请重填密钥或明确清除。保存配置不会自动调用服务。</p>
+        <ElFormItem v-if="editorKind === 'MODEL'" label="模型 ID" required>
+          <div class="ai-model-picker">
+            <ElSelect v-model="draft.model" filterable allow-create default-first-option :reserve-keyword="false" aria-label="模型 ID" placeholder="选择或输入模型 ID" :disabled="busy">
+              <ElOption v-if="draft.model && !modelChoices.some(m => m.id === draft.model)" :value="draft.model" :label="draft.model" />
+              <ElOption v-for="model in modelChoices" :key="model.id" :value="model.id" :label="model.name === model.id ? model.id : `${model.name} · ${model.id}`" />
+            </ElSelect>
+            <ElButton :icon="RefreshRight" :loading="discovering" :disabled="busy || !draft.endpoint.trim()" @click="discoverModels">获取模型列表</ElButton>
+          </div>
+          <p v-if="discoveryError" class="ai-discovery-error" role="alert">{{ discoveryError }}；也可手动输入模型 ID。</p>
+          <p v-else-if="discovered" class="ai-model-hint" role="status">{{ modelChoices.length ? `已获取 ${modelChoices.length} 个模型，可搜索选择。` : '服务未返回可选模型，可手动输入模型 ID。' }}{{ modelsTruncated ? '列表尚有其他模型，也可手动输入。' : '' }}</p>
+          <p v-else class="ai-model-hint">先填写地址和密钥，再获取可选模型；也可输入自定义 ID 后按回车确认。</p>
+        </ElFormItem>
+        <details class="ai-advanced-settings"><summary>更多设置</summary><div class="ai-form-grid"><ElFormItem label="请求超时（秒）"><ElInputNumber v-model="draft.timeoutSeconds" :min="5" :max="180" :disabled="busy" /></ElFormItem><ElFormItem v-if="editorKind === 'MODEL'" label="分类结构化输出模式"><ElSelect v-model="draft.outputMode" :disabled="busy || draft.protocol === 'ANTHROPIC'"><ElOption label="JSON Schema" value="JSON_SCHEMA" /><ElOption label="JSON 模式 + 本地校验" value="JSON_OBJECT" /></ElSelect></ElFormItem><ElFormItem v-else label="最多返回结果"><ElInputNumber v-model="draft.maxResults" :min="1" :max="10" :disabled="busy" /></ElFormItem></div></details>
+        <ElSwitch v-model="draft.enabled" active-text="启用此服务" :disabled="busy" />
+        <ElAlert v-if="formError" :title="formError" type="error" :closable="false" class="ai-form-error" />
+        <div class="dialog-actions"><ElButton :disabled="busy" @click="closeEditor">取消</ElButton><ElButton type="primary" native-type="submit" :loading="busy">保存服务</ElButton></div>
+      </ElForm>
     </ElDialog>
     <ElDialog class="ai-test-dialog" :model-value="!!testing" :title="testing ? `测试 · ${testing.name}` : '服务测试'" width="min(620px, calc(100vw - 32px))" :close-on-click-modal="false" :show-close="!testingBusy" :close-on-press-escape="!testingBusy" :before-close="() => closeTest()">
-      <template v-if="testing"><p class="ai-form-hint">测试将向已保存的服务发起实际请求，可能消耗服务额度；不会修改曲库。</p><ElForm label-position="top" @submit.prevent="test"><ElFormItem v-if="testing.kind === 'MODEL'" label="验证类型"><ElSelect v-model="testMode" :disabled="testingBusy" @change="testResult = null; testError = ''"><ElOption label="普通生成连接" value="generation" /><ElOption label="歌曲分类结构化输出" value="classification" /></ElSelect></ElFormItem><ElFormItem v-else label="查询关键词"><ElInput v-model="query" maxlength="200" placeholder="输入测试关键词" :disabled="testingBusy" @input="testResult = null; testError = ''" /></ElFormItem><ElAlert v-if="testError" :title="testError" type="error" :closable="false" /><ElAlert v-if="testResult" :title="`${testResult.message} · ${testResult.elapsedMs} ms`" type="success" :closable="false" /><div v-if="testResult?.results.length" class="ai-search-results"><article v-for="hit in testResult.results" :key="hit.url"><a :href="hit.url" target="_blank" rel="noopener noreferrer">{{ hit.title }}</a><small>{{ hit.url }}</small><p>{{ hit.snippet }}</p></article></div><div class="dialog-actions"><ElButton :disabled="testingBusy" @click="closeTest">关闭</ElButton><ElButton type="primary" native-type="submit" :loading="testingBusy">{{ testingBusy ? '正在测试' : '开始测试' }}</ElButton></div></ElForm></template>
+      <template v-if="testing"><p class="ai-form-hint">测试将向已保存的服务发起实际请求，可能消耗服务额度；不会修改曲库。</p><ElForm label-position="top" @submit.prevent="test"><ElFormItem v-if="testing.kind === 'MODEL'" label="验证类型"><ElSelect v-model="testMode" :disabled="testingBusy" @change="testResult = null; testError = ''"><ElOption label="普通生成连接" value="generation" /><ElOption label="原生工具调用与回执（无业务变更）" value="tools" /><ElOption label="歌曲分类结构化输出" value="classification" /></ElSelect></ElFormItem><ElFormItem v-else label="查询关键词"><ElInput v-model="query" maxlength="200" placeholder="输入测试关键词" :disabled="testingBusy" @input="testResult = null; testError = ''" /></ElFormItem><ElAlert v-if="testError" :title="testError" type="error" :closable="false" /><ElAlert v-if="testResult" :title="`${testResult.message} · ${testResult.elapsedMs} ms`" type="success" :closable="false" /><div v-if="testResult?.results.length" class="ai-search-results"><article v-for="hit in testResult.results" :key="hit.url"><a :href="hit.url" target="_blank" rel="noopener noreferrer">{{ hit.title }}</a><small>{{ hit.url }}</small><p>{{ hit.snippet }}</p></article></div><div class="dialog-actions"><ElButton :disabled="testingBusy" @click="closeTest">关闭</ElButton><ElButton type="primary" native-type="submit" :loading="testingBusy">{{ testingBusy ? '正在测试' : '开始测试' }}</ElButton></div></ElForm></template>
     </ElDialog>
   </section>
 </template>
 
 <style scoped>
+.ai-endpoint-hint,.ai-model-hint,.ai-discovery-error{width:100%;font-size:12px;line-height:1.7;color:var(--sv-text-secondary)}
+.ai-endpoint-hint{margin:-12px 0 20px}.ai-endpoint-hint code{overflow-wrap:anywhere}
+.ai-model-picker{display:flex;gap:8px;width:100%;align-items:center}.ai-model-picker .el-select{flex:1;min-width:0}.ai-model-picker .el-button{flex-shrink:0;margin:0}
+.ai-model-hint,.ai-discovery-error{margin:8px 0 0}.ai-discovery-error{color:var(--sv-semantic-danger)}
+.ai-advanced-settings{margin:8px 0 20px}.ai-advanced-settings summary{cursor:pointer;font-size:13px;color:var(--sv-text-secondary);padding:8px 0}.ai-advanced-settings .ai-form-grid{margin-top:12px}
+@media(max-width:480px){.ai-model-picker{align-items:stretch;flex-direction:column}.ai-model-picker .el-button{align-self:flex-start}}
 :global(.ai-service-dialog.el-dialog), :global(.ai-test-dialog.el-dialog) { display: flex; flex-direction: column; max-height: 88dvh; }
 :global(.ai-service-dialog.el-dialog > .el-dialog__header), :global(.ai-test-dialog.el-dialog > .el-dialog__header) { flex-shrink: 0; }
 :global(.ai-service-dialog.el-dialog > .el-dialog__body), :global(.ai-test-dialog.el-dialog > .el-dialog__body) { overflow-y: auto; min-height: 0; }

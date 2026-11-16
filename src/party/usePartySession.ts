@@ -1,15 +1,16 @@
 import { computed, reactive } from 'vue'
 import { request, requestId, PartyHttpError, type CommandResult, type Credential, type FavoriteState, type QueueCommand, type Snapshot } from './api'
+import { readPartyNickname, rememberPartyNickname } from './nickname'
 
 class DiscardedPartyResponse extends Error {}
 const credentialKey = 'singverse-party'
 export function usePartySession() {
   const state = reactive({ credential: null as Credential | null, snapshot: null as Snapshot | null, preview: null as { sessionId: string; deviceName: string } | null,
-    online: false, loading: false, busy: false, error: '', notice: '', pending: null as QueueCommand | null,
+    nickname: readPartyNickname(), online: false, loading: false, busy: false, error: '', notice: '', pending: null as QueueCommand | null,
     favoriteIds: [] as string[], favoriteRevision: -1, favoriteBusy: [] as string[], favoritesReady: false, lastRequestId: '', receivedAt: 0 })
   const invitation = new URLSearchParams(location.hash.slice(1)).get('invite') ?? ''
   let requestOrder = 0, lastAuthenticated = 0
-  let generation = 0, stopped = false, timer: ReturnType<typeof setTimeout> | undefined, controller = new AbortController(), favoritePoll = 0
+  let generation = 0, stopped = false, timer: ReturnType<typeof setTimeout> | undefined, favoriteTimer: ReturnType<typeof setTimeout> | undefined, controller = new AbortController()
   const waiting = computed(() => state.snapshot?.queue.filter(i => i.status === 'WAITING') ?? [])
   const current = computed(() => state.snapshot?.queue.find(i => i.id === state.snapshot?.playback?.itemId))
   const execution = computed<CommandResult | undefined>(() => state.snapshot?.commandResults?.find(r => r.requestId === state.lastRequestId))
@@ -21,7 +22,10 @@ export function usePartySession() {
   function replaceCredential(value: Credential | null) {
     generation++; controller.abort(); controller = new AbortController()
     state.credential = value; state.snapshot = null; state.pending = null; state.favoriteIds = []; state.favoriteRevision = -1; state.favoritesReady = false; state.online = false; state.lastRequestId = ''; state.busy = false
-    if (value) sessionStorage.setItem(credentialKey, JSON.stringify(value))
+    if (value) {
+      sessionStorage.setItem(credentialKey, JSON.stringify(value))
+      state.nickname = value.name; rememberPartyNickname(value.name)
+    }
     else sessionStorage.removeItem(credentialKey)
   }
   function failure(error: unknown) {
@@ -38,15 +42,22 @@ export function usePartySession() {
       lastAuthenticated = Math.max(lastAuthenticated, order)
       return result
     } catch (e) {
-      if (stopped || turn !== generation || e instanceof PartyHttpError && e.status === 401 && order < lastAuthenticated) throw new DiscardedPartyResponse('已忽略旧响应')
+      const staleSnapshotFailure = method === 'GET' && path.includes('/snapshot') && !(e instanceof PartyHttpError) && order < lastAuthenticated
+      if (stopped || turn !== generation || staleSnapshotFailure || e instanceof PartyHttpError && e.status === 401 && order < lastAuthenticated) throw new DiscardedPartyResponse('已忽略旧响应')
       if (turn === generation && !stopped && e instanceof PartyHttpError && e.status === 401) failure(e)
       throw e
     }
   }
-  async function refresh() {
+  function snapshotWaitMs() {
+    const s = state.snapshot
+    return state.online && s?.status === 'ACTIVE' && Number.isSafeInteger(s.stateRevision) && s.stateRevision! >= 0 && Number.isInteger(s.snapshotWaitMs) && s.snapshotWaitMs! > 0 ? Math.min(8000, s.snapshotWaitMs!) : 0
+  }
+  async function refresh(waitForChanges = false) {
     const c = state.credential; if (!c) return
     try {
-      const value = await call<Snapshot>(`sessions/${encodeURIComponent(c.sessionId)}/snapshot`)
+      const waitMs = waitForChanges ? snapshotWaitMs() : 0
+      const query = waitMs ? `?afterStateRevision=${state.snapshot!.stateRevision}&waitMs=${waitMs}` : ''
+      const value = await call<Snapshot>(`sessions/${encodeURIComponent(c.sessionId)}/snapshot${query}`)
       accept(value); state.online = true
       if (state.error.startsWith('与 NAS 同步失败')) state.error = ''
     } catch (e) { if (!(e instanceof DiscardedPartyResponse)) state.online = false; throw e }
@@ -111,13 +122,13 @@ export function usePartySession() {
       }
       if (state.credential) { await refresh(); await refreshFavorites() }
     } catch (e) { failure(e) }
-    finally { state.loading = false; schedulePoll() }
+    finally { state.loading = false; schedulePoll(); scheduleFavoritePoll() }
   }
   async function join(name: string) {
     state.loading = true; state.error = ''
     const turn = generation
     try {
-      const value = await request<Credential>('join', 'POST', { invitation, name }, undefined, controller.signal)
+      const value = await request<Credential>('join', 'POST', { invitation, name: name.trim() }, undefined, controller.signal)
       if (stopped || turn !== generation) return
       replaceCredential(value); state.preview = null; history.replaceState(null, '', location.pathname)
       await refresh(); await refreshFavorites()
@@ -128,13 +139,23 @@ export function usePartySession() {
     clearTimeout(timer)
     if (stopped) return
     timer = setTimeout(async () => {
-      try { if (state.credential) { await refresh(); if (++favoritePoll % 5 === 0) await refreshFavorites() } }
+      try { if (state.credential) await refresh(true) }
       catch (e) { if (!stopped && state.credential && !(e instanceof DiscardedPartyResponse)) { failure(e); if (!(e instanceof PartyHttpError)) state.error = '与 NAS 同步失败，正在重连…' } }
       finally { schedulePoll() }
-    }, 1000)
+    }, snapshotWaitMs() ? 50 : 1000)
+  }
+  // Slow catalog/favorite requests must never hold up remote execution feedback.
+  function scheduleFavoritePoll() {
+    clearTimeout(favoriteTimer)
+    if (stopped) return
+    favoriteTimer = setTimeout(async () => {
+      try { if (state.credential) await refreshFavorites() }
+      catch (e) { failure(e) }
+      finally { scheduleFavoritePoll() }
+    }, 5000)
   }
   function leave() { replaceCredential(null); state.preview = null; state.notice = ''; state.error = '' }
-  function close() { stopped = true; generation++; controller.abort(); clearTimeout(timer) }
+  function close() { stopped = true; generation++; controller.abort(); clearTimeout(timer); clearTimeout(favoriteTimer) }
   return { state, waiting, current, execution, accept, replaceCredential, acceptFavorites, call, refresh, refreshFavorites, setFavorite, sendPending, command, react, initialize, join, leave, close, failure }
 }
 export type PartySession = ReturnType<typeof usePartySession>

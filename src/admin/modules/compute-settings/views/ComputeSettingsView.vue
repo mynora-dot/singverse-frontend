@@ -199,7 +199,7 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
 
 <template>
   <section class="compute-settings">
-    <PageHeader title="计算与模型" description="按功能准备模型与设备。硬件信息来自当前连接的计算节点；Mac、NVIDIA、Intel、AMD 的视频和伴奏能力分别检测与验证。"><template #meta><p class="overview-description">播放与伴奏，各自查看准备情况。</p></template></PageHeader>
+    <PageHeader title="计算服务" description="按功能准备模型与设备。硬件信息来自当前连接的计算节点；Mac、NVIDIA、Intel、AMD 的视频和伴奏能力分别检测与验证。"><template #meta><p class="overview-description">播放与伴奏，各自查看准备情况。</p></template></PageHeader>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton text @click="load">重新读取</ElButton></ElAlert>
     <ElSkeleton v-if="loading && !settings" :rows="5" animated />
     <template v-if="settings">

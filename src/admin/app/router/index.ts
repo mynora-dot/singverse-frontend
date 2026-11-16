@@ -16,6 +16,7 @@ import { adminBasePath } from '../../core/hosting/mount-path'
 export const router = createRouter({
   history: createWebHashHistory(adminBasePath),
   routes: [
+    { path: '/system/assistant', component: () => import('../../modules/assistant/AssistantWorkbench.vue'), meta: { title: '管理助手' } },
     { path: '/system/client-downloads', component: () => import('../../modules/client-downloads/ClientDownloadsView.vue'), meta: { title: '客户端下载' } },
     { path: '/library/downloads', component: () => import('../../modules/lx-downloads/DownloadsView.vue'), meta: { title: '歌曲下载' } },
     { path: '/system/tasks', component: () => import('../../modules/background-tasks/BackgroundTasksView.vue'), meta: { title: '后台任务' } },

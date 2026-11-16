@@ -46,7 +46,7 @@ it('显示音视频缓存、容量、命中和租约状态，格式标明请求�
   expect(wrapper!.text()).toContain('命中 7 次')
   expect(wrapper!.text()).toContain('从 10 秒起')
   expect(wrapper!.text()).toContain('整曲缓存支持跳转复用')
-  expect(wrapper!.text()).toContain('离线兼容版本仍在歌曲播放设置中管理')
+  expect(wrapper!.text()).toContain('清理只删除本地缓存，不修改原始歌曲或已有离线兼容版本')
   expect(wrapper!.get('button[aria-label="删除音频歌曲的缓存"]').attributes('disabled')).toBeDefined()
   expect(wrapper!.get('button[aria-label="删除合唱歌曲的缓存"]').attributes('disabled')).toBeUndefined()
 })

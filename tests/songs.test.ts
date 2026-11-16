@@ -5,6 +5,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory, type Router } from 'vue-router'
 import ElementPlus from 'element-plus'
 import SongLibraryTable from '../src/admin/modules/song-management/components/SongLibraryTable.vue'
+import SongCard from '../src/admin/modules/song-management/components/SongCard.vue'
 import { defaultSongColumns, fileSize, identityReviewed, needsSongReview, songReviewLabel } from '../src/admin/modules/song-management/presentation'
 import SongsView from '../src/admin/modules/song-management/views/SongsView.vue'
 import type { MediaSong } from '../src/admin/modules/media-library/types'
@@ -414,6 +415,46 @@ describe('歌曲管理集中展示扫描数据及详情', () => {
 
 })
 
+
+describe('歌曲卡片复核状态', () => {
+  it('仅已确认的歌名与歌手显示复核标记，文件名完整不代表已复核', async () => {
+    const row = song()
+    const w = mount(SongCard, { props: { song: row } })
+    expect(w.find('[role="img"][aria-label="歌曲信息已复核"]').exists()).toBe(false)
+    expect(w.get('.song-card-title').attributes('aria-label')).toContain('文件名完整')
+    const confirmed: NonNullable<MediaSong['metadata']> = {
+      track: { provider: null, externalId: null, title: '晴天', artists: ['周杰伦'], album: null, releaseDate: null, durationMs: null, aliases: [], coverUrl: null, availability: 'UNKNOWN', fetchedAt: '' },
+      fields: ['title', 'artists'], appliedAt: '', stale: false, origins: {}
+    }
+    await w.setProps({ song: { ...row, metadata: confirmed } })
+    expect(w.find('[role="img"][aria-label="歌曲信息已复核"]').exists()).toBe(true)
+    expect(w.find('.song-status').exists()).toBe(false)
+    await w.setProps({ song: { ...row, metadata: { ...confirmed, fields: ['title'] } } })
+    expect(w.find('.reviewed-mark').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('待复核、共享和过期资料保留文字提醒，并提供当前歌曲的复核入口', async () => {
+    const row = pending()
+    const w = mount(SongCard, { props: { song: row } })
+    expect(w.get('.song-status').text()).toBe('文件名待复核')
+    const shared: NonNullable<MediaSong['metadata']> = {
+      track: { provider: null, externalId: null, title: '共享歌名', artists: ['共享歌手'], album: null, releaseDate: null, durationMs: null, aliases: [], coverUrl: null, availability: 'UNKNOWN', fetchedAt: '' },
+      fields: ['title', 'artists'], appliedAt: '', stale: false,
+      origins: { title: { provider: null, externalId: null, appliedAt: '', kind: 'SHARED' } }
+    }
+    await w.setProps({ song: { ...song(), metadata: shared } })
+    expect(w.get('.song-status').text()).toBe('共享信息待核对')
+    expect(w.find('.reviewed-mark').exists()).toBe(false)
+    await w.setProps({ song: { ...song(), metadata: { ...shared, stale: true } } })
+    expect(w.get('.song-status').text()).toBe('信息已过期 · 需重审')
+    expect(w.find('.reviewed-mark').exists()).toBe(false)
+    expect(w.get('.song-card-actions button').attributes('aria-label')).toBe('复核 晴天')
+    await w.get('.song-card-actions button').trigger('click')
+    expect(w.emitted('edit')).toEqual([[]])
+    w.unmount()
+  })
+})
 
 describe('歌曲明细表信息与交互', () => {
   it('显示确认封面，加载失败显示占位并在封面更新后恢复', async () => {

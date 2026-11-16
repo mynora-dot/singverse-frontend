@@ -1,28 +1,41 @@
 <script setup lang="ts">
 import { ElButton, ElIcon } from 'element-plus'
 import { computed } from 'vue'
-import { VideoPlay, EditPen } from '@element-plus/icons-vue'
+import { VideoPlay, EditPen, Check } from '@element-plus/icons-vue'
 import SongCover from './SongCover.vue'
-import { needsSongReview, songReviewLabel, platformDuration, indexTags, songTags } from '../presentation'
+import { identityReviewed, needsSongReview, songReviewLabel, platformDuration, indexTags, songTags } from '../presentation'
 import { songTitle, songArtists } from '../../metadata/utils'
 import type { Tag } from '../../classification/types'
 import type { MediaSong } from '../../media-library/types'
 const props = withDefaults(defineProps<{ song: MediaSong; tags?: Tag[]; tagIndex?: ReadonlyMap<string, Tag>; selectionMode?: boolean; selected?: boolean }>(), { tags: () => [], selectionMode: false, selected: false })
 const tagIndex = computed(() => props.tagIndex ?? indexTags(props.tags))
 const classifications = computed(() => songTags(props.song, tagIndex.value))
+const reviewed = computed(() => identityReviewed(props.song))
+const needsReview = computed(() => !!props.song.metadata?.stale || needsSongReview(props.song))
+const reviewLabel = computed(() => props.song.metadata?.stale ? '信息已过期 · 需重审' : songReviewLabel(props.song))
 const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSong, selected: boolean] }>()
 </script>
 <template>
   <article class="song-card" :class="{ selected }">
     <div class="card-artwork">
-      <button class="artwork-open" :aria-label="`查看 ${songTitle(song)} 的详情`" @click="emit('click')"><SongCover :song="song" /></button>
+      <button type="button" class="artwork-open" :aria-label="`查看 ${songTitle(song)} 的详情`" @click="emit('click')"><SongCover :song="song" /></button>
       <label v-if="selectionMode" class="selection-checkbox"><input type="checkbox" :checked="selected" :aria-label="`选择 ${songTitle(song)}`" @change="emit('select', song, ($event.target as HTMLInputElement).checked)"></label>
       <span v-if="platformDuration(song)" class="cover-duration">{{ platformDuration(song) }}</span>
-      <button class="cover-play" :aria-label="`播放 ${songTitle(song)}`" @click="emit('play')"><ElIcon><VideoPlay /></ElIcon></button>
+      <button type="button" class="cover-play" :aria-label="`播放 ${songTitle(song)}`" @click="emit('play')"><ElIcon><VideoPlay /></ElIcon></button>
     </div>
-    <button class="song-card-title" @click="emit('click')"><strong :title="songTitle(song)">{{ songTitle(song) }}</strong><span :title="songArtists(song).join('、')">{{ songArtists(song).join('、') || '歌手待补充' }}</span></button>
-    <div class="song-card-context"><span v-if="song.metadata?.stale" class="song-status review">信息已过期 · 需重审</span><span v-else class="song-status" :class="{ review: needsSongReview(song) }">{{ songReviewLabel(song) }}</span><span v-if="classifications[0]" class="card-tag">{{ classifications[0].name }}</span></div>
-    <div class="song-card-actions"><span :title="song.sourceName">{{ song.sourceName }}</span><ElButton text :icon="EditPen" :aria-label="`${needsSongReview(song) ? '复核' : '编辑'} ${songTitle(song)}`" @click="emit('edit')">{{ needsSongReview(song) ? '复核' : '编辑' }}</ElButton></div>
+    <button type="button" class="song-card-title" :aria-label="`查看 ${songTitle(song)} 的详情，${songArtists(song).join('、') || '歌手待补充'}，${reviewLabel}`" @click="emit('click')">
+      <span class="title-line">
+        <strong :title="songTitle(song)">{{ songTitle(song) }}</strong>
+        <span v-if="reviewed" class="reviewed-mark" role="img" :aria-label="reviewLabel" :title="reviewLabel"><ElIcon><Check /></ElIcon></span>
+      </span>
+      <span class="card-artist" :title="songArtists(song).join('、')">{{ songArtists(song).join('、') || '歌手待补充' }}</span>
+    </button>
+    <p v-if="needsReview" class="song-status review">{{ reviewLabel }}</p>
+    <div class="song-card-actions">
+      <span v-if="classifications[0]" class="card-tag" :title="classifications[0].name">{{ classifications[0].name }}</span>
+      <span class="card-source" :title="song.sourceName" :aria-label="song.sourceName"><template v-if="song.sourceName === 'WebDAV 歌曲'">WebDAV<span class="source-suffix"> 歌曲</span></template><template v-else>{{ song.sourceName }}</template></span>
+      <ElButton text :icon="EditPen" :aria-label="`${needsReview ? '复核' : '编辑'} ${songTitle(song)}`" @click="emit('edit')">{{ needsReview ? '复核' : '编辑' }}</ElButton>
+    </div>
   </article>
 </template>
 <style scoped>
@@ -33,11 +46,7 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
   background: transparent;
   border: 1px solid transparent;
   border-radius: 12px;
-  transition: border-color .18s, box-shadow .18s
-}
-
-.song-card:hover {
-  border-color: var(--sv-border-default);
+  transition: border-color .18s, background-color .18s
 }
 
 .song-card.selected {
@@ -58,7 +67,7 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
   border: 0;
   background: none;
   display: block;
-  border-radius: 8px;
+  border-radius: 12px;
   cursor: pointer;
   overflow: hidden
 }
@@ -79,12 +88,12 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
   bottom: 10px;
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border: 1px solid #ffffff75;
   border-radius: 50%;
-  background: var(--sv-surface-2);
-  color: var(--sv-text-primary);
+  background: #fff;
+  color: #171717;
   box-shadow: 0 3px 12px rgb(36 31 23 / 18%);
   cursor: pointer;
   font-size: 22px
@@ -101,8 +110,8 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
   top: 10px;
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   background: var(--sv-surface-2);
   box-shadow: var(--sv-shadow-sm)
@@ -116,15 +125,25 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
   cursor: pointer
 }
 
+.artwork-open:focus-visible,
+.cover-play:focus-visible,
+.song-card-title:focus-visible,
+.song-card-actions :deep(.el-button:focus-visible) {
+  outline: 2px solid var(--sv-accent-primary);
+  outline-offset: 3px
+}
+
 .cover-duration {
   position: absolute;
   left: 10px;
   bottom: 12px;
   padding: 1px 4px;
-  background: rgb(32 26 18 / 72%);
+  background: #171717;
   color: white;
   border-radius: 4px;
-  font-size: 12px
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none
 }
 
 .song-card-title {
@@ -136,41 +155,53 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
   background: transparent;
   color: inherit;
   border: 0;
-  padding: 16px 0 12px;
+  padding: 12px 0 4px;
+  border-radius: 4px;
   cursor: pointer
 }
 
+.title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0
+}
+
 .song-card-title strong {
-  font-size: 15px;
+  min-width: 0;
+  font-size: 17px;
   font-weight: 600;
-  line-height: 1.6;
+  line-height: 1.5;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis
 }
 
-.song-card-title span {
-  font-size: 12px;
+.card-artist {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--sv-text-secondary);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis
 }
 
-.song-card-context {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  min-height: 23px
+.song-card-title:hover strong {
+  color: var(--sv-accent-primary)
+}
+
+.reviewed-mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--sv-semantic-ok);
+  font-size: 16px
 }
 
 .song-status {
-  color: var(--sv-text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5
 }
 
 .song-status.review {
@@ -178,41 +209,52 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
 }
 
 .card-tag {
-  max-width: 75px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
-  padding: 1px 8px;
+  padding: 2px 6px;
   border-radius: 4px;
   background: var(--sv-surface-3);
-  color: var(--sv-text-secondary)
+  color: var(--sv-text-secondary);
+  font-size: 12px;
+  line-height: 20px
 }
 
 .song-card-actions {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--sv-border-subtle)
+  min-width: 0;
+  min-height: 44px;
+  margin-top: 4px
 }
 
-.song-card-actions>span {
+.card-source {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  color: var(--sv-text-tertiary)
+  color: var(--sv-text-secondary)
 }
 
 .song-card-actions :deep(.el-button) {
   margin: 0;
-  padding: 4px 0;
-  min-height: 28px;
+  flex-shrink: 0;
+  padding: 0 2px;
+  min-width: 52px;
+  min-height: 44px;
   height: auto;
-  font-size: 12px
+  font-size: 13px;
+  color: var(--sv-text-secondary)
+}
+
+.song-card-actions :deep(.el-button:hover) {
+  color: var(--sv-accent-primary)
 }
 
 @media(max-width:480px) {
@@ -222,59 +264,35 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
   }
 
   .song-card-title {
-    padding: 12px 0 8px
+    padding-top: 8px
   }
 
   .song-card-title strong {
-    font-size: 14px
-  }
-
-  .song-card-title span {
-    font-size: 12px
-  }
-
-  .song-card-context {
-    display: block
+    font-size: 16px
   }
 
   .card-tag {
+    max-width: 32%;
+    padding: 1px 5px
+  }
+
+  .source-suffix {
     display: none
   }
 
-  .song-status {
-    display: block;
-    font-size: 12px
-  }
-
   .cover-play {
-    width: 44px;
-    height: 44px;
-    right: 7px;
-    bottom: 7px
-  }
-
-  .selection-checkbox {
-    width: 44px;
-    height: 44px
-  }
-
-  .song-card-actions>span {
-    font-size: 12px
+    right: 8px;
+    bottom: 8px
   }
 
   .song-card-actions {
-    margin-top: 4px;
-    padding-top: 4px
+    gap: 4px
   }
 
   .song-card-actions :deep(.el-button) {
     font-size: 12px;
-    min-height: 44px;
-    min-width: 44px
+    min-width: 44px;
+    padding: 0
   }
-}
-
-@media(max-width:768px) {
-  .selection-checkbox { width: 44px; height: 44px; }
 }
 </style>

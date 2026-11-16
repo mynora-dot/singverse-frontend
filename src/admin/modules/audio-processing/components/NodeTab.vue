@@ -4,16 +4,16 @@ import { ElAlert, ElButton, ElTag } from 'element-plus'
 import { authRequest } from '../../../core/auth/api'
 import { base, importModel, type Model, type Node } from '../api'
 import { backendName, backendStates, bytes, failure, modelNames, operationStates, type Readiness } from '../presentation'
+import { applicableModels, isDetectedBackend, isRelevantBackend } from '../node-hardware'
 
 const props = defineProps<{ node?: Node; nodeError: string; readiness: Readiness; reload: (refresh?: boolean) => Promise<void>; modelsOnly?: boolean }>()
 const busy = ref(false), error = ref('')
-const detected = computed(() => props.node?.backends.filter(item => !['cpu', 'xpu'].includes(item.id) && (item.detected || item.device)) || [])
+const detected = computed(() => props.node?.backends.filter(item => !['cpu', 'xpu'].includes(item.id) && isDetectedBackend(item)) || [])
 const visibleBackends = computed(() => props.node?.backends.filter(item => item.id === 'cpu' || detected.value.some(found => found.id === item.id)) || [])
-const modelBackends: Record<string, string[]> = { htdemucs: ['cpu', 'cuda', 'rocm', 'mps'], 'htdemucs-openvino': ['openvino'], 'uvr-mdxnet-9482-rknn': ['rknn'] }
 const localOnly = (model: Model) => model.localOnly || model.id === 'uvr-mdxnet-9482-rknn'
 const catalog = computed<Model[]>(() => [
   ...(props.node?.fastClassifier ? [props.node.fastClassifier] : []),
-  ...(props.node?.models || (props.node ? [{ ...props.node.model, id: props.node.model.id || 'htdemucs' }] : [])).filter(model => props.modelsOnly || model.id === 'uvr-mdxnet-9482' || (model.backends || modelBackends[model.id] || []).some(id => visibleBackends.value.some(backend => backend.id === id))),
+  ...(props.node ? applicableModels(props.node) : []),
 ])
 const modelBusy = computed(() => ['DOWNLOADING', 'IMPORTING', 'VERIFYING', 'TESTING'].includes(props.node?.operation.state || ''))
 const auto = computed(() => props.node?.selection === 'auto')
@@ -58,16 +58,16 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
     <ol v-if="node" class="steps">
       <li class="step">
         <header><h3>{{ modelsOnly ? '模型文件' : '准备模型' }}</h3><ElTag v-if="!modelsOnly" :type="readiness.modelInstalled ? 'success' : 'warning'" effect="light" size="small">{{ readiness.modelInstalled ? '已安装' : '未安装' }}</ElTag></header>
-        <p class="muted">按伴奏方案和设备准备模型。文件安装完成后，仍需验证对应的运行环境。</p>
+        <p class="muted">仅列出当前节点适用的模型，安装后需验证设备。</p>
         <p v-if="modelBusy || node.operation.state === 'FAILED'" class="operation" role="status">{{ operationStates[node.operation.state] || node.operation.state }} · 已处理 {{ (node.operation.bytes / 1024 ** 2).toFixed(1) }} MiB<ElButton v-if="modelBusy" link type="primary" :disabled="busy" @click="run(() => call('cancel'))">取消</ElButton></p>
         <p v-if="node.operation.error" class="inline-error">{{ node.operation.error }}</p>
         <div v-for="model in catalog" :key="model.id" class="model-row" :data-model="model.id">
           <div class="model-copy">
-            <strong>{{ modelNames[model.id]?.name || model.id }}</strong><span v-if="model.id === 'panns-cnn6'" class="muted">扫描专用，只做短片段人声分类；不运行完整分离模型，不需要选择设备。{{ node.fastClassifier?.ready ? '已就绪' : '请下载模型并准备节点音频运行环境' }}</span>
+            <strong>{{ modelNames[model.id]?.name || model.id }}</strong><span v-if="model.id === 'panns-cnn6'" class="muted">扫描时识别人声，无需选择设备。{{ node.fastClassifier?.ready ? '已就绪' : '' }}</span>
 
             <span v-if="!model.writable" class="muted">模型目录未配置、不可写或为只读预置目录，无法在网页下载或导入；请在节点配置独立的可写模型卷。</span>
           </div>
-          <ElTag :type="model.installed ? 'success' : 'info'" effect="light" size="small">{{ model.installed ? '已安装并校验' : '未安装' }}</ElTag>
+          <ElTag :type="model.installed ? 'success' : 'info'" effect="light" size="small">{{ model.installed ? '已安装' : '未安装' }}</ElTag>
           <div v-if="!model.installed && !localOnly(model)" class="model-actions">
             <ElButton size="small" type="primary" :disabled="busy || modelBusy || !model.writable" @click="download(model)">下载到节点</ElButton>
             <label class="upload el-button el-button--small" :class="{ 'is-disabled': busy || modelBusy || !model.writable }">
@@ -102,10 +102,10 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
     </ol>
     <section v-if="node?.separation && !modelsOnly" class="step" aria-label="极速与轻量伴奏">
       <header><h3>极速与轻量伴奏</h3></header>
-      <p class="muted">极速档只需要 FFmpeg。四种加速镜像均内置独立 CPU 降级环境；干净档安装轻量模型后，先验证 CPU 降级，再试跑加速设备。高级模型沿用上方配置。</p>
+      <p class="muted">极速消音只需 FFmpeg。轻量 AI 安装模型后，先验证 CPU，再验证检测到的加速设备。</p>
       <p v-if="node.separation.operation?.state === 'TESTING' || node.separation.operation?.state === 'WAITING'" role="status" class="muted">轻量模型正在等待或进行试跑…</p>
       <p v-if="node.separation.operation?.error" class="inline-error">{{ node.separation.operation.error }}</p>
-      <div v-for="backend in node.separation.backends.filter(item => item.detected || item.id === 'cpu')" :key="backend.id" class="backend-row">
+      <div v-for="backend in node.separation.backends.filter(isRelevantBackend)" :key="backend.id" class="backend-row">
         <div class="backend-copy"><strong>{{ backendName(backend.id) }}</strong><span class="muted">{{ backend.reason }}</span></div>
         <ElTag :type="backendTone(backend.state)" size="small">{{ backendStates[backend.state] || backend.state }}</ElTag>
         <ElButton v-if="['UNVERIFIED', 'FAILED', 'AVAILABLE'].includes(backend.state)" size="small" :disabled="busy || modelBusy || ['TESTING','WAITING'].includes(node.separation.operation?.state || '')" @click="run(() => call('test', { backend: backend.id, separationProfile: 'AI_CLEAN' }))">试跑轻量模型</ElButton>
