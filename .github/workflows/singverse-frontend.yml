@@ -24,7 +24,7 @@ jobs:
           cache: npm
       - name: Build frontend
         run: |
-          npm ci
+          npm ci --no-audit --no-fund
           npm exec -- vite build
       - name: Package release
         run: python3 scripts/package-release.py
