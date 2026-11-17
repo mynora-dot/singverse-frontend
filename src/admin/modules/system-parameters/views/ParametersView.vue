@@ -54,10 +54,10 @@ async function closeRecovery() {
 </script>
 <template>
   <div class="parameters-page">
-    <PageHeader title="账号与安全" description="修改登录账号、密码，开启或管理二次验证。修改账号或密码后所有设备都需要重新登录。" />
+    <PageHeader title="账号与安全" description="修改登录账号、密码，开启或管理二次验证。修改账号或密码后所有设备都需要重新登录。"><template #meta><ElTag :type="auth.account?.mfaEnabled ? 'success' : 'warning'" effect="light">{{ auth.account?.mfaEnabled ? '二次验证已开启' : '二次验证未开启' }}</ElTag></template></PageHeader>
     <ElAlert v-if="auth.account?.defaultPassword" title="当前仍在使用默认密码，请及时修改并开启二次验证。" type="warning" :closable="false" show-icon />
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon />
-    <section class="security-list" aria-label="账号安全设置">
+    <section class="security-list sv-glass" aria-label="账号安全设置">
       <div class="security-row"><div><h2>登录账号 <span class="account-name">{{ auth.account?.username }}</span></h2><p>用于登录当前 NAS 的单管理员账号。</p></div><ElButton @click="start('username')">修改登录账号</ElButton></div>
       <div class="security-row"><div><h2>登录密码 <ElTag :type="auth.account?.defaultPassword ? 'warning' : 'success'" effect="light">{{ auth.account?.defaultPassword ? '待修改' : '已设置' }}</ElTag></h2><p>15～128 个字符。修改账号或密码后，所有设备都需要重新登录。</p></div><ElButton @click="start('password')">修改密码</ElButton></div>
       <div class="security-row"><div><h2>二次验证 <ElTag :type="auth.account?.mfaEnabled ? 'success' : 'info'" effect="light">{{ auth.account?.mfaEnabled ? '已开启' : '未开启' }}</ElTag></h2><p>使用认证器动态码（TOTP），登录时同时验证密码与动态码。</p></div><div class="button-row"><ElButton @click="start('setup')">{{ auth.account?.mfaEnabled ? '重新绑定认证器' : '开启二次验证' }}</ElButton><ElButton v-if="auth.account?.mfaEnabled" type="danger" plain @click="start('disable')">关闭二次验证</ElButton></div></div>
@@ -84,13 +84,13 @@ async function closeRecovery() {
 </template>
 
 <style scoped>
-.security-list { border-top: 1px solid var(--sv-border-subtle); }
+.parameters-page { display: grid; gap: 20px; max-width: 1120px; }.parameters-page > .page-heading { margin: 0; }.security-list { padding: 0 24px; }.security-row:last-child { border-bottom: 0; }
 .security-row { display: flex; align-items: center; justify-content: space-between; gap: 16px 24px; padding: 24px 0; border-bottom: 1px solid var(--sv-border-subtle); }
 .security-row>div:first-child { flex: 1; min-width: 0; }
 .security-row h2 { display: flex; align-items: center; gap: 12px; font-size: 16px; flex-wrap: wrap; }
 .security-row p { margin-top: 8px; color: var(--sv-text-secondary); font-size: 14px; line-height: 1.7; }
 .account-name { font-weight: 400; color: var(--sv-text-secondary); overflow-wrap: anywhere; }
-@media(max-width:650px) { .security-row { flex-wrap: wrap; padding: 20px 0; }.security-row>div:first-child { flex-basis: 100%; } }
+@media(max-width:650px) { .security-list { padding-inline: 20px; }.security-row { flex-wrap: wrap; padding: 20px 0; }.security-row>div:first-child { flex-basis: 100%; } }
 .dialog-hint {
   margin: 4px 0 16px;
 }

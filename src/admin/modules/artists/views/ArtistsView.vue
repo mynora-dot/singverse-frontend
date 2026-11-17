@@ -2,7 +2,7 @@
 import { Filter, Headset as SongPlaceholderIcon } from '@element-plus/icons-vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElIcon, ElAlert, ElButton, ElDialog, ElInput, ElPagination, ElTable, ElTableColumn, ElMessage, ElMessageBox } from 'element-plus'
+import { ElIcon, ElAlert, ElButton, ElDialog, ElInput, ElPagination, ElTable, ElTableColumn, ElMessage, ElMessageBox, ElSkeleton, ElSkeletonItem } from 'element-plus'
 import { ApiError } from '../../../core/auth/api'
 import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { artists } from '../api/artists'
@@ -188,7 +188,7 @@ onBeforeUnmount(()=>{ active=false; generation++; detailGeneration++; candidateG
   </PageHeader>
   <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon />
   <ArtistArtworkBatch ref="batchPanel" :batch-id="batchId" @changed="refreshAfterArtwork" @artist="openArtistById" />
-  <div class="artists-browser">
+  <div class="artists-browser sv-glass">
     <div class="artists-types" role="group" aria-label="按歌手类型筛选"><button v-for="item in categories" :key="item.value" :class="{ active:artistType===item.value }" :aria-pressed="artistType===item.value" @click="chooseType(item.value)">{{ item.label }}</button></div>
     <form class="artists-toolbar" @submit.prevent="load(true)">
       <ElInput v-model="query" placeholder="搜索歌手、别名或拼音" aria-label="搜索歌手库" clearable />
@@ -203,7 +203,7 @@ onBeforeUnmount(()=>{ active=false; generation++; detailGeneration++; candidateG
       <div v-if="selectedCount" class="selection-actions"><ElButton size="small" @click="openArtwork()">批量获取封面</ElButton><ElButton size="small" @click="openCategories">标注歌手类型</ElButton><ElButton size="small" text @click="selected.clear()">取消选择</ElButton></div>
       <span v-else class="selection-tip">选择歌手，批量整理封面与分类</span>
     </div>
-    <p v-if="loading && !profiles.length" class="artists-note" role="status">正在读取歌手…</p>
+    <div v-if="loading && !profiles.length" class="artists-grid" role="status" aria-label="正在读取歌手"><ElSkeleton v-for="index in 5" :key="index" animated><template #template><ElSkeletonItem variant="image" style="width:100%;height:auto;aspect-ratio:1" /><ElSkeletonItem variant="h3" style="width:60%;margin-top:16px" /><ElSkeletonItem variant="text" style="width:40%;margin-top:8px" /></template></ElSkeleton></div>
     <div v-else-if="!profiles.length" class="artists-empty"><span aria-hidden="true"><ElIcon><SongPlaceholderIcon /></ElIcon></span><h2>{{ hasFilters?'没有找到符合条件的歌手':'扫描歌曲后，这里会自动出现歌手' }}</h2><p>{{ hasFilters?'试试调整类型、封面状态或搜索词。':'歌手来自歌曲信息，无需手动建档。先到歌曲来源添加目录并扫描。' }}</p><ElButton v-if="hasFilters" @click="clearFilters">查看全部歌手</ElButton><RouterLink v-else class="empty-source-link" to="/library/media">添加歌曲来源 →</RouterLink></div>
     <div v-else class="artists-grid" :aria-busy="loading">
       <article v-for="artist in profiles" :key="artist.id" class="artist-card" :class="{ selected:selected.has(artist.id) }">
@@ -254,6 +254,7 @@ onBeforeUnmount(()=>{ active=false; generation++; detailGeneration++; candidateG
 
 .artists-browser {
   min-width:0;
+  padding:24px;
 }
 
 .artists-types {
@@ -929,6 +930,7 @@ onBeforeUnmount(()=>{ active=false; generation++; detailGeneration++; candidateG
   }
 
 @media(max-width:768px) {
+  .artists-browser { padding:20px; }
   .page-selection { min-height: 44px; }
   .artist-name { min-height: 44px; min-width: 44px; }
   .artists-toolbar { gap: 8px; }

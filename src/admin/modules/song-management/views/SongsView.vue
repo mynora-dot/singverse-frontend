@@ -171,7 +171,7 @@ onBeforeUnmount(() => { active = false; generation++ })
     </div>
 
     <!-- 筛选与搜索 -->
-    <section class="filters-card" aria-label="歌曲搜索与筛选">
+    <section class="filters-card sv-glass" aria-label="歌曲搜索与筛选">
       <div class="filters-row">
         <select v-model="searchMode" aria-label="歌曲搜索范围" class="search-mode"><option value="identity">歌曲与歌手</option><option value="path">文件路径</option></select>
         <ElInput
@@ -198,6 +198,7 @@ onBeforeUnmount(() => { active = false; generation++ })
       <ElButton v-if="filtered || keyword.trim() || sourceId || tagIds.length" class="filter-reset" text @click="reset">重置筛选</ElButton>
     </section>
 
+    <div class="songs-workspace sv-glass">
     <!-- 操作栏 -->
     <div class="songs-toolbar">
       <div class="toolbar-left">
@@ -279,9 +280,7 @@ onBeforeUnmount(() => { active = false; generation++ })
       />
     </div>
 
-    <!-- 批量操作工具栏 -->
-
-
+    </div>
     <!-- 播放弹窗 -->
     <SongVideoDialog :song="playing" @close="playing = null" />
 
@@ -334,7 +333,8 @@ onBeforeUnmount(() => { active = false; generation++ })
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 20px;
+  padding: 20px;
   min-width: 0;
 }
 .song-more-button { min-width: 40px; }
@@ -618,6 +618,10 @@ onBeforeUnmount(() => { active = false; generation++ })
   min-width: 0
 }
 
+.songs-workspace { padding: 20px; min-width: 0; }
+.songs-workspace > :deep(.el-skeleton) { padding: 12px 0; background: none; }
+.songs-pagination { padding-top: 20px; border-top: 1px solid var(--sv-border-subtle); }
+
 @media(min-width:1700px) {
   .songs-grid {
     grid-template-columns: repeat(6, minmax(0, 1fr))
@@ -678,17 +682,19 @@ onBeforeUnmount(() => { active = false; generation++ })
   .filters-card { gap: 8px; }
   .filters-row {
     display: grid;
-    grid-template-columns: 112px minmax(0, 1fr) 60px;
+    grid-template-columns: minmax(0, 1fr) 64px;
     gap: 8px;
   }
 
   .search-mode {
-    width: 112px;
+    grid-column: 1 / -1;
+    width: 100%;
     height: 44px
   }
 
   .search-input {
-    flex-basis: calc(100% - 138px)
+    grid-column: 1;
+    flex-basis: auto
   }
 
   .filters-row>.el-button { min-width: 0; margin: 0; padding: 0 12px; }
@@ -771,6 +777,7 @@ onBeforeUnmount(() => { active = false; generation++ })
   .songs-pagination :deep(.el-pagination__jump) {
     display: none
   }
+  .songs-workspace, .filters-card { padding: 16px; }
 }
 @media(max-width: 650px) {
   .page-size-selector select { height: 44px; }

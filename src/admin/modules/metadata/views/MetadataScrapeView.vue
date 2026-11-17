@@ -166,12 +166,12 @@ onBeforeUnmount(() => { active = false; generation++; loadGeneration++; clearTim
           <ElButton class="batch-refresh" text :icon="RefreshRight" :loading="refreshing" :disabled="busy || loading" title="刷新进度" aria-label="刷新进度" @click="refreshBatch" />
         </div>
       </div>
-      <div class="batch-progress" role="progressbar" aria-label="歌曲匹配处理进度" :aria-valuenow="percentage" aria-valuemin="0" aria-valuemax="100"><span :style="{ width: `${percentage}%` }" /></div>
+      <div class="batch-progress" role="progressbar" aria-label="歌曲匹配处理进度" :aria-valuenow="percentage" aria-valuemin="0" aria-valuemax="100"><span :style="{ transform: `scaleX(${percentage / 100})` }" /></div>
     </section>
     <p v-if="batch?.status === 'CANCELLED'" class="status-notice">批次已终止，未处理歌曲不会继续匹配；已获得的候选与应用结果保留。</p>
     <p v-if="batch?.status === 'PAUSED'" class="status-notice">批次已暂停，在途请求可能仍在结束；确认平台及设置后可继续。</p>
 
-    <section v-if="batch" class="batch-list-card" aria-label="批次歌曲" :aria-busy="refreshing || loading">
+    <section v-if="batch" class="batch-list-card sv-glass" aria-label="批次歌曲" :aria-busy="refreshing || loading">
       <div class="list-toolbar">
         <div class="status-filters" role="group" aria-label="歌曲处理状态">
           <button v-for="stat in primaryStats" :key="stat.status" type="button" class="status-filter" :class="{ selected: filter === stat.status }" :data-status="stat.status || 'ALL'" :aria-pressed="filter === stat.status" :disabled="busy || loading" @click="selectStatus(stat.status)">{{ stat.label }} <span>{{ stat.value }}</span></button>

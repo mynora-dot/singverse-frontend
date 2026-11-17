@@ -2,7 +2,7 @@
 import { Headset as SongPlaceholderIcon } from '@element-plus/icons-vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { ElIcon, ElAlert, ElButton, ElInput, ElMessageBox, ElPagination } from 'element-plus'
+import { ElIcon, ElAlert, ElButton, ElInput, ElMessageBox, ElPagination, ElSkeleton, ElSkeletonItem } from 'element-plus'
 import { requestId as newRequestId } from '../../../shared/request-id'
 import PageHeader from '../../shared/ui/PageHeader.vue'
 import { playlists, type Playlist, type Song, type Draft } from './api'
@@ -161,9 +161,11 @@ onBeforeUnmount(() => { active = false; epoch++; window.removeEventListener('bef
 <template>
 <section class="playlist-page"><PageHeader title="歌单" description="共享歌单会出现在电视和亲友点歌页中。可手动选歌，也可让 AI 从曲库中推荐。"><template #meta><span class="playlist-total" aria-live="polite">{{ total }} 张</span></template><template #actions><ElButton type="primary" @click="create">创建歌单</ElButton></template></PageHeader>
 <ElAlert v-if="error&&!open" :title="error" type="error" :closable="false"/>
-<form class="toolbar playlist-filters" @submit.prevent="load(true)"><ElInput v-model="query" placeholder="搜索歌单名称或简介" aria-label="搜索歌单" clearable @clear="load(true)"/><label>排序<select v-model="sort" aria-label="歌单排序" @change="load(true)"><option value="UPDATED_DESC">最近更新</option><option value="NAME_ASC">名称排序</option><option value="SONGS_DESC">歌曲最多</option></select></label><ElButton native-type="submit" :loading="loading">搜索 / 刷新</ElButton></form>
-<p v-if="loading" role="status">正在读取歌单…</p><div v-else-if="!items.length" class="empty"><span><ElIcon><SongPlaceholderIcon /></ElIcon></span><h2>{{query?'没有找到歌单':'为下一次欢聚准备一张歌单'}}</h2><p>手动选歌，或让 AI 根据你的想法从曲库中推荐。</p><ElButton @click="create">创建第一张歌单</ElButton></div>
-<div v-else class="grid"><article v-for="p in items" :key="p.id" class="card"><button class="card-open" @click="edit(p.id)"><div class="cover"><img v-if="p.coverPath&&!coverFailures.has(p.id+(p.coverVersion||''))" @error="coverFailures.add(p.id+(p.coverVersion||''))" :src="`${p.coverPath}?v=${encodeURIComponent(p.coverVersion||'')}`" alt=""/><span v-else role="img" aria-label="暂无歌单封面"><ElIcon><SongPlaceholderIcon /></ElIcon></span></div><div class="card-copy"><h2 :title="p.name">{{p.name}}</h2><p>{{p.count}} 首可用歌曲<span v-if="p.missingCount"> · {{p.missingCount}} 首已移除</span></p><small :title="p.description">{{p.description||'打开歌单，选一首想唱的歌'}}</small></div></button><div class="card-actions"><ElButton text @click="edit(p.id)">编辑歌单</ElButton><ElButton text type="danger" :disabled="busy" @click="remove(p)">删除</ElButton></div></article></div>
+<form class="toolbar playlist-filters sv-glass" @submit.prevent="load(true)"><ElInput v-model="query" placeholder="搜索歌单名称或简介" aria-label="搜索歌单" clearable @clear="load(true)"/><label>排序<select v-model="sort" aria-label="歌单排序" @change="load(true)"><option value="UPDATED_DESC">最近更新</option><option value="NAME_ASC">名称排序</option><option value="SONGS_DESC">歌曲最多</option></select></label><ElButton native-type="submit" :loading="loading">搜索 / 刷新</ElButton></form>
+<p v-if="loading && items.length" role="status">正在刷新歌单…</p>
+<div v-if="loading && !items.length" class="grid" role="status" aria-label="正在读取歌单"><ElSkeleton v-for="index in 4" :key="index" class="playlist-skeleton sv-glass" animated><template #template><ElSkeletonItem variant="image" style="width:100%;height:auto;aspect-ratio:1" /><ElSkeletonItem variant="h3" style="width:60%;margin-top:16px" /><ElSkeletonItem variant="text" style="width:40%;margin-top:12px" /></template></ElSkeleton></div>
+<div v-else-if="!items.length" class="empty"><span><ElIcon><SongPlaceholderIcon /></ElIcon></span><h2>{{query?'没有找到歌单':'为下一次欢聚准备一张歌单'}}</h2><p>手动选歌，或让 AI 根据你的想法从曲库中推荐。</p><ElButton @click="create">创建第一张歌单</ElButton></div>
+<div v-else class="grid"><article v-for="p in items" :key="p.id" class="card sv-glass"><button class="card-open" @click="edit(p.id)"><div class="cover"><img v-if="p.coverPath&&!coverFailures.has(p.id+(p.coverVersion||''))" @error="coverFailures.add(p.id+(p.coverVersion||''))" :src="`${p.coverPath}?v=${encodeURIComponent(p.coverVersion||'')}`" alt=""/><span v-else role="img" aria-label="暂无歌单封面"><ElIcon><SongPlaceholderIcon /></ElIcon></span></div><div class="card-copy"><h2 :title="p.name">{{p.name}}</h2><p>{{p.count}} 首可用歌曲<span v-if="p.missingCount"> · {{p.missingCount}} 首已移除</span></p><small :title="p.description">{{p.description||'打开歌单，选一首想唱的歌'}}</small></div></button><div class="card-actions"><ElButton text @click="edit(p.id)">编辑歌单</ElButton><ElButton text type="danger" :disabled="busy" @click="remove(p)">删除</ElButton></div></article></div>
 <ElPagination v-if="total" :current-page="page" :total="total" :page-size="12" layout="total, prev, pager, next" @current-change="v=>{page=v;load()}"/>
 <PlaylistEditorDialog :model-value="open" :editing="!!current" :form="form" :songs="songs" :generation="generation" :models="models" :proposal="proposal" :busy="busy" :generating="generating" :dirty="dirty" :error="error" :undo-label="undoSnapshot?.label || ''" @close="close" @save="save" @update:form="updateEditor" @update:generation="Object.assign(generation, $event)" @open-picker="picker=true" @move="move" @reorder="reorder" @remove="removeSong" @generate="generate" @dismiss-proposal="proposal=null" @use-proposal="useProposal" @undo="undo" />
 <SongPicker v-if="picker" purpose="playlist" :selected-ids="form.songIds" @close="picker=false" @confirm="choose" @selected-songs="rememberSongs" />
@@ -188,7 +190,7 @@ onBeforeUnmount(() => { active = false; epoch++; window.removeEventListener('bef
 }
 
 .playlist-filters {
-  padding: 0;
+  padding: 16px 20px;
   margin: 0 0 4px
 }
 
@@ -203,6 +205,8 @@ onBeforeUnmount(() => { active = false; epoch++; window.removeEventListener('bef
   font-size: 12px;
   color: var(--sv-text-secondary)
 }
+
+.playlist-skeleton { padding: 16px; }
 
 .playlist-total { font-size: 13px; color: var(--sv-text-secondary); }
 
@@ -234,9 +238,6 @@ onBeforeUnmount(() => { active = false; epoch++; window.removeEventListener('bef
 }
 
 .card {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 12px;
   overflow: hidden
 }
 
@@ -299,7 +300,7 @@ onBeforeUnmount(() => { active = false; epoch++; window.removeEventListener('bef
 }
 
 .card-copy {
-  padding: 16px 0 12px
+  padding: 16px 16px 12px
 }
 
 .card-copy h2 {
@@ -330,7 +331,7 @@ onBeforeUnmount(() => { active = false; epoch++; window.removeEventListener('bef
   justify-content: space-between;
   border-top: 1px solid var(--sv-border-subtle);
   margin: 0;
-  padding: 4px 0
+  padding: 8px
 }
 
 .card-actions :deep(.el-button) {

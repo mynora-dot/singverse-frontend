@@ -1,0 +1,105 @@
+/* 透明度只用于容器背景，文字与数据保持完整对比度。 */
+/* 独立下载入口复用基础样式，保留原有文字尺寸和换行布局。 */
+.public-downloads { font-size: 14px; }
+
+.admin-shell {
+  background:
+    radial-gradient(ellipse at 8% 0, var(--sv-glass-tint), transparent 52%),
+    radial-gradient(ellipse at 96% 32%, var(--sv-glass-tint), transparent 48%),
+    var(--sv-surface-0);
+}
+
+.sv-glass,
+.admin-shell .sv-panel,
+.admin-shell .el-card {
+  border: 1px solid var(--sv-glass-border);
+  border-radius: var(--sv-radius-lg);
+  background: var(--sv-glass-surface);
+  box-shadow: var(--sv-glass-shadow);
+  -webkit-backdrop-filter: blur(var(--sv-glass-blur));
+  backdrop-filter: blur(var(--sv-glass-blur));
+}
+
+/* 弹层和面板内的内容不再创建另一层玻璃。 */
+.sv-glass :is(.sv-glass, .sv-panel, .el-card),
+.admin-shell :is(.el-card, .sv-panel) :is(.el-card, .sv-panel),
+:is(.el-dialog, .el-drawer) :is(.sv-glass, .sv-panel, .el-card) {
+  background: var(--sv-surface-2);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.app-masthead,
+.navigation-dialog {
+  background: var(--sv-glass-overlay);
+  border-color: var(--sv-glass-border);
+  box-shadow: var(--sv-glass-shadow);
+  -webkit-backdrop-filter: blur(var(--sv-glass-chrome-blur));
+  backdrop-filter: blur(var(--sv-glass-chrome-blur));
+}
+
+.el-dialog,
+.el-drawer,
+.el-message-box,
+.el-popper.is-light {
+  border-color: var(--sv-glass-border);
+  background: var(--sv-glass-overlay);
+  box-shadow: var(--sv-shadow-lg), inset 0 1px 0 var(--sv-glass-highlight);
+  -webkit-backdrop-filter: blur(var(--sv-glass-chrome-blur));
+  backdrop-filter: blur(var(--sv-glass-chrome-blur));
+}
+
+.el-dialog,
+.el-message-box { border-radius: var(--sv-radius-overlay); }
+.el-drawer { border: 1px solid var(--sv-glass-border); }
+.el-dropdown-menu { background: transparent; }
+.el-popper.is-light > .el-popper__arrow::before {
+  background: var(--sv-surface-2);
+  border-color: var(--sv-glass-border);
+}
+
+.el-table { font-size: 14px; }
+.el-loading-mask { border-radius: inherit; }
+.el-skeleton { min-height: 180px; }
+.el-skeleton__item { background: var(--sv-surface-3); }
+.el-skeleton.is-animated .el-skeleton__item {
+  background: var(--sv-surface-3);
+  animation: sv-skeleton-breathe 1.8s ease-in-out infinite;
+}
+@keyframes sv-skeleton-breathe { 50% { opacity: .5; } }
+
+.workspace > main { scroll-margin-top: calc(var(--sv-topbar-height) + 16px); }
+.workspace :where(input, button, a, select, textarea, summary) {
+  scroll-margin-block: calc(var(--sv-topbar-height) + 24px) 24px;
+}
+.sv-page-header-copy { flex: 1 1 auto; }
+.sv-page-header-copy > :not(h1) { flex-shrink: 0; }
+.sv-page-header-actions { max-width: 100%; }
+.page-description, .panel-description, .muted { overflow-wrap: anywhere; }
+
+@media (max-width: 768px) {
+  :root { --sv-glass-blur: 8px; --sv-glass-chrome-blur: 12px; }
+  .admin-shell .brand { min-height: 44px; }
+  .admin-shell :is(.sv-content-section, .sv-panel-body) { padding: 20px; }
+  .admin-shell .el-card.sv-content-section { padding: 0; }
+  .el-card.sv-content-section > .el-card__body { padding: 20px; }
+  .admin-shell :is(.el-input__inner, .el-textarea__inner, .native-field) { font-size: 16px; }
+  .el-drawer__close-btn { min-width: 44px; min-height: 44px; }
+  .workspace-footer a { display: inline-flex; align-items: center; min-height: 44px; }
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  .el-dropdown-menu__item { min-height: 44px; }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root, :root[data-theme] { --sv-glass-surface: var(--sv-surface-2); --sv-glass-overlay: var(--sv-surface-2); }
+}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  :root, :root[data-theme] { --sv-glass-surface: var(--sv-surface-2); --sv-glass-overlay: var(--sv-surface-2); --sv-glass-tint: transparent; }
+  :is(.sv-glass, .app-masthead, .navigation-dialog, .el-card, .sv-panel, .el-dialog, .el-drawer, .el-message-box, .el-popper.is-light) {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}

@@ -146,6 +146,7 @@ const origin = computed(() => {
   font-size: 15px;
   line-height: 1.6;
   margin: 0;
+  overflow-wrap: anywhere;
   color: var(--sv-text-secondary)
 }
 
@@ -168,6 +169,9 @@ const origin = computed(() => {
 }
 
 .song-quick-facts>span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: 4px 8px;
   border: 1px solid var(--sv-border-subtle);
   border-radius: 8px;
@@ -372,6 +376,29 @@ dd {
 
 .file-facts dd {
   font-size: 12px
+}
+
+@media(max-width:768px), (pointer:coarse) {
+  .section-heading > a,
+  .classification-section :deep(.el-button),
+  .file-details > summary {
+    min-height: 44px;
+    height: auto;
+  }
+
+  .section-heading > a {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .classification-section :deep(.el-button) {
+    min-width: 44px;
+    padding-inline: 8px;
+  }
+
+  .file-details > summary {
+    line-height: 44px;
+  }
 }
 
 @media(max-width:480px) {

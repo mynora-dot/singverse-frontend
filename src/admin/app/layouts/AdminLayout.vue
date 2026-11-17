@@ -52,6 +52,10 @@ async function closeNavigation() {
   await nextTick()
   ;(navToggle.value?.$el as HTMLElement | undefined)?.focus()
 }
+function retireNavigation(element: Element) {
+  // v-if 的离场节点会保留到过渡结束，期间不能继续获得焦点。
+  ;(element as HTMLElement).inert = true
+}
 function trapNavigation(event: KeyboardEvent) {
   if (event.key === 'Escape') { event.preventDefault(); closeNavigation(); return }
   if (event.key !== 'Tab' || !navigationOpen.value) return
@@ -93,10 +97,15 @@ function focusMainContent() { document.getElementById('main-content')?.focus() }
     </header>
     <div class="workspace" :inert="navigationOpen || undefined">
       <div v-if="currentNavigation.group" ref="sectionNavigation" class="section-navigation"><nav :aria-label="currentNavigation.group.label + '分区'"><RouterLink v-for="entry in currentNavigation.group.children" :key="entry.path" :to="entry.path" class="section-link" :aria-current="activePath === entry.path ? 'page' : undefined">{{ entry.label }}<small v-if="'advanced' in entry && entry.advanced">高级</small></RouterLink></nav></div>
-      <main id="main-content" tabindex="-1"><RouterView /></main>
+      <main id="main-content" tabindex="-1">
+        <RouterView v-slot="{ Component }">
+          <Transition name="sv-page" mode="out-in"><component :is="Component" /></Transition>
+        </RouterView>
+      </main>
       <footer class="workspace-footer"><span>SingVerse · 你的家庭音乐资料室</span><a href="/party/" target="_blank" rel="noopener">打开亲友点歌页 <ElIcon><TopRight /></ElIcon></a></footer>
     </div>
-    <div v-if="navigationOpen" class="navigation-dialog" role="dialog" aria-modal="true" aria-label="全部功能" @keydown="trapNavigation">
+    <Transition name="sv-nav" @before-leave="retireNavigation">
+    <div v-if="navigationOpen" class="navigation-dialog" role="dialog" aria-modal="true" aria-label="全部功能" :inert="!navigationOpen || undefined" :aria-hidden="!navigationOpen || undefined" @keydown="trapNavigation">
       <nav id="admin-navigation" ref="navigationList" class="navigation-sheet" aria-label="全部导航">
         <div class="sheet-heading"><strong>全部功能</strong><button type="button" aria-label="关闭导航" @click="closeNavigation"><ElIcon><Close /></ElIcon></button></div>
         <RouterLink :to="overviewEntry.path" class="nav-item" @click="closeNavigation" :aria-current="activePath === overviewEntry.path ? 'page' : undefined"><ElIcon><component :is="overviewEntry.icon" /></ElIcon>{{ overviewEntry.label }}</RouterLink>
@@ -106,56 +115,8 @@ function focusMainContent() { document.getElementById('main-content')?.focus() }
         <RouterLink :to="taskEntry.path" class="nav-item" @click="closeNavigation" :aria-current="activePath === taskEntry.path ? 'page' : undefined"><ElIcon><Clock /></ElIcon>{{ taskEntry.label }}<span v-if="taskCount > 0" class="task-count" aria-hidden="true">{{ taskBadge }}</span></RouterLink><a class="nav-item" href="/party/" target="_blank" rel="noopener">亲友点歌页 <ElIcon><TopRight /></ElIcon></a>
       </nav>
     </div>
-    <button v-if="navigationOpen" class="nav-scrim" type="button" tabindex="-1" aria-label="关闭导航背景" @click="closeNavigation" />
+    </Transition>
+    <Transition name="sv-scrim"><button v-if="navigationOpen" class="nav-scrim" type="button" tabindex="-1" aria-label="关闭导航背景" @click="closeNavigation" /></Transition>
   </div>
   <div v-if="route.path !== '/system/assistant'" :inert="navigationOpen || undefined"><AssistantWidget /></div>
 </template>
-
-<style scoped>
-.record-room-shell { background: var(--sv-surface-2); }
-.record-room-shell .masthead-inner { max-width: 1440px; min-height: 88px; padding: 0 84px; gap: 48px; }
-.record-room-shell .brand { gap: 10px; }
-.record-room-shell .brand-mark { width: 46px; height: 46px; }
-.record-room-shell .brand strong { font-size: 24px; letter-spacing: -.8px; }
-.record-room-shell .brand small { display: none; }
-.record-room-shell .primary-navigation { gap: 32px; }
-.record-room-shell .primary-navigation a { min-width: 44px; justify-content: center; }
-.record-room-shell .masthead-actions { margin-left: auto; gap: 12px; }
-.record-room-shell .utility-link, .record-room-shell .account-chip { min-width: 44px; min-height: 44px; }
-.record-room-shell .brand { min-height: 44px; }
-.record-room-shell :deep(.theme-trigger) { width: 44px; height: 44px; }
-.record-room-shell .workspace>main { max-width: 1440px; padding: 40px 96px 24px; }
-.record-room-shell .workspace-footer { max-width: 1440px; padding: 16px 96px 28px; }
-.record-room-shell .workspace-footer a { min-height: 44px; }
-@media(max-width:1300px) {
-  .record-room-shell .masthead-inner { padding: 0 48px; gap: 28px; }
-  .record-room-shell .workspace>main { padding-right: 56px; padding-left: 56px; }
-  .record-room-shell .workspace-footer { padding-right: 56px; padding-left: 56px; }
-  .record-room-shell .primary-navigation { gap: 24px; }
-  .record-room-shell .masthead-actions { gap: 8px; }
-}
-@media(max-width:1100px) {
-  .record-room-shell .masthead-inner { padding: 0 24px; gap: 24px; }
-  .record-room-shell .workspace>main { padding: 32px 24px 24px; }
-  .record-room-shell .workspace-footer { padding: 16px 24px 24px; }
-  .record-room-shell .utility-label { display: none; }
-  .record-room-shell .primary-navigation { gap: 18px; }
-}
-@media(max-width:820px) {
-  .record-room-shell .masthead-inner { min-height: 76px; gap: 16px; }
-  .record-room-shell .brand-mark { width: 36px; height: 36px; }
-  .record-room-shell .brand strong { font-size: 21px; }
-  .record-room-shell .primary-navigation { gap: 10px; }
-}
-@media(max-width:760px) {
-  .record-room-shell .masthead-inner { flex-wrap: wrap; gap: 0 12px; padding: 0 20px; }
-  .record-room-shell .brand { min-height: 72px; }
-  .record-room-shell .masthead-actions { gap: 4px; }
-  .record-room-shell .utility-link, .record-room-shell .settings-link { display: none; }
-  .record-room-shell .mobile-nav-toggle { display: inline-flex; width: 44px; height: 44px; padding: 0; }
-  .record-room-shell .primary-navigation { order: 3; display: flex; flex: 1 0 100%; justify-content: space-between; gap: 8px; min-height: 52px; }
-  .record-room-shell .primary-navigation a { font-size: 16px; }
-  .record-room-shell .workspace>main { padding: 28px 20px 20px; }
-  .record-room-shell .workspace-footer { padding: 16px 20px 24px; }
-}
-</style>

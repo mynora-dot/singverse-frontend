@@ -1,12 +1,20 @@
-/* 家庭音乐资料室：中性表面、品牌蓝、三层文字。管理端专用；深色覆盖见 themes.css。
+/* 家庭音乐资料室：实色内容、玻璃容器、品牌蓝。管理端专用；深色覆盖见 themes.css。
    旧强调令牌保留为主色别名，供已有模块兼容使用。 */
 :root {
   color-scheme: light;
-  --sv-surface-0: #fafafa;
-  --sv-surface-1: #f7f7f8;
+  --sv-surface-0: #f2f5fa;
+  --sv-surface-1: #f6f8fc;
   --sv-surface-2: #ffffff;
-  --sv-surface-3: #f0f0f2;
-  --sv-surface-4: #e4e4e7;
+  --sv-surface-3: #edf1f7;
+  --sv-surface-4: #dde4ee;
+  --sv-glass-surface: rgb(255 255 255 / 84%);
+  --sv-glass-overlay: rgb(255 255 255 / 94%);
+  --sv-glass-border: rgb(136 155 185 / 25%);
+  --sv-glass-highlight: rgb(255 255 255 / 90%);
+  --sv-glass-tint: rgb(83 139 230 / 9%);
+  --sv-glass-blur: 12px;
+  --sv-glass-chrome-blur: 18px;
+  --sv-glass-shadow: 0 4px 20px rgb(25 52 91 / 4%), inset 0 1px 0 var(--sv-glass-highlight);
   --sv-media-stage: #141415;
   --sv-accent-primary: #2563eb;
   --sv-accent-muted: #1d4ed8;
@@ -28,14 +36,15 @@
   --sv-text-secondary: #525252;
   --sv-text-tertiary: #666666;
   --sv-text-inverse: #ffffff;
-  --sv-border-subtle: #e7e7e9;
-  --sv-border-default: #d4d4d8;
-  --sv-border-strong: #a1a1aa;
+  --sv-border-subtle: #dfe5ee;
+  --sv-border-default: #bdc9d9;
+  --sv-border-strong: #8091a9;
   --sv-scrim: rgb(0 0 0 / 40%);
   --sv-groove-ink: rgb(23 23 23 / 7%);
   --sv-radius-sm: 4px;
-  --sv-radius-md: 8px;
-  --sv-radius-lg: 12px;
+  --sv-radius-md: 10px;
+  --sv-radius-lg: 16px;
+  --sv-radius-overlay: 20px;
   --sv-radius-full: 999px;
   --sv-space-1: 4px;
   --sv-space-2: 8px;
@@ -46,14 +55,14 @@
   --sv-space-7: 32px;
   --sv-space-8: 40px;
   --sv-space-10: 56px;
-  --sv-shadow-sm: 0 2px 4px rgb(0 0 0 / 3%);
-  --sv-shadow-md: 0 8px 24px rgb(0 0 0 / 8%);
-  --sv-shadow-lg: 0 16px 48px rgb(0 0 0 / 12%);
+  --sv-shadow-sm: 0 2px 8px rgb(25 52 91 / 5%);
+  --sv-shadow-md: 0 8px 32px rgb(25 52 91 / 8%);
+  --sv-shadow-lg: 0 24px 72px rgb(17 36 65 / 18%);
   --sv-font-display: 32px;
   --sv-font-h1: 28px;
   --sv-font-h2: 18px;
   --sv-font-h3: 16px;
-  --sv-font-body: 14px;
+  --sv-font-body: 16px;
   --sv-font-meta: 13px;
   --sv-font-label: 12px;
   --sv-leading-tight: 1.4;
@@ -62,9 +71,16 @@
   --sv-font-serif: 'Iowan Old Style', 'Palatino Linotype', 'Songti SC', 'Noto Serif CJK SC', 'STSong', 'SimSun', serif;
   --sv-font-editorial: var(--sv-font-sans);
   --sv-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --sv-topbar-height: 64px;
+  --sv-topbar-height: 72px;
   --sv-content-max-width: 1480px;
   --sv-ease-smooth: cubic-bezier(.22, .61, .36, 1);
+  --sv-ease-enter: cubic-bezier(.16, 1, .3, 1);
+  --sv-ease-exit: cubic-bezier(.4, 0, 1, 1);
+  --sv-motion-feedback: 120ms;
+  --sv-motion-enter: 220ms;
+  --sv-motion-exit: 140ms;
+  --sv-motion-overlay-enter: 280ms;
+  --sv-motion-overlay-exit: 180ms;
   --sv-grain: none;
   --sv-record-groove: repeating-radial-gradient(circle at 50% 50%, var(--sv-groove-ink) 0 1px, transparent 1px 4px);
   --el-color-primary: var(--sv-accent-primary);

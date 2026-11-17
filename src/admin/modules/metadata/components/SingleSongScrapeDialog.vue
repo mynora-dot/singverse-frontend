@@ -145,7 +145,7 @@ async function apply() { resultCoverFailed.value = false; await state.apply(prop
   max-height: 92dvh;
   margin-bottom: 0;
   padding: 0;
-  border-radius: var(--sv-radius-md);
+  border-radius: var(--sv-radius-overlay);
   overflow: hidden;
   box-sizing: border-box;
 }

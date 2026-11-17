@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElAlert, ElButton, ElDialog, ElIcon, ElInput, ElPagination } from 'element-plus'
+import { ElAlert, ElButton, ElDialog, ElIcon, ElInput, ElPagination, ElSkeleton } from 'element-plus'
 import { Plus, Refresh, Search, Star, Delete, Connection } from '@element-plus/icons-vue'
 import SongCover from '../song-management/components/SongCover.vue'
 import { favoritesApi, type FavoriteSong } from './api'
@@ -87,7 +87,7 @@ onBeforeUnmount(() => { active = false; readSequence++; addSequence++; clearInte
     </header>
     <ElAlert v-if="readError" type="error" :closable="false" class="read-error"><template #title>收藏读取失败：{{ readError }}</template><p>{{ loaded ? '当前显示上次成功读取的内容。' : '请检查连接后重试。' }}<ElButton text @click="load()">重新读取</ElButton></p></ElAlert>
     <p v-if="notice" class="success-notice" role="status">{{ notice }}。手机与电视刷新后可见。</p>
-    <form class="favorites-toolbar" @submit.prevent="load(true)">
+    <form class="favorites-toolbar sv-glass" @submit.prevent="load(true)">
       <ElInput v-model="query" :prefix-icon="Search" placeholder="搜索歌名或歌手" aria-label="搜索收藏" maxlength="200" clearable @clear="load(true)" />
       <select v-model="availability" aria-label="收藏可用状态" @change="load(true)"><option value="ALL">全部状态</option><option value="AVAILABLE">可用歌曲</option><option value="UNAVAILABLE">暂不可用</option></select>
       <select v-model="order" aria-label="收藏排序" @change="load(true)"><option value="RECENT">最近收藏</option><option value="TITLE">歌名排序</option><option value="ARTIST">歌手排序</option></select>
@@ -103,7 +103,7 @@ onBeforeUnmount(() => { active = false; readSequence++; addSequence++; clearInte
         <ElButton class="mobile-refresh" :icon="Refresh" :disabled="busy || loading" aria-label="刷新收藏" @click="load()" />
       </div>
     </div>
-    <div class="favorites-list" :aria-busy="loading">
+    <div class="favorites-list sv-glass" :aria-busy="loading">
       <div v-if="items.length" class="list-head">
         <label v-if="bulk" class="check-target"><input type="checkbox" :checked="allSelected" :indeterminate="selected.size > 0 && !allSelected" aria-label="选择当前页全部收藏" :disabled="busy || !!readError" @change="selectPage(($event.target as HTMLInputElement).checked)"></label><span v-else />
         <span class="head-song">歌曲</span><span>专辑</span><span>收藏时间</span><span class="head-action">操作</span>
@@ -117,7 +117,8 @@ onBeforeUnmount(() => { active = false; readSequence++; addSequence++; clearInte
         <span class="album-cell" :title="song.album || ''">{{ song.album || '—' }}</span><time class="date-cell" :datetime="song.addedAt">{{ date(song.addedAt) }}</time>
         <button class="row-remove" :disabled="busy || !!readError" :aria-label="`取消收藏 ${song.title}`" @click="confirmRemove([song])"><span>取消收藏</span><ElIcon><Delete /></ElIcon></button>
       </article>
-      <div v-if="!items.length" class="list-state" role="status">
+      <ElSkeleton v-if="loading && !loaded" :rows="8" animated class="favorites-skeleton" aria-label="正在读取收藏" />
+      <div v-if="!items.length && !loading" class="list-state" role="status">
         <ElIcon><Star /></ElIcon>
         <h2>{{ loading ? '正在读取收藏…' : readError ? '暂时无法读取收藏' : query || availability !== 'ALL' ? '没有找到匹配的收藏' : '把想唱的歌留在一起' }}</h2>
         <p>{{ readError ? '恢复连接后重试。' : query || availability !== 'ALL' ? '换个关键词，或查看全部收藏。' : '在这里添加歌曲，手机和电视也能找到。' }}</p>
@@ -158,7 +159,7 @@ onBeforeUnmount(() => { active = false; readSequence++; addSequence++; clearInte
 .favorites-heading h1 { margin:0 0 6px; font-size:26px; line-height:36px; font-weight:650; letter-spacing:-.5px; }
 .favorites-heading p { margin:0; display:flex; gap:8px; align-items:center; color:var(--sv-text-secondary); font-size:14px; line-height:22px; }
 .favorites-page :deep(.el-button) { min-height:44px; }
-.favorites-toolbar { display:flex; gap:12px; align-items:center; margin-bottom:12px; }
+.favorites-toolbar { display:flex; gap:12px; align-items:center; margin-bottom:12px; padding:16px 20px; flex-wrap:wrap; }
 .favorites-toolbar .el-input { max-width:400px; flex:1; min-width:160px; }
 .favorites-page :deep(.el-input__wrapper) { min-height:44px; box-sizing:border-box; }
 select { height:44px; padding:0 12px; border:1px solid var(--sv-border-default); border-radius:7px; background:var(--sv-surface-2); color:var(--sv-text-secondary); font:inherit; min-width:144px; }
@@ -167,7 +168,8 @@ select { height:44px; padding:0 12px; border:1px solid var(--sv-border-default);
 .result-bar { min-height:52px; display:flex; align-items:center; gap:12px; color:var(--sv-text-secondary); font-size:14px; margin-bottom:4px; }
 .result-bar strong { font-weight:550; }.result-bar.bulk { padding:4px 12px; border-radius:7px; background:var(--sv-accent-soft); color:var(--sv-accent-primary); }
 .selection-scope { font-size:12px; font-weight:400; }.result-actions { display:flex; margin-left:auto; gap:8px; }.result-actions .el-button + .el-button { margin-left:0; }
-.favorites-list { border-top:1px solid var(--sv-border-default); border-bottom:1px solid var(--sv-border-default); background:var(--sv-surface-2); }
+.favorites-list { overflow:hidden; }
+.favorites-skeleton { padding:24px; }
 .list-head,.favorite-row { display:grid; grid-template-columns:44px minmax(260px,1.6fr) minmax(120px,1fr) 140px 100px; gap:8px; align-items:center; }
 .list-head { height:46px; background:var(--sv-surface-1); color:var(--sv-text-tertiary); font-size:12px; border-bottom:1px solid var(--sv-border-subtle); }.head-song { padding-left:60px; }.head-action { text-align:center; }
 .favorite-row { min-height:84px; border-bottom:1px solid var(--sv-border-subtle); }.favorite-row:last-child { border:0; }.favorite-row:hover { background:var(--sv-surface-0); }.favorite-row.selected { background:var(--sv-accent-soft); }

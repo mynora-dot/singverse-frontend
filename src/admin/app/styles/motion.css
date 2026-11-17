@@ -1,0 +1,59 @@
+/* 只过渡可见状态；请求、交互和卸载不依赖动画结束事件。 */
+.admin-shell :where(button, a),
+.el-button,
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner,
+.login-card button,
+.home-login-close {
+  transition: color var(--sv-motion-feedback) ease,
+    background-color var(--sv-motion-feedback) ease,
+    border-color var(--sv-motion-feedback) ease,
+    box-shadow var(--sv-motion-feedback) ease,
+    opacity var(--sv-motion-feedback) ease;
+}
+.admin-shell :where(button, .solid-link):active:not(:disabled):not(.is-disabled),
+.el-button:active:not(.is-disabled),
+.login-submit:active:not(:disabled) { opacity: .82; }
+
+.sv-page-enter-active { transition: opacity var(--sv-motion-enter) ease, transform var(--sv-motion-enter) var(--sv-ease-enter); }
+.sv-page-leave-active { transition: opacity var(--sv-motion-exit) ease, transform var(--sv-motion-exit) var(--sv-ease-exit); pointer-events: none; }
+.sv-page-enter-from { opacity: 0; transform: translateY(6px); }
+.sv-page-leave-to { opacity: 0; transform: translateY(-4px); }
+
+.sv-nav-enter-active { transition: transform var(--sv-motion-overlay-enter) var(--sv-ease-enter), opacity var(--sv-motion-overlay-enter) ease; }
+.sv-nav-leave-active { transition: transform var(--sv-motion-overlay-exit) var(--sv-ease-exit), opacity var(--sv-motion-overlay-exit) ease; }
+.sv-nav-enter-from, .sv-nav-leave-to { transform: translateX(100%); opacity: 0; }
+.sv-scrim-enter-active { transition: opacity var(--sv-motion-overlay-enter) ease; }
+.sv-scrim-leave-active { transition: opacity var(--sv-motion-overlay-exit) ease; }
+.sv-scrim-enter-from, .sv-scrim-leave-to { opacity: 0; }
+
+/* 使用组件现有过渡钩子，保留遮罩、焦点恢复、销毁和关闭保护。 */
+.dialog-fade-enter-active { animation: none; transition: opacity var(--sv-motion-overlay-enter) ease; }
+.dialog-fade-leave-active { animation: none; transition: opacity var(--sv-motion-overlay-exit) ease; }
+.dialog-fade-enter-active .el-overlay-dialog,
+.dialog-fade-leave-active .el-overlay-dialog { animation: none; }
+.dialog-fade-enter-active .el-dialog { animation: sv-dialog-in var(--sv-motion-overlay-enter) var(--sv-ease-enter); }
+.dialog-fade-leave-active .el-dialog { animation: sv-dialog-out var(--sv-motion-overlay-exit) var(--sv-ease-exit); }
+.dialog-fade-enter-from, .dialog-fade-leave-to { opacity: 0; }
+@keyframes sv-dialog-in { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes sv-dialog-out { to { opacity: 0; transform: translateY(4px) scale(.99); } }
+.el-drawer { --el-transition-duration: var(--sv-motion-overlay-enter); transition-property: transform, opacity; transition-timing-function: var(--sv-ease-enter); }
+.el-drawer-fade-enter-active { transition: opacity var(--sv-motion-overlay-enter) ease; }
+.el-drawer-fade-leave-active { transition: opacity var(--sv-motion-overlay-exit) ease; }
+.el-drawer-fade-leave-active .el-drawer { transition-duration: var(--sv-motion-overlay-exit); }
+.el-loading-fade-enter-active, .el-loading-fade-leave-active { transition: opacity var(--sv-motion-exit) ease; }
+.msgbox-fade-enter-active { animation: sv-dialog-in var(--sv-motion-overlay-enter) var(--sv-ease-enter); }
+.msgbox-fade-leave-active { animation: sv-dialog-out var(--sv-motion-overlay-exit) var(--sv-ease-exit); }
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --sv-motion-feedback: 0ms;
+    --sv-motion-enter: 0ms;
+    --sv-motion-exit: 0ms;
+    --sv-motion-overlay-enter: 0ms;
+    --sv-motion-overlay-exit: 0ms;
+  }
+  .sv-page-enter-from, .sv-page-leave-to, .sv-nav-enter-from, .sv-nav-leave-to { transform: none; }
+  .el-skeleton.is-animated .el-skeleton__item { animation: none; }
+}

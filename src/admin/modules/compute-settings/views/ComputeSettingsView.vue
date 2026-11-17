@@ -12,6 +12,8 @@ import type { NodeSettings, NodeInput, NodeCheck, NodeMode, DiscoveredNode, Node
 const settings = ref<NodeSettings | null>(null)
 const helpVisible = ref(false)
 const editorHeading = ref<HTMLElement | null>(null)
+const connectionAction = ref<InstanceType<typeof ElButton>>()
+let editorReturnFocus: HTMLElement | null = null
 const currentCheck = ref<NodeCheck | null>(null), draftCheck = ref<NodeCheck | null>(null)
 const loading = ref(false), checking = ref(false), testing = ref(false), saving = ref(false), editing = ref(false)
 const error = ref(''), currentError = ref(''), formError = ref(''), saved = ref(false)
@@ -93,10 +95,18 @@ async function checkCurrent() {
 }
 async function openEditor(mode?: NodeMode) {
   if (!settings.value) return
+  editorReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
   populate(settings.value); draft.mode = mode ?? (settings.value.mode === 'DISABLED' ? lastEnabledMode.value : !effectiveEndpoint.value ? 'MANUAL' : settings.value.mode)
   resetDiscovery(); helpVisible.value = false; editing.value = true; saved.value = false
   await nextTick()
-  if (active) { editorHeading.value?.focus({ preventScroll: true }); editorHeading.value?.scrollIntoView?.({ block: 'start' }) }
+  if (active) editorHeading.value?.scrollIntoView?.({ block: 'start' })
+}
+async function restoreEditorFocus() {
+  await nextTick()
+  if (!active || editing.value) return
+  const target = editorReturnFocus?.isConnected ? editorReturnFocus : connectionAction.value?.$el as HTMLElement | undefined
+  target?.focus({ preventScroll: true })
+  editorReturnFocus = null
 }
 function closeEditor(done: () => void) { if (!busy.value) { cancel(); done() } }
 function cancel() { if (busy.value) return; resetDiscovery(); if (settings.value) populate(settings.value); editing.value = false }
@@ -203,16 +213,16 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton text @click="load">重新读取</ElButton></ElAlert>
     <ElSkeleton v-if="loading && !settings" :rows="5" animated />
     <template v-if="settings">
-      <section class="connection-card" :class="{ ready: connected, inactive: settings.mode === 'DISABLED' }" aria-label="当前计算服务">
+      <section class="connection-card sv-glass" :class="{ ready: connected, inactive: settings.mode === 'DISABLED' }" aria-label="当前计算服务">
         <div class="connection-copy">
           <div class="connection-title"><span class="sv-status-dot" :class="connected ? 'ok' : checking ? '' : 'warn'" aria-hidden="true" /><h2 aria-live="polite">{{ headline }}</h2><span v-if="connected && !checking" class="connection-time">{{ currentCheck?.elapsedMs }} ms</span></div>
           <p v-if="connected && !checking" class="connection-note">连接正常；功能可用性分别确认。</p>
           <p v-if="!connected && !checking && effectiveEndpoint && settings.mode !== 'DISABLED'" class="connection-error" role="status">{{ currentError || currentCheck?.message || '请检查服务是否已启动。' }}</p>
         </div>
-        <div class="connection-actions"><ElButton v-if="!editing" :type="connected ? 'default' : 'primary'" :icon="connected ? undefined : ArrowRight" :disabled="checking" @click="openEditor()">{{ nextAction }}</ElButton><ElButton v-if="settings.mode !== 'DISABLED'" class="connection-recheck" aria-label="重新检查连接" text :icon="RefreshRight" :loading="checking" :disabled="loading || busy" @click="checkCurrent">重新检查</ElButton><span v-if="saved" role="status" class="saved-note"><Check />配置已保存</span></div>
+        <div class="connection-actions"><ElButton ref="connectionAction" v-show="!editing" :type="connected ? 'default' : 'primary'" :icon="connected ? undefined : ArrowRight" :disabled="checking" @click="openEditor()">{{ nextAction }}</ElButton><ElButton v-if="settings.mode !== 'DISABLED'" class="connection-recheck" aria-label="重新检查连接" text :icon="RefreshRight" :loading="checking" :disabled="loading || busy" @click="checkCurrent">重新检查</ElButton><span v-if="saved" role="status" class="saved-note"><Check />配置已保存</span></div>
       </section>
 
-      <ElDrawer :model-value="editing" class="connection-drawer" size="min(520px, 100vw)" :append-to-body="false" :close-on-click-modal="false" :show-close="!busy" :before-close="closeEditor" destroy-on-close @opened="editorHeading?.focus()">
+      <ElDrawer :model-value="editing" class="connection-drawer" size="min(520px, 100vw)" :append-to-body="false" :close-on-click-modal="false" :show-close="!busy" :before-close="closeEditor" destroy-on-close @opened="editorHeading?.focus()" @closed="restoreEditorFocus">
         <template #header><div class="editor-heading"><h2 ref="editorHeading" tabindex="-1">连接设置</h2><span v-if="dirty" class="draft-note">尚未保存</span></div></template>
         <section v-if="editing" class="connection-editor" aria-label="连接设置">
 
@@ -267,8 +277,8 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
 </template>
 
 <style scoped>
-.compute-settings :deep(.sv-page-header-copy){display:block;min-width:0}.compute-settings :deep(.sv-page-header h1){font-size:28px;line-height:1.4}.compute-settings :deep(.sv-page-header){align-items:flex-start;flex-wrap:nowrap;margin-bottom:18px}.compute-settings :deep(.sv-page-header-actions){flex:none}
-@media(max-width:720px){.compute-settings :deep(.sv-page-header h1){font-size:24px}.compute-settings :deep(.sv-page-header){gap:8px}.compute-settings :deep(.sv-page-header-actions){width:auto;margin:0}.compute-settings .connection-card{flex-direction:row;align-items:center}.compute-settings .connection-actions{flex-wrap:nowrap;gap:4px}.connection-actions :deep(.el-button){font-size:12px;padding:0 10px}.compute-settings .connection-time{display:none}.connection-recheck :deep(span){display:none}.connection-recheck{min-width:44px;padding:0!important}.compute-settings .connection-note{font-size:12px}.compute-settings .saved-note{display:none}}
+.compute-settings :deep(.sv-page-header-copy){display:block;min-width:0}.compute-settings :deep(.sv-page-header h1){font-size:22px;line-height:1.5}.compute-settings :deep(.sv-page-header){align-items:flex-start;flex-wrap:nowrap;margin-bottom:18px}.compute-settings :deep(.sv-page-header-actions){flex:none}
+@media(max-width:720px){.compute-settings :deep(.sv-page-header h1){font-size:22px}.compute-settings :deep(.sv-page-header){gap:8px}.compute-settings :deep(.sv-page-header-actions){width:auto;margin:0}.compute-settings .connection-card{flex-direction:row;align-items:center}.compute-settings .connection-actions{flex-wrap:nowrap;gap:4px}.connection-actions :deep(.el-button){font-size:12px;padding:0 10px}.compute-settings .connection-time{display:none}.connection-recheck :deep(span){display:none}.connection-recheck{min-width:44px;padding:0!important}.compute-settings .connection-note{font-size:12px}.compute-settings .saved-note{display:none}}
 
 .compute-settings { max-width: 1280px; margin-inline: auto; }
 .overview-description{margin:7px 0 0;color:var(--sv-text-secondary);font-size:14px;line-height:1.7}.connection-note{margin:3px 0 0;color:var(--sv-text-secondary);font-size:12px;line-height:1.7}
@@ -280,7 +290,7 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
 .connection-drawer :deep(.el-drawer__body) { padding: 28px 20px; }
 .connection-drawer :deep(.el-drawer__footer) { padding: 20px 28px; border-top: 1px solid var(--sv-border-subtle); }
 .action-spacer { flex: 1; }
-.connection-card { display: flex; align-items: center; gap: 20px; padding: 14px 20px; border: 1px solid var(--sv-border-subtle); border-radius: 10px; background:var(--sv-surface-2); }
+.connection-card { display: flex; align-items: center; gap: 20px; padding: 14px 20px; border: 1px solid var(--sv-border-subtle); border-radius: var(--sv-radius-lg); }
 .connection-copy { flex: 1; min-width: 0; }
 .connection-title { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
 .connection-title h2 { margin: 0; font-size: 14px; line-height: 1.6; }

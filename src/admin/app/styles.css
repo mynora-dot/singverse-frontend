@@ -5,6 +5,8 @@
 @import './styles/workflows.css';
 @import './styles/shell.css';
 @import './styles/login.css';
+@import './styles/materials.css';
+@import './styles/motion.css';
 
 *,
 *::before,
@@ -145,7 +147,7 @@ pre {
 }
 
 .sv-page-header-copy h1 {
-  font: 600 18px/1.5 var(--sv-font-sans);
+  font: 600 22px/1.5 var(--sv-font-sans);
   overflow-wrap: anywhere;
 }
 
@@ -288,19 +290,14 @@ pre {
   padding: 24px;
 }
 
-/* 浏览优先：页面内容按分隔线组织，媒体预览及弹层仍保留独立表面。 */
+/* 内容段落共享面板材质；嵌套内容保持实色，避免叠加模糊。 */
 .sv-panel.sv-content-section,
 .el-card.sv-content-section {
-  padding: 20px 0;
-  border: 0;
-  border-bottom: 1px solid var(--sv-border-subtle);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  padding: 24px;
 }
 
 .el-card.sv-content-section { padding: 0; }
-.el-card.sv-content-section>.el-card__body { padding: 20px 0; }
+.el-card.sv-content-section>.el-card__body { padding: 24px; }
 .sv-content-section>.sv-panel-head { padding: 0 0 16px; border: 0; }
 .sv-content-section .sv-panel-body { padding: 16px 0; }
 

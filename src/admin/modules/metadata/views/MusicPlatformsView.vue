@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElMessage, ElMessageBox, ElSwitch, ElTag } from 'element-plus'
+import { ElAlert, ElButton, ElMessage, ElMessageBox, ElSwitch, ElTag, ElSkeleton } from 'element-plus'
 import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { metadata } from '../api/metadata'
 import { metadataDefaults, providerNames, type MetadataBatch, type MetadataSettings, type MusicProvider } from '../types'
@@ -64,19 +64,20 @@ onBeforeUnmount(() => { active = false; generation++; window.removeEventListener
 <template>
   <section class="music-platforms-page management-page">
     <PageHeader title="音乐平台" description="为歌曲信息匹配和封面查找选择来源。新安装默认开启全部五个平台，可按需调整。">
+      <template v-if="ready" #meta><ElTag :type="dirty ? 'warning' : 'info'" effect="light">{{ dirty ? '有未保存的修改' : config.enabled ? `已开启 ${config.providers.length} 个平台` : '查询已关闭' }}</ElTag></template>
       <template #actions><ElButton :disabled="busy" @click="router.push(returnTo)">{{ route.query.returnTo ? '返回原页面' : '查看歌曲信息' }}</ElButton></template>
     </PageHeader>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton v-if="!ready" text :loading="loading" @click="load">重新读取</ElButton></ElAlert>
-    <p v-if="loading && !ready" role="status" class="platform-loading">正在读取音乐平台设置…</p>
+    <div v-if="loading && !ready" class="platform-form" role="status"><span class="platform-loading">正在读取音乐平台设置…</span><ElSkeleton v-for="index in 2" :key="index" class="platform-panel sv-glass" :rows="6" animated aria-hidden="true" /></div>
     <form v-if="ready" aria-label="音乐平台设置" @submit.prevent="save">
       <fieldset :disabled="busy || loading" class="platform-form">
-        <section class="platform-panel" aria-labelledby="platform-heading">
+        <section class="platform-panel sv-glass" aria-labelledby="platform-heading">
           <div class="platform-heading"><div><h2 id="platform-heading">歌曲信息与封面</h2><p>搜索时仅发送歌名、歌手等关键词，媒体文件留在你的 NAS。</p></div><ElSwitch v-model="config.enabled" :disabled="busy || loading" aria-label="启用音乐平台查询" /></div>
           <div class="platform-selection-heading"><span>{{ config.enabled ? `已开启 ${config.providers.length} 个平台` : '平台查询已关闭，仍可手工编辑与上传封面' }}</span><ElButton text :disabled="config.enabled && config.providers.length === platforms.length" @click="enableAll">启用全部平台</ElButton></div>
           <div class="platform-options"><label v-for="platform in platforms" :key="platform" class="platform-option" :class="{ selected: config.providers.includes(platform) }"><span class="platform-mark" :data-platform="platform" aria-hidden="true">{{ marks[platform] }}</span><span class="platform-name">{{ providerNames[platform] }}<small>{{ config.providers.includes(platform) ? config.enabled ? '已开启' : '已选中 · 查询已关闭' : '未开启' }}</small></span><input v-model="config.providers" type="checkbox" :value="platform" :aria-label="providerNames[platform]" /></label></div>
           <p class="platform-note">这里决定可用平台；单曲审核与封面窗口中还可以临时选择本次搜索的平台。</p>
         </section>
-        <section class="platform-panel" aria-labelledby="automation-heading">
+        <section class="platform-panel sv-glass" aria-labelledby="automation-heading">
           <div class="platform-heading"><div><h2 id="automation-heading">批量匹配后的应用方式</h2><p>单曲搜索始终需要核对后确认。批量匹配可按以下规则处理。</p></div><ElTag :type="config.autoApply ? 'warning' : 'info'">{{ config.autoApply ? '自动应用已开启' : '逐曲审核' }}</ElTag></div>
           <label class="platform-switch-row"><span><strong>高相似度时自动应用</strong><small>默认关闭；开启后，批量匹配的第一候选达到阈值时可直接写入。</small></span><ElSwitch v-model="config.autoApply" :disabled="busy || loading" aria-label="高相似度时自动应用" /></label>
           <details class="platform-advanced"><summary>匹配阈值与请求节奏</summary><div class="platform-fields"><label>自动应用阈值<span class="platform-number"><input v-model.number="thresholdPercent" aria-label="自动应用阈值百分比" type="number" min="80" max="100" step="1" required /><span>%</span></span><small>相似度是匹配参考，不代表正确率；版本接近时请人工核对。</small></label><label>每首歌曲完成后等待<span class="platform-interval"><input v-model.number="config.minIntervalSeconds" aria-label="批量最小间隔秒" type="number" min="0" max="300" step="1" required /><span>至</span><input v-model.number="config.maxIntervalSeconds" aria-label="批量最大间隔秒" type="number" min="0" max="300" step="1" required /><span>秒</span></span><small>默认 1～2 秒，可设为 0；平台限流时仍会暂停请求并提示重试。</small></label></div></details>
@@ -84,23 +85,24 @@ onBeforeUnmount(() => { active = false; generation++; window.removeEventListener
       </fieldset>
       <ElAlert v-if="taskUnknown" title="暂时无法读取匹配任务状态；保存设置仍会暂停正在运行的批次。" type="warning" :closable="false" />
       <p v-if="invalid" role="alert" class="platform-validation">{{ invalid }}</p>
-      <div class="platform-save"><p>{{ dirty ? '有未保存的修改' : '当前设置已保存' }}<small>保存会暂停运行中的匹配批次，可在歌曲信息页继续。</small></p><ElButton type="primary" native-type="submit" :loading="busy" :disabled="!dirty || !!invalid || loading">保存设置</ElButton></div>
+      <div class="platform-save sv-glass"><p>{{ dirty ? '有未保存的修改' : '当前设置已保存' }}<small>保存会暂停运行中的匹配批次，可在歌曲信息页继续。</small></p><ElButton type="primary" native-type="submit" :loading="busy" :disabled="!dirty || !!invalid || loading">保存设置</ElButton></div>
     </form>
   </section>
 </template>
 
 <style scoped>
 .music-platforms-page { max-width: 1120px; }
-.platform-form { padding: 0; margin: 0; border: 0; min-width: 0; }
-.platform-panel { padding: 24px 0; margin: 0; border-top: 1px solid var(--sv-border-subtle); }
+.platform-form { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; gap: 20px; padding: 0; margin: 0; border: 0; min-width: 0; }
+.platform-loading { grid-column: 1 / -1; }
+.platform-panel { padding: 24px; min-width: 0; margin: 0; }
 .platform-heading,.platform-selection-heading,.platform-switch-row,.platform-save { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .platform-heading { align-items: flex-start; margin-bottom: 20px; }
 .platform-heading h2 { margin: 0 0 6px; font-size: 15px; }
 .platform-heading p,.platform-note,.platform-loading { margin: 0; color: var(--sv-text-secondary); font-size: 13px; line-height: 1.8; }
 .platform-selection-heading { margin-bottom: 12px; color: var(--sv-text-secondary); font-size: 13px; }
-.platform-options { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 0 24px; }
-.platform-option { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 72px; padding: 12px 0; border-bottom: 1px solid var(--sv-border-subtle); cursor: pointer; }
-.platform-option.selected .platform-mark { background: var(--sv-accent-soft); }
+.platform-options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 12px; }
+.platform-option { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 72px; padding: 12px; border: 1px solid var(--sv-border-subtle); border-radius: var(--sv-radius-md); background: var(--sv-surface-1); cursor: pointer; }
+.platform-option.selected { border-color: var(--sv-accent-primary); background: var(--sv-accent-soft); }.platform-option.selected .platform-mark { background: var(--sv-accent-soft); }
 .platform-mark { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 8px; background: var(--sv-surface-2); color: var(--sv-accent-primary); font-size: 16px; font-weight: 600; }
 .platform-name { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; }
 .platform-name small,.platform-switch-row small,.platform-save small { display: block; color: var(--sv-text-secondary); font-size: 12px; font-weight: 400; margin-top: 4px; line-height: 1.6; }
@@ -115,10 +117,11 @@ onBeforeUnmount(() => { active = false; generation++; window.removeEventListener
 .platform-fields small { color: var(--sv-text-secondary); line-height: 1.7; }
 .platform-number,.platform-interval { display: flex; align-items: center; gap: 12px; }
 .platform-fields input { width: 90px; min-width: 0; padding: 12px; border: 1px solid var(--sv-border-default); border-radius: var(--sv-radius-sm); background: var(--sv-surface-2); color: var(--sv-text-primary); font: inherit; }
-.platform-save { padding: 20px 0; border-top: 1px solid var(--sv-border-subtle); }
+.platform-save { margin-top: 20px; padding: 20px 24px; }
 .platform-save p { font-size: 13px; margin: 0; }
 .platform-validation { color: var(--el-color-danger); font-size: 13px; }
+@media(max-width: 1000px) { .platform-form { grid-template-columns: minmax(0, 1fr); } }
 @media(max-width: 850px) { .platform-options { grid-template-columns: repeat(2,minmax(0,1fr)); }.platform-fields { grid-template-columns: 1fr; } }
-@media(max-width: 520px) { .platform-panel { padding: 20px 0; }.platform-options { grid-template-columns: 1fr; }.platform-heading { gap: 12px; }.platform-selection-heading { align-items: flex-start; gap: 8px; }.platform-save { align-items: stretch; flex-direction: column; }.platform-save :deep(.el-button) { min-height: 44px; } }
+@media(max-width: 520px) { .platform-panel { padding: 20px; }.platform-options { grid-template-columns: 1fr; }.platform-heading { gap: 12px; }.platform-selection-heading { align-items: flex-start; gap: 8px; }.platform-save { align-items: stretch; flex-direction: column; }.platform-save :deep(.el-button) { min-height: 44px; } }
 @media(max-width:768px) { .music-platforms-page :deep(.el-button), .platform-advanced summary { min-height:44px; }.platform-advanced summary { align-content:center; }.platform-heading :deep(.el-switch), .platform-switch-row :deep(.el-switch) { min-height:44px; } }
 </style>

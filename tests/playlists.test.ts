@@ -16,6 +16,29 @@ afterEach(()=>{wrapper?.unmount();wrapper=undefined;vi.clearAllMocks();vi.restor
 async function page(){wrapper=mount(PlaylistsView,{global:{stubs:{teleport:true,SongPicker:{name:'SongPicker',props:['selectedIds','purpose'],emits:['confirm','selectedSongs','close'],template:'<div />'}}}});await flushPromises()}
 function button(text:string){return wrapper!.findAll('button').find(b=>b.text()===text)!}
 async function openAI(){await wrapper!.get('.ai-entry').trigger('click');await flushPromises()}
+it('首次读取展示骨架，不提前显示空歌单提示', async () => {
+  let finish!: (value: { items: typeof playlist[]; totalElements: number }) => void
+  vi.mocked(playlists.list).mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+  await page()
+  expect(wrapper!.find('[aria-label="正在读取歌单"]').exists()).toBe(true)
+  expect(wrapper!.text()).not.toContain('为下一次欢聚准备一张歌单')
+  finish({ items: [playlist], totalElements: 1 }); await flushPromises()
+  expect(wrapper!.get('.card').text()).toContain(playlist.name)
+})
+it('刷新失败保留已有歌单，重新读取成功后更新结果', async () => {
+  await page()
+  let fail!: (reason: Error) => void
+  vi.mocked(playlists.list).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+  await wrapper!.get('form.playlist-filters').trigger('submit')
+  expect(wrapper!.get('.card').text()).toContain(playlist.name)
+  expect(wrapper!.text()).toContain('正在刷新歌单')
+  fail(new Error('暂时无法连接')); await flushPromises()
+  expect(wrapper!.text()).toContain('暂时无法连接')
+  expect(wrapper!.get('.card').text()).toContain(playlist.name)
+  vi.mocked(playlists.list).mockResolvedValueOnce({ items: [{ ...playlist, name: '更新后的歌单' }], totalElements: 1 })
+  await wrapper!.get('form.playlist-filters').trigger('submit'); await flushPromises()
+  expect(wrapper!.get('.card').text()).toContain('更新后的歌单')
+})
 async function submitAI(){await wrapper!.get('form.ai-composer').trigger('submit')}
 function prompt(){return wrapper!.findAll('textarea').find(x=>x.attributes('placeholder')?.includes('朋友聚会'))!}
 it('空态和未配置模型不阻止手动创建',async()=>{vi.mocked(playlists.list).mockResolvedValue({items:[],totalElements:0});vi.mocked(ai.services).mockResolvedValue([]);await page();expect(wrapper!.text()).toContain('为下一次欢聚准备一张歌单');await button('创建歌单').trigger('click');await flushPromises();expect(wrapper!.text()).toContain('选择歌曲');await openAI();expect(wrapper!.text()).toContain('尚无可用模型')})

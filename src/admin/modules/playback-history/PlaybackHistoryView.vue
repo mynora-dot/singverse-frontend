@@ -75,13 +75,13 @@ onBeforeUnmount(() => { active = false; epoch++; detailEpoch++ })
       <div class="history-search"><ElInput v-model="query" :prefix-icon="Search" placeholder="搜索歌曲或歌手" aria-label="搜索播放记录" maxlength="200" clearable @clear="search" /><ElButton native-type="submit" type="primary" :loading="loading">搜索</ElButton></div>
       <fieldset class="history-periods"><legend class="sr-only">播放统计时间</legend><button v-for="option in periods" :key="option.value" type="button" :aria-pressed="period === option.value" @click="changePeriod(option.value)">{{ option.label }}</button></fieldset>
     </form>
-    <dl class="history-stats" aria-label="当前筛选下的播放统计" :aria-busy="loading">
+    <dl class="history-stats sv-glass" aria-label="当前筛选下的播放统计" :aria-busy="loading">
       <div><dt>有效播放</dt><dd>{{ summary && !loading ? summary.effectivePlays.toLocaleString('zh-CN') : '—' }}<small v-if="summary && !loading"> 次</small></dd></div>
       <div><dt>有效播放歌曲</dt><dd>{{ summary && !loading ? summary.playedSongs.toLocaleString('zh-CN') : '—' }}<small v-if="summary && !loading"> 首</small></dd></div>
       <div><dt>全部播放记录</dt><dd>{{ summary && !loading ? summary.totalPlays.toLocaleString('zh-CN') : '—' }}<small v-if="summary && !loading"> 条</small></dd></div>
       <div><dt>实际播放时长</dt><dd class="history-time-stat">{{ summary && !loading ? duration(summary.playedMs) : '—' }}</dd></div>
     </dl>
-    <section class="history-results" aria-label="歌曲播放查询结果">
+    <section class="history-results sv-glass" aria-label="歌曲播放查询结果">
       <div class="history-results-top">
         <div class="history-tabs" role="tablist" aria-label="播放记录视图" @keydown="navigateTabs">
           <button id="history-popular-tab" type="button" role="tab" aria-controls="history-result-panel" :aria-selected="tab === 'popular'" :tabindex="tab === 'popular' ? 0 : -1" @click="changeTab('popular')">热门排行</button>
@@ -141,13 +141,13 @@ onBeforeUnmount(() => { active = false; epoch++; detailEpoch++ })
 .history-periods button { min-width: 94px; min-height: 44px; border: 0; border-radius: 5px; padding: 8px 16px; font: inherit; font-size: 14px; color: var(--sv-text-secondary); background: transparent; cursor: pointer; }
 .history-periods button[aria-pressed=true] { color: var(--sv-accent-primary); background: var(--sv-accent-soft); font-weight: 600; }
 .history-periods button:hover { color: var(--sv-accent-primary); }
-.history-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; margin: 0; padding: 16px 20px; border: 1px solid var(--sv-border-subtle); border-radius: 8px; background: var(--sv-surface-2); }
+.history-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; margin: 0; padding: 16px 20px; border: 1px solid var(--sv-border-subtle); border-radius: var(--sv-radius-lg);  }
 .history-stats > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; padding-inline: 24px; border-right: 1px solid var(--sv-border-subtle); }
 .history-stats > div:first-child { padding-left: 0; }.history-stats > div:last-child { padding-right: 0; border: 0; }
 .history-stats dt { font-size: 14px; color: var(--sv-text-secondary); }
 .history-stats dd { margin: 0; white-space: nowrap; font-size: 24px; line-height: 1.3; font-weight: 600; font-variant-numeric: tabular-nums; }
 .history-stats small { font-size: 12px; color: var(--sv-text-secondary); font-weight: 400; }.history-stats .history-time-stat { font-size: 18px; }
-.history-results { min-width: 0; overflow: hidden; border: 1px solid var(--sv-border-subtle); border-radius: 8px; background: var(--sv-surface-2); }
+.history-results { min-width: 0; overflow: hidden; border: 1px solid var(--sv-border-subtle); border-radius: var(--sv-radius-lg);  }
 .history-results-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--sv-border-subtle); }
 .history-tabs { display: flex; gap: 24px; }
 .history-tabs button { min-height: 52px; padding: 0; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--sv-text-secondary); font: inherit; font-size: 14px; cursor: pointer; }

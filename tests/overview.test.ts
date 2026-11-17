@@ -85,7 +85,7 @@ it('单块读取失败只影响该块，不显示“无待办”，可重新读�
     expect(wrapper.get('.library-summary').text()).toContain('读取失败')
     expect(wrapper.find('.stat-block').exists()).toBe(false)
     expect(wrapper.get('[role="alert"]').text()).toContain('1 项状态读取失败')
-    const todos = wrapper.get('.home-feature').text() + wrapper.get('.todo-list').text()
+    const todos = wrapper.get('.overview-main').text()
     expect(todos).toContain('仍在使用默认密码')
     expect(todos).toContain('还没有添加媒体库')
     expect(todos).toContain('未开启二次验证')
@@ -199,7 +199,8 @@ it('空曲库给出连接来源的引导，而不是伪造收藏', async () => {
   const wrapper = mount(OverviewView, { global: { plugins: [router] } })
   try {
     await flushPromises()
-    expect(wrapper.find('.recent-shelf').exists()).toBe(false)
+    expect(wrapper.find('.shelf-song').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="正在读取最近入库"]').exists()).toBe(false)
     expect(wrapper.get('.empty-state').text()).toContain('从第一首喜欢的歌开始')
     expect(wrapper.get('.review-strip').text()).toContain('还没有添加媒体库')
     expect(wrapper.get('.library-summary').text()).toContain('0')
@@ -265,18 +266,16 @@ it('首页搜索将真实查询交给曲库，去掉首尾空格，空词打开�
   } finally { wrapper.unmount() }
 })
 
-it('唱片陈列只显示接口返回的歌曲，少量歌曲不补演示内容，链接保留特殊 ID', async () => {
+it('最近入库只显示接口返回的歌曲，少量歌曲不补演示内容，链接保留特殊 ID', async () => {
   const song = { id: '真实歌曲/1 & 家', result: { ...preview().result, title: '家里的歌', artists: ['家人'] } }
   serve({ '/api/v1/admin/overview': baseOverview({ recentSongs: [song] }), '/api/v1/background-tasks': emptyTasks })
   const wrapper = mount(OverviewView, { global: { plugins: [router] } })
   try {
     await flushPromises()
-    expect(wrapper.findAll('.featured-song')).toHaveLength(1)
     expect(wrapper.findAll('.shelf-song')).toHaveLength(1)
-    expect(wrapper.get('.record-stack').classes()).toContain('single-record')
-    expect(wrapper.get('.featured-song').text()).toContain('家里的歌')
+    expect(wrapper.get('.shelf-song').text()).toContain('家里的歌')
     expect(wrapper.find('img[src*="qing"]').exists()).toBe(false)
-    await wrapper.get('.featured-song').trigger('click'); await flushPromises()
+    await wrapper.get('.shelf-song').trigger('click'); await flushPromises()
     expect(router.currentRoute.value.query.detailSongId).toBe(song.id)
   } finally { wrapper.unmount() }
 })
@@ -288,7 +287,8 @@ it('加载期间保留真实入口，不把未知状态显示成零或已整理�
     expect(wrapper.get('.library-summary').text()).toContain('正在打开')
     expect(wrapper.get('.review-strip').text()).toContain('正在读取')
     expect(wrapper.text()).not.toContain('0 首歌曲')
-    expect(wrapper.find('.recent-shelf').exists()).toBe(false)
+    expect(wrapper.find('.shelf-song').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="正在读取最近入库"]').exists()).toBe(true)
     expect(wrapper.get('.feature-actions .solid-link').attributes('href')).toBe('/library/media?add=LOCAL')
     expect(wrapper.get('.family-actions a').attributes('href')).toBe('/party/')
   } finally { wrapper.unmount() }

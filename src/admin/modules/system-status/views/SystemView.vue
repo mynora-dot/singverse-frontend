@@ -17,7 +17,7 @@ const entries = [
     <PageHeader title="服务状态" description="检查主服务是否可以响应，并核对管理中心与亲友点歌页的访问地址。" />
     <ServiceHealthCard class="sv-content-section" />
     <section class="sv-panel sv-content-section" aria-labelledby="system-entries-title">
-      <div class="sv-panel sv-content-section-head"><h2 id="system-entries-title">访问入口</h2></div>
+      <div class="sv-content-section-head"><h2 id="system-entries-title">访问入口</h2></div>
       <dl class="entry-list">
         <div v-for="entry in entries" :key="entry.label" class="entry-line">
           <dt>{{ entry.label }}</dt>

@@ -241,7 +241,7 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
     <div v-if="error" role="alert" class="cache-feedback cache-error">{{ error }}<ElButton v-if="conflict" text :disabled="busy || loading" @click="reloadSettings">重新读取设置</ElButton></div>
     <p v-if="notice" role="status" class="cache-feedback cache-success">{{ notice }}</p>
     <template v-if="result">
-      <section class="cache-storage" aria-label="缓存容量概况">
+      <section class="cache-storage sv-glass" aria-label="缓存容量概况">
         <div class="cache-storage-top">
           <div class="cache-storage-number"><span class="cache-capacity-label">缓存容量</span><strong>{{ result.usageReady === false ? '正在计算…' : bytes(result.usageBytes) }}</strong><span>/ {{ bytes(result.settings.maxBytes) }}</span></div>
           <div class="cache-cleanup-buttons">
@@ -281,7 +281,7 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
         <div v-show="jobDetailsExpanded" id="cache-job-details" class="cache-job-details"><p>清理在后台执行，取消会保留已完成的删除；离开页面不会停止任务。</p><template v-if="job"><p>占用 {{ bytes(job.usageBeforeBytes) }} → {{ bytes(job.usageAfterBytes) }}，目标 {{ bytes(job.targetBytes) }}</p><p v-if="!job.spaceInsufficient && !runningJob && !job.targetReached" class="cache-hint">未达到目标水位，当前仍有可用缓存空间；受保护条目不会被强制删除。</p><ul v-if="Object.keys(job.skippedByReason ?? {}).length" class="cache-job-reasons"><li v-for="(count, reason) in job.skippedByReason" :key="reason">{{ reasons[reason] || reason }}：{{ count }} 份</li></ul><ul v-if="job.errors?.length" class="cache-error"><li v-for="(item, index) in job.errors" :key="index">{{ jobFailure(item) }}</li></ul></template></div>
       </section>
 
-      <section class="cache-workspace" aria-label="缓存管理">
+      <section class="cache-workspace sv-glass" aria-label="缓存管理">
         <div class="cache-workspace-top"><div class="cache-tabs" role="tablist" aria-label="缓存管理视图"><button id="cache-list-tab" ref="cacheTab" type="button" role="tab" :aria-selected="activeView === 'cache'" :tabindex="activeView === 'cache' ? 0 : -1" aria-controls="cache-list-panel" @click="changeView('cache')" @keydown="tabKeydown">缓存明细<span>{{ result.totalElements }}</span></button><button id="cache-pins-tab" ref="pinsTab" type="button" role="tab" :aria-selected="activeView === 'pins'" :tabindex="activeView === 'pins' ? 0 : -1" aria-controls="cache-pins-panel" @click="changeView('pins')" @keydown="tabKeydown">固定歌曲<span>{{ pins?.totalElements ?? '—' }}</span></button></div><p>一首歌可有多份缓存，份数不等于歌曲数</p></div>
         <div class="cache-filter-row"><label class="cache-search"><ElIcon><Search /></ElIcon><input v-model="keyword" type="search" :aria-label="activeView === 'cache' ? '查找当前页歌曲或歌手' : '查找当前页固定歌曲'" :placeholder="activeView === 'cache' ? '查找当前页歌曲或歌手' : '查找当前页固定歌曲'" maxlength="200" :disabled="activeView === 'cache' ? loading : pinsLoading" /></label><select v-if="activeView === 'cache'" v-model="typeFilter" aria-label="筛选当前页缓存类型" :disabled="loading"><option value="ALL">全部类型</option><option value="ORIGINAL">原片</option><option value="COMPATIBLE">兼容缓存</option></select><span class="cache-filter-scope">仅筛选当前页</span><ElButton v-if="activeView === 'pins'" class="cache-pin-refresh" text :icon="RefreshRight" :disabled="pinsLoading || busy" @click="loadPins">刷新固定</ElButton></div>
 
