@@ -71,7 +71,16 @@ async function openVariant(id: string,childPage = 0) {
   try { const result = await formalLibrary.detail(id,childPage); if (active && token === variantGeneration) variant.value = result }
   catch (failure) { if (active && token === variantGeneration) detailError.value = failure instanceof Error ? failure.message : '版本读取失败' }
 }
-async function saved() { editing.value = null; await refreshCounts(); await load(); if (detail.value) await openSong(detail.value.document.id) }
+async function saved(document: FormalDocument) {
+  editing.value = null
+  items.value = items.value.map(item => item.id === document.id ? document : item)
+  for (const current of [detail, variant]) {
+    if (!current.value) continue
+    current.value = { ...current.value, document: current.value.document.id === document.id ? document : current.value.document,
+      children: current.value.children.map(item => item.id === document.id ? document : item) }
+  }
+  await load()
+}
 async function inspectDifferences(document: FormalDocument) { try { difference.value = (await formalLibrary.differences(document.id)).items } catch (failure) { ElMessage.error(failure instanceof Error ? failure.message : '差异读取失败') } }
 async function preview(document: FormalDocument) { try { playing.value = (await singleReview.load(document.id)).song } catch (failure) { ElMessage.error(failure instanceof Error ? failure.message : '媒体读取失败') } }
 async function split(document: FormalDocument) { if (!variant.value || busy.value) return; busy.value = true; try { await formalLibrary.split(variant.value.document, document.id, attempt('split', [variant.value.document, document.id])); attempts.delete('split'); await refreshCounts(); if (detail.value) await openSong(detail.value.document.id); ElMessage.success('已建立新版本，请单独确认歌词时间轴和音轨') } catch (failure) { ElMessage.error(failure instanceof Error ? failure.message : '拆分失败') } finally { busy.value = false } }
@@ -100,7 +109,7 @@ onBeforeUnmount(() => { active = false; generation++; detailGeneration++; varian
     <div class="filters sv-glass" role="search" aria-label="歌曲资料搜索与筛选"><ElInput v-model="search" aria-label="搜索正式歌曲资料" placeholder="搜索歌名、演唱者或别名" maxlength="200" clearable @keyup.enter="apply()" /><ElButton class="formal-filter-toggle" text :icon="Filter" :aria-expanded="mobileFiltersOpen" aria-controls="formal-source-filter" @click="mobileFiltersOpen = !mobileFiltersOpen">筛选</ElButton><ElSelect id="formal-source-filter" v-model="sourceId" class="formal-source-filter" :class="{ expanded: mobileFiltersOpen }" aria-label="媒体来源" clearable placeholder="全部来源" @change="apply()"><ElOption v-for="source in sources" :key="source.id" :value="source.id" :label="source.name" /></ElSelect><ElButton :loading="loading" @click="apply()">搜索</ElButton></div>
     <p class="counts" aria-live="polite">全库 {{ counts.SONG ?? '—' }} 首歌曲 · {{ counts.VARIANT ?? '—' }} 个版本 · {{ counts.MEDIA ?? '—' }} 个媒体文件</p>
     <ElAlert v-if="error" type="error" :title="error" :closable="false" role="alert" />
-    <ElSkeleton v-if="loading" :rows="5" animated />
+    <ElSkeleton v-if="loading && !items.length" :rows="5" animated />
     <ElEmpty v-else-if="!items.length && !error" description="还没有符合条件的歌曲资料"><ElButton @click="router.push('/library/media')">添加媒体来源或导入资料包</ElButton></ElEmpty>
     <div v-else class="song-list sv-glass"><article v-for="song in items" :key="song.id" class="formal-song"><div class="song-row"><div><h3>{{ formalTitle(song) }}</h3><p>{{ formalArtists(song) }}</p><small>{{ formalStateLabel(song.states.title) }} · 资料已保存</small></div><div class="actions"><ElButton @click="editing = song">订正资料</ElButton><ElButton @click="inspectDifferences(song)">查看差异</ElButton><ElButton type="primary" plain @click="openSong(song.id)">查看版本与文件</ElButton></div></div></article></div>
     <ElPagination :current-page="page" :page-size="20" :total="total" layout="total, prev, pager, next" @current-change="apply" />

@@ -322,6 +322,10 @@ async function save(startScan = !editing.value && !importMode.value) {
       ...(draft.type === 'WEBDAV' ? { username: draft.username,
         password: clearPassword.value ? '' : draft.password || (editing.value ? undefined : '') } : {}) }, editing.value?.id)
     if (!active) return
+    if (saved) {
+      items.value = items.value.some(item => item.id === saved.id) ? items.value.map(item => item.id === saved.id ? saved : item) : [saved, ...items.value]
+      if (metadataSource.value?.id === saved.id) metadataSource.value = saved
+    }
     dialog.value = false; draft.password = ''; ElMessage.success(importing ? '媒体库已保存，接下来上传资料包并核对路径' : startScan ? '已保存，后台将自动扫描入库，可以离开页面' : profileChanged ? '已保存解析方案，请重新扫描以更新文件名识别结果' : '媒体库配置已保存')
     if (saved && importing) { metadataImportFile.value = file; metadataSource.value = saved }
     await load(false, !importing)

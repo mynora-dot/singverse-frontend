@@ -18,6 +18,30 @@ const button = (text: string) => new DOMWrapper([...document.querySelectorAll('b
 async function choice(label: string, value: string) { const select = new DOMWrapper(document.querySelector(`select[aria-label="${label}"]`)!); expect(select.exists()).toBe(true); await select.setValue(value) }
 beforeEach(() => { vi.resetAllMocks(); vi.mocked(formalLibrary.update).mockResolvedValue({ ...doc, revision: '8' }); vi.mocked(songs.sources).mockResolvedValue([]) })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; document.body.innerHTML = '' })
+it('正式资料保存立即回显并保留当前版本，不等待统计或列表重读', async () => {
+ const first: FormalDocument = { ...doc, id: 'variant-1', type: 'VARIANT', parentId: doc.id, fields: { title: '版本一' } }
+ const second: FormalDocument = { ...first, id: 'variant-2', fields: { title: '版本二' } }
+ vi.mocked(formalLibrary.statistics).mockResolvedValue({ SONG: 1, VARIANT: 2, MEDIA: 0 })
+ vi.mocked(formalLibrary.list).mockResolvedValue({ items: [doc], totalElements: 1 })
+ vi.mocked(formalLibrary.detail).mockImplementation(async id => id === doc.id ? { document: doc, children: [first, second] } : { document: id === first.id ? first : second, children: [] })
+ const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/library/songs', component: FormalSongsView }] }); await router.push('/library/songs?lens=formal&page=2')
+ wrapper = mount(FormalSongsView, { attachTo: document.body, global: { plugins: [ElementPlus, router], stubs: { SongVideoDialog: true } } }); await flushPromises()
+ await button('查看版本与文件').trigger('click'); await flushPromises()
+ const versionSelect = wrapper.findAllComponents({ name: 'ElSelect' }).find(select => select.props('ariaLabel') === '选择媒体版本')!
+ versionSelect.vm.$emit('change', second.id); await flushPromises()
+ const next = { ...second, revision: '8', fields: { title: '已订正的版本二' } }
+ let fail!: (reason: Error) => void
+ vi.mocked(formalLibrary.list).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+ const reads = vi.mocked(formalLibrary.detail).mock.calls.length
+ wrapper.findComponent(FormalMetadataEditor).vm.$emit('saved', next); await flushPromises()
+ expect(versionSelect.props('modelValue')).toBe(second.id)
+ expect(document.body.textContent).toContain('已订正的版本二')
+ expect(formalLibrary.detail).toHaveBeenCalledTimes(reads)
+ expect(formalLibrary.statistics).toHaveBeenCalledTimes(1)
+ fail(new Error('列表重读暂不可用')); await flushPromises()
+ expect(versionSelect.props('modelValue')).toBe(second.id)
+ expect(router.currentRoute.value.query.page).toBe('2')
+})
 const editor = () => mount(FormalMetadataEditor, { attachTo: document.body, props: { document: doc }, global: { plugins: [ElementPlus] } })
 it('相同值也可确认，失败重试复用提交标识', async () => {
  vi.mocked(formalLibrary.update).mockRejectedValueOnce(new Error('连接中断'))

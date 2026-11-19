@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive } from 'vue'
 import { ElAlert, ElButton, ElTag } from 'element-plus'
 import { readRelease, reachableOrigin, type ClientRelease, type Platform } from './api'
 const origin = window.location.origin
@@ -8,15 +8,24 @@ const platforms: { id: Platform; title: string; description: string; minimum: st
   { id: 'mobile', title: '手机端', description: '连接家庭曲库，在手机上练唱、录音和管理作品。', minimum: 'Android 7.0 / API 24' },
   { id: 'tv', title: '电视端', description: '安装到 Android 电视，连接 NAS 后点歌和播放。', minimum: 'Android 5.0 / API 21' },
 ]
-const states = reactive<Record<Platform, { release: ClientRelease | null; loading: boolean; error: string }>>({
-  mobile: { release: null, loading: false, error: '' }, tv: { release: null, loading: false, error: '' },
+const states = reactive<Record<Platform, { release: ClientRelease | null; abi: string; loading: boolean; error: string }>>({
+  mobile: { release: null, abi: '', loading: false, error: '' }, tv: { release: null, abi: '', loading: false, error: '' },
 })
+const selected = computed(() => Object.fromEntries(platforms.map(({ id }) => {
+  const state = states[id], release = state.release
+  const variant = release?.variants?.find(variant => variant.abi === state.abi)
+  return [id, variant ? { ...release, ...variant, abis: [variant.abi] } : release]
+})) as Record<Platform, ClientRelease | null>)
+function abiLabel(abi: string) { return ({ 'arm64-v8a': 'ARM64（64 位）', 'armeabi-v7a': 'ARMv7（32 位）', x86: 'x86（32 位）', x86_64: 'x86_64（64 位）' } as Record<string, string>)[abi] ?? abi }
 let active = true
 async function load(platform: Platform) {
   const state = states[platform]
   if (state.loading) return
   state.loading = true; state.error = ''; state.release = null
-  try { const release = await readRelease(platform); if (active) state.release = release }
+  try {
+    const release = await readRelease(platform)
+    if (active) { state.release = release; state.abi = release.abis?.[0] ?? release.variants?.[0]?.abi ?? '' }
+  }
   catch (error) { if (active) state.error = error instanceof Error ? error.message : '安装包信息读取失败' }
   finally { if (active) state.loading = false }
 }
@@ -38,15 +47,20 @@ onBeforeUnmount(() => { active = false })
           <ElButton @click="load(platform.id)">重新读取{{ platform.title }}安装包</ElButton>
         </template>
         <template v-else-if="states[platform.id].release?.available">
+          <label v-if="states[platform.id].release?.variants?.length" class="abi-picker">处理器架构
+            <select v-model="states[platform.id].abi" :aria-label="`${platform.title}处理器架构`">
+              <option v-for="variant in states[platform.id].release!.variants" :key="variant.abi" :value="variant.abi">{{ abiLabel(variant.abi) }}</option>
+            </select>
+          </label>
           <dl>
-            <div><dt>版本</dt><dd>{{ states[platform.id].release!.versionName }} <small>（{{ states[platform.id].release!.versionCode }}）</small></dd></div>
-            <div><dt>安装包</dt><dd>{{ size(states[platform.id].release!.size!) }} · {{ states[platform.id].release!.abis!.join(' / ') }}</dd></div>
-            <div><dt>最低系统</dt><dd>Android API {{ states[platform.id].release!.minSdk }}</dd></div>
+            <div><dt>版本</dt><dd>{{ selected[platform.id]!.versionName }} <small>（{{ selected[platform.id]!.versionCode }}）</small></dd></div>
+            <div><dt>安装包</dt><dd>{{ size(selected[platform.id]!.size!) }} · {{ selected[platform.id]!.abis!.join(' / ') }}</dd></div>
+            <div><dt>最低系统</dt><dd>Android API {{ selected[platform.id]!.minSdk }}</dd></div>
           </dl>
-          <p v-if="states[platform.id].release!.notes" class="release-notes">{{ states[platform.id].release!.notes }}</p>
-          <a class="el-button el-button--primary download-link" :href="states[platform.id].release!.url" download>下载{{ platform.title }} APK</a>
+          <p v-if="selected[platform.id]!.notes" class="release-notes">{{ selected[platform.id]!.notes }}</p>
+          <a class="el-button el-button--primary download-link" :href="selected[platform.id]!.url" download>下载{{ platform.title }} APK</a>
           <figure v-if="canShare" class="download-qr"><img :src="qr(platform.id)" :alt="`${platform.title}安装包下载二维码`" width="176" height="176"><figcaption>使用手机扫码下载，电视也可通过 U 盘安装</figcaption></figure>
-          <details><summary>查看安装包校验信息</summary><p>SHA-256</p><code>{{ states[platform.id].release!.sha256 }}</code><p>签名证书 SHA-256</p><code>{{ states[platform.id].release!.certificateSha256 }}</code></details>
+          <details><summary>查看安装包校验信息</summary><p>SHA-256</p><code>{{ selected[platform.id]!.sha256 }}</code><p>签名证书 SHA-256</p><code>{{ selected[platform.id]!.certificateSha256 }}</code></details>
         </template>
         <p v-else class="muted">当前管理平台尚未提供{{ platform.title }}安装包，请联系管理员更新平台镜像。</p>
       </article>
@@ -65,6 +79,8 @@ onBeforeUnmount(() => { active = false })
 .download-card dl div { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 12px; }
 .download-card dt, .download-note { color: var(--sv-text-secondary); }
 .download-card dd { margin: 0; overflow-wrap: anywhere; }
+.abi-picker { display: grid; gap: 8px; font-size: 14px; }
+.abi-picker select { font: inherit; padding: 8px; max-width: 260px; }
 .download-link { align-self: flex-start; text-decoration: none; }
 .download-qr { margin: 0; display: grid; justify-items: start; gap: 8px; }
 .download-qr img { background: white; border-radius: 8px; }

@@ -11,7 +11,9 @@ export function coverValue(provider: MusicProvider, raw: string, quality: CoverQ
       url.searchParams.delete('param')
       if (high) url.searchParams.set('param', '2048y2048')
     } else if (provider === 'KUGOU') {
-      url.pathname = url.pathname.replace(/(\/(?:stdmusic|albumcover)\/)(?:\d+|\{size\})(\/)/, (_match, prefix: string, suffix: string) => `${prefix}${high ? '2048' : '0'}${suffix}`)
+      url.pathname = url.pathname.replace(/(\/(?:stdmusic|albumcover)\/)(?:\d+|\{size\}|%7Bsize%7D)(\/)/i, (_match, prefix: string, suffix: string) => `${prefix}${high ? '2048' : '0'}${suffix}`)
+      // softhead/0 is a tiny default avatar, rather than the original image.
+      url.pathname = url.pathname.replace(/(\/uploadpic\/(?:pass\/)?softhead\/)(?:\d+|\{size\}|%7Bsize%7D)(\/)/i, (_match, prefix: string, suffix: string) => `${prefix}2048${suffix}`)
     } else if (provider === 'KUWO') {
       url.pathname = url.pathname.replace(/(\/star\/albumcover\/)\d+(\/)/, (_match, prefix: string, suffix: string) => `${prefix}${high ? '2048' : '0'}${suffix}`)
     } else if (provider === 'QQ') {

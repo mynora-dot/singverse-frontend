@@ -83,7 +83,14 @@ textarea {
   font: inherit;
 }
 
-:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+/* 复合输入控件由外层显示焦点，内部输入框不再叠加一圈轮廓。 */
+:where(a, button, input, select, textarea, summary, [tabindex]):not(:where(
+  .el-input__inner,
+  .el-input__wrapper,
+  .el-select__input,
+  .el-select__wrapper,
+  .el-textarea__inner
+)):focus-visible {
   outline: 2px solid var(--sv-accent-primary);
   outline-offset: 4px;
   border-radius: 4px;

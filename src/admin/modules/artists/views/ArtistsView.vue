@@ -103,25 +103,35 @@ async function openArtistById(id:string) {
   try { const artist=await artists.get(id); if (active && epoch===detailGeneration) await openArtist(artist) } catch(e) { if (epoch===detailGeneration) failure(e) }
 }
 function close() { profile.value=null; imageKind.value=null; candidateKind.value=null; candidateGeneration++; detailGeneration++ }
-async function changed() {
-  editing.value=null; await load()
-  if (!profile.value) return
-  const id=profile.value.id, epoch=detailGeneration
-  try {
-    const next=await artists.get(id)
-    if (!active || epoch!==detailGeneration || profile.value?.id!==id) return
-    if (!next.count) { close(); return }
-    profile.value=next
-    if ((songPage.value-1)*12 >= (next.count||0)) songPage.value=Math.max(1,Math.ceil((next.count||0)/12))
-    await loadSongs()
-  } catch(e) { if (epoch===detailGeneration) failure(e) }
+async function changed(song?:MediaSong) {
+  if (song) songs.value=songs.value.map(item=>item.id===song.id?song:item)
+  editing.value=null
+  const id=profile.value?.id, epoch=detailGeneration
+  const refreshDetail=async()=>{
+    if (!id) return
+    try {
+      const next=await artists.get(id)
+      if (!active || epoch!==detailGeneration || profile.value?.id!==id) return
+      if (!next.count) { close(); return }
+      profile.value=next
+      if ((songPage.value-1)*12 >= (next.count||0)) songPage.value=Math.max(1,Math.ceil((next.count||0)/12))
+      await loadSongs()
+    } catch(e) { if (epoch===detailGeneration) failure(e) }
+  }
+  await Promise.all([load(),refreshDetail()])
 }
-async function imageChanged(next:Artist) { if (profile.value?.id===next.id) profile.value={...profile.value,...next}; await load(); await batchPanel.value?.refresh() }
+function acceptArtist(next:Artist) {
+  profiles.value=profiles.value.map(item=>item.id===next.id?{...item,...next}:item)
+  if (profile.value?.id===next.id) profile.value={...profile.value,...next}
+  if (selected.value.has(next.id)) selected.value.set(next.id,{...selected.value.get(next.id)!,...next})
+  failedImages.value.delete(imageURL(next)); failedImages.value.delete(imageURL(next,'background'))
+}
+async function imageChanged(next:Artist) { acceptArtist(next); await Promise.all([load(),batchPanel.value?.refresh()]) }
 async function changeCategory(type:Artist['type']) {
   if (!profile.value || busy.value) return
   const id=profile.value.id, revision=profile.value.revision, epoch=detailGeneration
   busy.value=true
-  try { const next=await artists.category(id,type,revision); if (active && epoch===detailGeneration && profile.value?.id===id) profile.value={...profile.value,...next}; await load() }
+  try { const next=await artists.category(id,type,revision); if (active && epoch===detailGeneration && profile.value?.id===id) acceptArtist(next); await load() }
   catch(e) { failure(e) } finally { if (active) busy.value=false }
 }
 async function retry() {

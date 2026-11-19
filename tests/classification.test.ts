@@ -79,6 +79,36 @@ it('人工批量整理只提交勾选维度并保护其余分类', async () => {
   await button('保存分类修改').trigger('click'); await flushPromises()
   expect(classification.change).toHaveBeenCalledWith('song-1', expect.objectContaining({ revision: 0, dimensions: { GENRE: ['genre-0'] }, lockedDimensions: ['GENRE'] }))
   expect(wrapper.emitted('changed')).toHaveLength(1)
+  expect(wrapper.emitted('changed')![0]![0]).toEqual([expect.objectContaining({ songId: 'song-1', revision: 1 })])
+})
+it('撤回成功立即通知外层，不受历史记录重读失败影响', async () => {
+  const before = { songId: 'song-1', revision: 1, dimensions: { GENRE: { tagIds: ['genre-0'], origin: 'MANUAL', locked: false, confirmed: true } } }
+  const after = { songId: 'song-1', revision: 2, dimensions: {} }
+  vi.mocked(classification.state).mockResolvedValue(before)
+  vi.mocked(classification.history).mockResolvedValue([{ id: 'history-1', songId: 'song-1', taskId: null, origin: 'MANUAL', before: {}, after: before.dimensions, afterRevision: 1, reverted: false, createdAt: '2026-11-19T01:00:00Z' }])
+  vi.mocked(classification.undo).mockResolvedValue(after)
+  vi.spyOn(ElMessageBox, 'confirm').mockResolvedValue('confirm' as Awaited<ReturnType<typeof ElMessageBox.confirm>>)
+  wrapper = mount(ClassificationEditor, { props: { songIds: ['song-1'] }, global: { stubs: { teleport: true } } }); await flushPromises()
+  let fail!: (reason: Error) => void
+  vi.mocked(classification.history).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+  await button('撤回').trigger('click'); await flushPromises()
+  expect(wrapper.emitted('changed')).toEqual([[[after]]])
+  fail(new Error('暂时无法读取')); await flushPromises()
+  expect(wrapper.text()).toContain('历史记录读取失败：暂时无法读取')
+  expect(wrapper.emitted('changed')).toHaveLength(1)
+})
+it('标签保存后立即回显，词表重读失败仍保留已保存值', async () => {
+  await page(); await button('分类词表').trigger('click'); await flushPromises()
+  const row = wrapper.findAll('.vocabulary-row').find(item => item.text().includes('流行'))!
+  await row.findAll('button').find(item => item.text() === '编辑')!.trigger('click'); await flushPromises()
+  await wrapper.get('.tag-edit-form input').setValue('用户输入风格')
+  vi.mocked(classification.saveTag).mockResolvedValue({ ...tags[0]!, name: '服务器确认的风格', revision: 2 })
+  let fail!: (reason: Error) => void
+  vi.mocked(classification.tags).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+  await button('保存标签').trigger('click'); await flushPromises()
+  expect(wrapper.get('.vocabulary-card').text()).toContain('服务器确认的风格')
+  fail(new Error('词表重读暂不可用')); await flushPromises()
+  expect(wrapper.get('.vocabulary-card').text()).toContain('服务器确认的风格')
 })
 it('词表提供分类真实数量和停用状态，不自动发布新标签建议', async () => {
   await page(); await button('分类词表').trigger('click'); await flushPromises()

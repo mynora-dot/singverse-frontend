@@ -1,4 +1,4 @@
-/* 顶部两级导航；手机沿用有焦点保护的全部导航面板。 */
+/* 顶部两级导航；任务、助手、设置始终直接可见，手机单独占一行。 */
 .admin-shell {
   min-height: 100dvh;
 }
@@ -143,29 +143,88 @@
   display: flex;
   flex: none;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .primary-navigation + .masthead-actions { margin-left: auto; }
+
+.masthead-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.masthead-controls {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding-left: 16px;
+  border-left: 1px solid var(--sv-border-subtle);
+}
 
 .utility-link {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 40px;
+  gap: 7px;
+  min-width: 84px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--sv-accent-primary) 22%, var(--sv-border-subtle));
+  border-radius: var(--sv-radius-md);
+  background: var(--sv-accent-soft);
   font-size: 14px;
-  color: var(--sv-text-secondary);
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  color: var(--sv-text-primary);
+  transition: color .16s var(--sv-ease-smooth), background .16s var(--sv-ease-smooth), border-color .16s var(--sv-ease-smooth);
 }
 
 .utility-link .el-icon {
+  flex: none;
   font-size: 18px;
+  color: var(--sv-accent-primary);
+}
+
+.utility-link:hover {
+  color: var(--sv-accent-primary);
+  background: color-mix(in srgb, var(--sv-accent-primary) 12%, var(--sv-surface-2));
+  border-color: var(--sv-accent-primary);
+}
+
+.utility-link:focus-visible {
+  outline: 2px solid var(--sv-accent-primary);
+  outline-offset: 3px;
 }
 
 .utility-link[aria-current] {
-  color: var(--sv-accent-primary);
-  font-weight: 500;
+  color: var(--sv-on-accent);
+  background: var(--sv-accent-primary);
+  border-color: var(--sv-accent-primary);
+}
+
+.utility-link[aria-current] .el-icon {
+  color: inherit;
+}
+
+.masthead-tools .task-count {
+  position: absolute;
+  top: -7px;
+  right: 5px;
+  height: 21px;
+  border: 2px solid var(--sv-surface-2);
+  border-radius: var(--sv-radius-full);
+  background: var(--sv-accent-primary);
+  color: var(--sv-on-accent);
+}
+
+.utility-link[aria-current] .task-count {
+  color: var(--sv-accent-muted);
+  background: var(--sv-surface-2);
 }
 
 .task-count {
@@ -469,14 +528,13 @@
   .masthead-actions {
     gap: 8px;
   }
-  .utility-link .utility-label, .account-chip>.el-icon {
+  .account-chip>.el-icon {
     display: none;
   }
 }
 
-@media(max-width:650px) {
-  :root { --sv-topbar-height: 64px; }
-  .primary-navigation, .settings-link {
+@media(max-width:900px) {
+  .primary-navigation {
     display: none;
   }
   .mobile-nav-toggle.el-button {
@@ -486,24 +544,56 @@
     padding: 0;
     background: transparent;
   }
-  .masthead-inner {
-    gap: 12px;
-    padding: 0 16px;
-  }
-  .masthead-actions {
-    gap: 8px;
-  }
-  .utility-link, .account-chip {
+  .masthead-controls .theme-trigger,
+  .account-chip {
     min-width: 44px;
     min-height: 44px;
+  }
+}
+
+@media(max-width:760px) {
+  :root { --sv-topbar-height: 121px; }
+  .masthead-inner {
+    display: grid;
+    grid-template-areas: 'brand controls' 'tools tools';
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: 64px 44px;
+    column-gap: 12px;
+    row-gap: 0;
+    min-height: 0;
+    padding: 0 16px 12px;
+  }
+  .masthead-actions {
+    display: contents;
+  }
+  .masthead-controls {
+    grid-area: controls;
+    gap: 2px;
+    padding-left: 0;
+    border-left: 0;
+  }
+  .masthead-tools {
+    grid-area: tools;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+  .masthead-tools .utility-link {
+    min-width: 0;
+    padding: 0 10px;
+  }
+  .brand {
+    grid-area: brand;
+    min-width: 0;
   }
   .brand strong {
     font-size: 18px;
   }
-  .brand { min-width: 0; }
   .brand-mark { width: 28px; height: 28px; }
-  .masthead-actions { gap: 2px; }
-  .masthead-actions .utility-link { min-width: 44px; }
+}
+
+@media(max-width:650px) {
   .workspace>main {
     padding: 24px 16px 40px;
   }
@@ -519,8 +609,7 @@
   }
 }
 @media(max-width:390px) {
-  .masthead-inner { padding-inline: 12px; gap: 4px; }
-  .masthead-actions { margin-left: auto; }
+  .masthead-inner { padding-inline: 12px; column-gap: 4px; }
   .brand { gap: 5px; }
   .brand strong { font-size: 16px; }
 }

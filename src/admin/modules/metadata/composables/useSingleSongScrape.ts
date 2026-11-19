@@ -5,7 +5,7 @@ import { singleReview } from '../api/single-review'
 import { highSimilarityCandidate } from '../candidate-selection'
 import { metadataDefaults, providerNames } from '../types'
 import { coverValue } from '../cover-quality'
-import type { MetadataCandidate, MusicProvider } from '../types'
+import type { MetadataCandidate, MusicProvider, SearchResult } from '../types'
 import { reviewFields } from '../single-types'
 import type { Values, ReviewField, SingleReview, ReviewResult, ReviewApply, CoverSelection } from '../single-types'
 export const present = (value: unknown) => value !== null && value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0)
@@ -20,10 +20,12 @@ export function useSingleSongScrape() {
   const settingsStatus = ref<'loading' | 'ready' | 'error'>('loading'), searched = ref(false)
   const selectionThreshold = ref<number>(metadataDefaults.threshold), autoSelected = ref(false)
   const enabled = ref(false), loading = ref(false), searching = ref(false), applying = ref(false)
+  const pendingProviders = ref<MusicProvider[]>([]), searchProgress = ref({ completed: 0, total: 0 })
   const error = ref(''), searchError = ref(''), warning = ref(''), candidates = ref<MetadataCandidate[]>([])
   const selected = ref<MetadataCandidate | null>(null), draft = ref<Values | null>(null), fields = ref<ReviewField[]>([])
   const edits = ref<Partial<Values>>({}), cover = ref<CoverSelection | null>(null), result = ref<ReviewResult | null>(null)
   let session = 0, searchGeneration = 0, attempt: { signature: string; input: ReviewApply } | null = null
+  let searchController: AbortController | null = null, selectionGeneration = 0
   const changed = computed(() => review.value && draft.value ? reviewFields.filter(f => fields.value.includes(f) && present(draft.value![f]) && !equal(review.value!.values[f], draft.value![f])) : [])
   const dirty = computed(() => !!review.value && !!draft.value && !result.value && (reviewFields.some(f => !equal(review.value!.values[f], draft.value![f])) || !!selected.value))
   const canSearch = computed(() => !!review.value && settingsStatus.value === 'ready' && enabled.value && providers.value.some(p => available.value.includes(p)) && !!keyword.value.trim() && !loading.value && !searching.value && !applying.value)
@@ -34,15 +36,22 @@ export function useSingleSongScrape() {
     return values
   })
   function clearSelection() {
+    selectionGeneration++
     autoSelected.value = false; selected.value = null; draft.value = review.value ? copyValues(review.value.values) : null
     edits.value = {}; cover.value = null; fields.value = []; result.value = null; attempt = null
   }
-  function invalidate() { session++; searchGeneration++ }
+  function stopSearch() {
+    searchGeneration++; searchController?.abort(); searchController = null
+    searching.value = false; pendingProviders.value = []
+  }
+  function invalidate() { session++; stopSearch() }
+  function beginEditing() { selectionGeneration++ }
   async function open(songId: string, initialCandidates?: MetadataCandidate[], threshold?: number) {
     invalidate(); const token = session
     autoSelected.value = false; review.value = null; draft.value = null; selected.value = null; candidates.value = []; result.value = null
     edits.value = {}; cover.value = null; fields.value = []; error.value = ''; warning.value = ''; searchError.value = ''; searching.value = false; attempt = null
     enabled.value = false; providers.value = []; available.value = []; loading.value = true; searched.value = false; settingsStatus.value = 'loading'
+    searchProgress.value = { completed: 0, total: 0 }
     const [context, settings] = await Promise.allSettled([singleReview.load(songId), metadata.settings()])
     if (token !== session) return
     if (context.status === 'fulfilled') {
@@ -63,25 +72,65 @@ export function useSingleSongScrape() {
   async function search() {
     if (!canSearch.value || !review.value) return
     const token = session, generation = ++searchGeneration
+    const songId = review.value.song.id, query = keyword.value.trim()
+    const platforms = [...new Set(providers.value.filter(p => available.value.includes(p)))]
+    const controller = new AbortController()
+    searchController = controller
     clearSelection(); searched.value = true
+    const selectionToken = selectionGeneration
     searching.value = true; searchError.value = ''; warning.value = ''; candidates.value = []
-    try {
-      const response = await metadata.search(review.value.song.id, keyword.value.trim(), providers.value.filter(p => available.value.includes(p)))
-      if (token !== session || generation !== searchGeneration) return
-      candidates.value = response.candidates
-      const best = highSimilarityCandidate(response.candidates, selectionThreshold.value)
+    pendingProviders.value = [...platforms]; searchProgress.value = { completed: 0, total: platforms.length }
+    const responses = new Map<MusicProvider, SearchResult>(), failures = new Map<MusicProvider, string>()
+    const active = () => token === session && generation === searchGeneration
+    function updateResults() {
+      const unique = new Map<string, MetadataCandidate>()
+      const messages: string[] = []
+      for (const platform of platforms) {
+        const response = responses.get(platform)
+        for (const candidate of response?.candidates ?? []) {
+          const key = candidate.id
+          if (!unique.has(key)) unique.set(key, candidate)
+        }
+        for (const item of response?.errors ?? []) messages.push(`${providerNames[item.provider]}：${item.message}`)
+        if (failures.has(platform)) messages.push(`${providerNames[platform]}：${failures.get(platform)}`)
+      }
+      const next = [...unique.values()].sort((a, b) => b.score - a.score).slice(0, 10)
+      // A manually chosen early result stays available even if later results rank higher.
+      if (selected.value && !next.some(item => item.id === selected.value!.id)) next.splice(9, 1, selected.value)
+      candidates.value = next; warning.value = messages.join('；')
+    }
+    await Promise.all(platforms.map(async platform => {
+      try {
+        const response = await metadata.search(songId, query, [platform], controller.signal)
+        if (active()) responses.set(platform, response)
+      } catch (failure) {
+        if (active()) failures.set(platform, failure instanceof Error ? failure.message : '搜索失败')
+      } finally {
+        if (active()) {
+          pendingProviders.value = pendingProviders.value.filter(item => item !== platform)
+          searchProgress.value = { completed: platforms.length - pendingProviders.value.length, total: platforms.length }
+          updateResults()
+        }
+      }
+    }))
+    if (!active()) return
+    if (!responses.size) searchError.value = platforms.length === 1 ? failures.get(platforms[0]!) ?? '搜索失败' : '所选平台均暂时不可用，请稍后重试或更换平台'
+    // Late results must not replace a candidate, manual edit or explicit cancellation.
+    if (selectionToken === selectionGeneration) {
+      const best = highSimilarityCandidate(candidates.value, selectionThreshold.value)
       if (best) { choose(best); autoSelected.value = true }
-      warning.value = response.errors.map(item => `${providerNames[item.provider]}：${item.message}`).join('；')
-    } catch (failure) { if (token === session && generation === searchGeneration) searchError.value = failure instanceof Error ? failure.message : '搜索失败' }
-    finally { if (token === session && generation === searchGeneration) searching.value = false }
+    }
+    searching.value = false; searchController = null
   }
   function choose(candidate: MetadataCandidate) {
+    selectionGeneration++
     autoSelected.value = false; selected.value = candidate; draft.value = candidateValues(candidate); edits.value = {}; result.value = null; error.value = ''; attempt = null
     cover.value = candidate.track.coverUrl ? { kind: 'candidate', id: candidate.id, value: coverValue(candidate.track.provider, candidate.track.coverUrl, 'ORIGINAL'), originalValue: candidate.track.coverUrl, provider: candidate.track.provider, quality: 'ORIGINAL', url: metadata.candidateCover(candidate.id, 'ORIGINAL'), label: providerNames[candidate.track.provider] } : null
     fields.value = reviewFields.filter(f => present(draft.value![f]) && !equal(review.value!.values[f], draft.value![f]))
   }
   function saveEdits(values: Values) {
     if (!draft.value || !review.value) return
+    selectionGeneration++
     for (const field of reviewFields) {
       if (field === 'cover') continue
       if (!equal(draft.value[field], values[field])) {
@@ -95,12 +144,14 @@ export function useSingleSongScrape() {
     result.value = null; error.value = ''; attempt = null
   }
   function chooseCover(selection: CoverSelection) {
+    selectionGeneration++
     cover.value = selection; draft.value!.cover = selection.value
     if (!fields.value.includes('cover')) fields.value.push('cover')
     result.value = null; error.value = ''; attempt = null
   }
   async function apply(execute: (songId: string, input: ReviewApply) => Promise<ReviewResult> = singleReview.apply) {
     if (!review.value || !draft.value || !changed.value.length || applying.value) return
+    stopSearch()
     const token = session
     const base = { fingerprint: review.value.fingerprint, version: review.value.version, candidateId: selected.value?.id ?? null,
       fields: [...changed.value], edits: { ...edits.value }, coverCandidateId: cover.value?.kind === 'candidate' ? cover.value.id : null, coverAssetId: cover.value?.kind === 'asset' ? cover.value.id : null,
@@ -113,5 +164,5 @@ export function useSingleSongScrape() {
     finally { if (token === session) applying.value = false }
   }
   return { review, keyword, providers, available, enabled, loading, searching, applying, error, searchError, warning, candidates,
-    selected, draft, fields, edits, cover, result, changed, dirty, autoSelected, preview, canSearch, searched, settingsStatus, clearSelection, open, invalidate, search, choose, saveEdits, chooseCover, apply }
+    selected, draft, fields, edits, cover, result, changed, dirty, autoSelected, preview, canSearch, searched, settingsStatus, pendingProviders, searchProgress, clearSelection, open, invalidate, beginEditing, search, choose, saveEdits, chooseCover, apply }
 }

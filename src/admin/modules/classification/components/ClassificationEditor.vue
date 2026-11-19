@@ -7,13 +7,17 @@ import { dimensionNames, originNames, type ClassState, type Dimension, type Hist
 function toggleList(list: Dimension[], dim: Dimension, checked: boolean) { const at = list.indexOf(dim); if (checked && at < 0) list.push(dim); else if (!checked && at >= 0) list.splice(at, 1) }
 
 const props = defineProps<{ songIds: string[] }>()
-const emit = defineEmits<{ close: []; changed: [] }>()
+const emit = defineEmits<{ close: []; changed: [states: ClassState[]] }>()
 const states = ref<ClassState[]>([]), tags = ref<Tag[]>([]), history = ref<History[]>([]), historyPage = ref(0)
 const selected = ref<Dimension[]>([]), values = ref<Partial<Record<Dimension, string[]>>>({}), locked = ref<Dimension[]>([])
 const loading = ref(true), busy = ref(false), error = ref('')
 const attempts = new Map<string, { body: string; id: string }>()
 function names(ids: string[]) { return ids.map(id => tags.value.find(t => t.id === id)?.name ?? id).join('、') || '未知 / 无标签' }
 async function loadHistory() { if (props.songIds.length === 1) history.value = await classification.history(props.songIds[0]!, historyPage.value) }
+async function refreshHistory() {
+  try { await loadHistory() }
+  catch (e) { error.value = [error.value, `历史记录读取失败：${e instanceof Error ? e.message : '请稍后重试'}`].filter(Boolean).join('；') }
+}
 async function load() {
   loading.value = true; error.value = ''
   try { const [vocabulary, current] = await Promise.all([classification.tags(), Promise.all(props.songIds.map(id => classification.state(id)))]); tags.value = vocabulary; states.value = current
@@ -34,14 +38,14 @@ async function save() {
       try { states.value[i] = await classification.change(current.songId, { ...JSON.parse(body), requestId: attempt.id }); succeeded++ }
       catch (e) { error.value += `${current.songId}：${e instanceof Error ? e.message : '保存失败'}；` }
     }
-    if (succeeded) { ElMessage.success(`已保存 ${succeeded} 首歌曲的分类`); emit('changed') }
-    await loadHistory()
+    if (succeeded) { ElMessage.success(`已保存 ${succeeded} 首歌曲的分类`); emit('changed', [...states.value]) }
+    await refreshHistory()
   } finally { busy.value = false }
 }
 async function undo(h: History) {
   try { await ElMessageBox.confirm('仅在分类和锁定状态没有后续变化时撤回。原媒体和刮削信息不会修改。', '撤回此次分类') } catch { return }
   busy.value = true; error.value = ''
-  try { states.value[0] = await classification.undo(h.id, newRequestId(), states.value[0]!.revision); await loadHistory(); emit('changed'); ElMessage.success('分类已撤回') }
+  try { states.value[0] = await classification.undo(h.id, newRequestId(), states.value[0]!.revision); emit('changed', [...states.value]); ElMessage.success('分类已撤回'); await refreshHistory() }
   catch (e) { error.value = e instanceof Error ? e.message : '撤回失败' } finally { busy.value = false }
 }
 onMounted(load)

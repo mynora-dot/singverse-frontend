@@ -81,6 +81,20 @@ it('设置子路由与任务批次深链接高亮所属入口', async () => {
   expect(navigationContext('/system/tasks/batch-1').entry?.path).toBe('/system/tasks')
   wrapper.unmount()
 })
+it('任务、助手、设置提供完整文字入口，助手切页保留当前入口高亮', async () => {
+  await router.push('/system/music-platforms')
+  const wrapper = mount(App, { global: { plugins: [router] } })
+  try {
+    await settleLayout()
+    const tools = wrapper.get('nav[aria-label="主要功能"]')
+    expect(tools.findAll('.utility-label').map(label => label.text())).toEqual(['任务', '助手', '设置'])
+    expect(tools.findAll('a').map(link => link.attributes('href'))).toEqual(['#/system/tasks', '#/system/assistant', '#/system/music-platforms'])
+    await tools.get('[aria-label="管理助手"]').trigger('click'); await settleLayout()
+    expect(router.currentRoute.value.path).toBe('/system/assistant')
+    expect(tools.get('[aria-current="page"]').text()).toBe('助手')
+    expect(tools.get('.settings-link').attributes('aria-current')).toBeUndefined()
+  } finally { wrapper.unmount() }
+})
 it('旧方案和规则链接归入歌曲来源并保留指定方案、查询与锚点', async () => {
   await router.push('/library/filename-parser-profiles?profile=chosen&source=existing#preview')
   expect(router.currentRoute.value.path).toBe('/library/media/recognition')
@@ -97,7 +111,7 @@ it('旧方案和规则链接归入歌曲来源并保留指定方案、查询与�
   }
 })
 
-it('音乐平台在设置中直接可达并高亮，显示真实五平台配置', async () => {
+it('音乐平台在设置中直接可达并高亮，六个选项保留真实五平台配置', async () => {
   vi.mocked(fetch).mockImplementation(async input => {
     const path = String(input)
     if (path.endsWith('/metadata/settings')) return Response.json({ enabled: true, providers: ['NETEASE', 'QQ', 'KUGOU', 'KUWO', 'QISHUI'], autoApply: false, threshold: .95, minIntervalSeconds: 3, maxIntervalSeconds: 8 })
@@ -109,7 +123,8 @@ it('音乐平台在设置中直接可达并高亮，显示真实五平台配置'
   expect(wrapper.get('.settings-link').attributes('aria-current')).toBe('page')
   expect(wrapper.get('.section-navigation [aria-current="page"]').text()).toBe('音乐平台')
   expect(wrapper.get('h1').text()).toBe('音乐平台')
-  expect(wrapper.findAll('.platform-options input[type="checkbox"]')).toHaveLength(5)
+  expect(wrapper.findAll('.platform-options input[type="checkbox"]')).toHaveLength(6)
+  expect((wrapper.get('input[value="MIGU"]').element as HTMLInputElement).checked).toBe(false)
   expect(wrapper.text()).toContain('已开启 5 个平台')
   wrapper.unmount()
 })

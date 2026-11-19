@@ -1,7 +1,7 @@
 import { authRequest } from '../../core/auth/api'
 
-export const platforms: Record<string, string> = { wy: '网易云音乐', tx: 'QQ 音乐', kg: '酷狗音乐', kw: '酷我音乐', mg: '咪咕音乐' }
-export const qualities: Record<string, string> = { auto: '自动 · 按音源可用音质选择', flac24bit: 'Hi-Res / 24 bit', flac: '无损 FLAC', '320k': '高品质 320 kbps', '128k': '标准 128 kbps' }
+export const platforms: Record<string, string> = { wy: '网易云音乐', tx: 'QQ 音乐', kg: '酷狗音乐', kw: '酷我音乐', mg: '咪咕音乐', qs: '汽水音乐' }
+export const qualities: Record<string, string> = { auto: '自动 · 按音源可用音质选择', flac24bit: 'Hi-Res / 24 bit', flac: '无损 FLAC', '320k': '高品质 320 kbps', '256k': '高品质 256 kbps', '128k': '标准 128 kbps', '64k': '流畅 64 kbps', '32k': '流畅 32 kbps' }
 export interface LxSource { id: string; name: string; version: string; environment: 'mobile' | 'desktop'; capabilities: Record<string, string[]>; active: boolean; createdAt: string }
 export interface Status { target: { id: string | null; name: string | null; path: string | null; ready: boolean; reason: string }; activeSource: LxSource | null; ready: boolean; platforms: Record<string, string>; activeBatches: number }
 export interface Track { id: string; platform: string; title: string; artists: string[]; album: string; durationMs: number | null; coverUrl: string; inLibrary: boolean; downloading: boolean; songId: string | null }
@@ -19,8 +19,8 @@ export const lx = {
   activate: (id: string) => authRequest(base + `/sources/${encodeURIComponent(id)}/activate`, 'POST', undefined, 25000),
   test: (id: string) => authRequest<{ message: string }>(base + `/sources/${encodeURIComponent(id)}/test`, 'POST', undefined, 25000),
   remove: (id: string) => authRequest(base + `/sources/${encodeURIComponent(id)}`, 'DELETE'),
-  search: (query: string, platform: string, page = 1) => authRequest<SearchResult>(base + '/catalog/search', 'POST', { query, platform, page }, 180000),
-  preview: (url: string, page = 1) => authRequest<Preview>(base + '/catalog/preview', 'POST', { url, page }, 90000),
+  search: (query: string, platform: string, page = 1, signal?: AbortSignal) => authRequest<SearchResult>(base + '/catalog/search', 'POST', { query, platform, page }, 45000, signal),
+  preview: (url: string, page = 1, signal?: AbortSignal) => authRequest<Preview>(base + '/catalog/preview', 'POST', { url, page }, 90000, signal),
   trackStates: (trackIds: string[]) => authRequest<Track[]>(base + '/catalog/states', 'POST', { trackIds }),
   create: (trackIds: string[], quality: string, name?: string) => authRequest<Created>(base + '/batches', 'POST', { trackIds, quality, name }, 30000),
   batches: (page = 0) => authRequest<Page<Batch>>(base + `/batches?page=${page}&size=20`),

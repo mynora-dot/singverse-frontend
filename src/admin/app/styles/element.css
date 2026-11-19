@@ -58,7 +58,7 @@
 .el-input__wrapper.is-focus,
 .el-select__wrapper.is-focused,
 .el-textarea__inner:focus {
-  box-shadow: 0 0 0 1px var(--sv-accent-primary) inset, 0 0 0 3px var(--sv-accent-soft);
+  box-shadow: 0 0 0 2px var(--sv-accent-primary) inset;
 }
 
 .el-form-item__label {

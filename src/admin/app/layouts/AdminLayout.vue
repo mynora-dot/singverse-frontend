@@ -86,12 +86,16 @@ function focusMainContent() { document.getElementById('main-content')?.focus() }
           <input v-model="searchTerm" type="search" class="search-input" placeholder="搜索歌曲或歌手" aria-label="搜索歌曲">
         </form>
         <div class="masthead-actions">
-          <RouterLink class="utility-link" :to="taskEntry.path" :aria-label="taskCount > 0 ? `任务中心，${taskCount} 个进行中` : '任务中心'" :aria-current="activePath === taskEntry.path ? 'page' : undefined"><ElIcon><Clock /></ElIcon><span class="utility-label">任务</span><span v-if="taskCount > 0" class="task-count" aria-hidden="true">{{ taskBadge }}</span></RouterLink>
-          <RouterLink class="utility-link" to="/system/assistant" aria-label="管理助手" :aria-current="route.path === '/system/assistant' ? 'page' : undefined"><ElIcon><ChatDotRound /></ElIcon><span class="utility-label">助手</span></RouterLink>
-          <RouterLink class="utility-link settings-link" :to="settingsGroup.path" :aria-current="currentNavigation.group?.id === 'settings' ? 'page' : undefined" aria-label="设置"><ElIcon><Setting /></ElIcon></RouterLink>
-          <ThemeSwitcher />
-          <ElDropdown trigger="click" placement="bottom-end"><button class="account-chip" type="button" aria-label="账号菜单"><span class="avatar">{{ accountLabel.slice(0, 1) }}</span><span v-if="auth.account?.defaultPassword" class="account-alert" aria-label="安全提醒" /><ElIcon><ArrowDown /></ElIcon></button><template #dropdown><ElDropdownMenu><ElDropdownItem disabled>{{ accountLabel }} · {{ securityHint }}</ElDropdownItem><ElDropdownItem :icon="Key" @click="router.push('/system/parameters')">账号与安全</ElDropdownItem><ElDropdownItem divided :icon="SwitchButton" @click="logout">退出登录</ElDropdownItem></ElDropdownMenu></template></ElDropdown>
-          <ElButton ref="navToggle" class="mobile-nav-toggle" :icon="navigationOpen ? Close : Menu" :aria-label="navigationOpen ? '收起导航' : '打开导航菜单'" :aria-expanded="navigationOpen" aria-controls="admin-navigation" @click="toggleNavigation" />
+          <nav class="masthead-tools" aria-label="主要功能">
+            <RouterLink class="utility-link" :to="taskEntry.path" :aria-label="taskCount > 0 ? `任务中心，${taskCount} 个进行中` : '任务中心'" :aria-current="activePath === taskEntry.path ? 'page' : undefined"><ElIcon aria-hidden="true"><Clock /></ElIcon><span class="utility-label">任务</span><span v-if="taskCount > 0" class="task-count" aria-hidden="true">{{ taskBadge }}</span></RouterLink>
+            <RouterLink class="utility-link" to="/system/assistant" aria-label="管理助手" :aria-current="route.path === '/system/assistant' ? 'page' : undefined"><ElIcon aria-hidden="true"><ChatDotRound /></ElIcon><span class="utility-label">助手</span></RouterLink>
+            <RouterLink class="utility-link settings-link" :to="settingsGroup.path" :aria-current="currentNavigation.group?.id === 'settings' ? 'page' : undefined" aria-label="设置"><ElIcon aria-hidden="true"><Setting /></ElIcon><span class="utility-label">设置</span></RouterLink>
+          </nav>
+          <div class="masthead-controls">
+            <ThemeSwitcher />
+            <ElDropdown trigger="click" placement="bottom-end"><button class="account-chip" type="button" aria-label="账号菜单"><span class="avatar">{{ accountLabel.slice(0, 1) }}</span><span v-if="auth.account?.defaultPassword" class="account-alert" aria-label="安全提醒" /><ElIcon><ArrowDown /></ElIcon></button><template #dropdown><ElDropdownMenu><ElDropdownItem disabled>{{ accountLabel }} · {{ securityHint }}</ElDropdownItem><ElDropdownItem :icon="Key" @click="router.push('/system/parameters')">账号与安全</ElDropdownItem><ElDropdownItem divided :icon="SwitchButton" @click="logout">退出登录</ElDropdownItem></ElDropdownMenu></template></ElDropdown>
+            <ElButton ref="navToggle" class="mobile-nav-toggle" :icon="navigationOpen ? Close : Menu" :aria-label="navigationOpen ? '收起导航' : '打开导航菜单'" :aria-expanded="navigationOpen" aria-controls="admin-navigation" @click="toggleNavigation" />
+          </div>
         </div>
       </div>
     </header>

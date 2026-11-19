@@ -9,28 +9,30 @@ import { equal, present, type useSingleSongScrape } from '../composables/useSing
 import { hasCloseAlternative } from '../candidate-selection'
 import MetadataCover from './MetadataCover.vue'
 import MetadataFieldComparison from './MetadataFieldComparison.vue'
+import { songCoverUrl } from '../utils'
 
 const props = defineProps<{ state: ReturnType<typeof useSingleSongScrape>; versionWarning: string }>()
 const emit = defineEmits<{ search: []; settings: []; choose: [candidate: MetadataCandidate]; clear: []; edit: []; cover: [] }>()
 // The existing review model remains the sole source of truth for drafts and writes.
 const { review, draft, keyword, providers, available, enabled, loading, searching, applying,
   warning, searchError, candidates, selected, fields, edits, cover, changed, autoSelected,
-  canSearch, searched, settingsStatus } = props.state
+  canSearch, searched, settingsStatus, pendingProviders, searchProgress } = props.state
 const pane = ref<'review' | 'candidates'>('review')
 const coverFailed = ref(false), retryKey = ref(0)
 const uid = useId()
 const platforms = Object.keys(providerNames) as MusicProvider[]
-const icons: Record<MusicProvider, string> = { NETEASE: 'netease', QQ: 'qq', KUGOU: 'kugou', KUWO: 'kuwo', QISHUI: 'qishui' }
+const icons: Record<MusicProvider, string> = { NETEASE: 'netease', QQ: 'qq', KUGOU: 'kugou', KUWO: 'kuwo', QISHUI: 'qishui', MIGU: 'migu' }
 const icon = (provider: MusicProvider) => `/assets/music-platforms/${icons[provider]}.png`
-const currentCover = computed(() => review.value?.values.cover ? metadata.songCover(review.value.song.id) : null)
+const currentCover = computed(() => review.value?.values.cover ? songCoverUrl(review.value.song) : null)
 const draftCover = computed(() => equal(draft.value?.cover, review.value?.values.cover) ? currentCover.value : cover.value?.url ?? null)
 const sortedCandidates = computed(() => [...candidates.value].sort((a, b) => b.score - a.score))
+const pendingLabel = computed(() => pendingProviders.value.map(p => providerNames[p]).join('、'))
 const fileFormat = computed(() => review.value?.song.relativePath.split('.').pop()?.toUpperCase() || '格式未知')
 const fileSize = computed(() => review.value?.song.fileSize == null ? '大小未知' : `${(review.value.song.fileSize / 1024 / 1024).toFixed(1)} MB`)
 const sourceLabel = computed(() => !enabled.value ? '平台未启用' : !providers.value.length ? '请选择查询平台' : providers.value.length === available.value.length ? '全部已启用平台' : providers.value.length === 1 ? providerNames[providers.value[0]!] : `已选 ${providers.value.length} 个平台`)
 const manualDraft = computed(() => Object.keys(edits.value).length > 0 || (!!cover.value && (cover.value.kind !== 'candidate' || cover.value.id !== selected.value?.id)))
 const coverStatus = computed(() => !present(draft.value?.cover) ? '尚未选择封面' : equal(review.value?.values.cover, draft.value?.cover) ? '与当前相同' : changed.value.includes('cover') ? '待应用' : '未勾选，保留当前封面')
-watch(searching, value => { if (value) pane.value = 'candidates' })
+watch(searching, value => { if (value) pane.value = 'candidates' }, { immediate: true })
 watch(selected, async value => {
   if (!value) return
   const wasCandidates = pane.value === 'candidates'
@@ -98,14 +100,15 @@ function closeDisclosure(event: KeyboardEvent) {
           <div class="platform-row"><details class="platform-select" @keydown="closeDisclosure"><summary><span>{{ sourceLabel }}</span><ArrowDown aria-hidden="true" /></summary><div class="platform-options"><span class="platform-caption">查询平台</span><ElCheckbox v-for="platform in platforms" :key="platform" :model-value="enabled && available.includes(platform) && providers.includes(platform)" :disabled="!enabled || !available.includes(platform) || searching || applying || loading" @change="value => toggleProvider(platform, value)"><img :src="icon(platform)" alt="" width="16" height="16">{{ providerNames[platform] }}<small v-if="!enabled || !available.includes(platform)">未启用</small></ElCheckbox></div></details><span class="sort-label">按相似度排序</span></div>
           <div v-if="!enabled || !available.length" class="platform-notice"><p>{{ settingsStatus === 'error' ? '无法读取平台配置。' : '平台查询未启用。' }}仍可手工编辑或上传封面。</p><ElButton text type="primary" :disabled="applying" @click="emit('settings')">打开音乐平台设置</ElButton></div>
           <ElAlert v-if="warning" class="search-warning" :title="warning" type="warning" :closable="false" />
+          <p v-if="searching" class="search-progress" role="status" aria-live="polite">已完成 {{ searchProgress.completed }}/{{ searchProgress.total }} 个平台<span v-if="pendingLabel"> · 正在查询{{ pendingLabel }}</span><small v-if="candidates.length">可先选择候选并核对字段</small></p>
           <div v-if="coverFailed" class="cover-load-notice" role="status"><span>部分封面加载失败</span><ElButton text :disabled="applying" @click="retryKey++; coverFailed = false">重试封面</ElButton></div>
         </div>
-        <div v-if="searching" class="workspace-state" role="status"><h3>正在搜索匹配结果…</h3><p>正在查询所选平台，请稍候。</p></div>
+        <div v-if="searching && !candidates.length" class="workspace-state" role="status"><h3>正在搜索匹配结果…</h3><p>各平台返回后会立即显示候选。</p></div>
         <div v-else-if="searchError" class="workspace-state"><h3>平台请求失败</h3><p role="alert">{{ searchError }}</p><ElButton :disabled="!canSearch" @click="emit('search')">重试搜索</ElButton><ElButton @click="emit('edit')">手工编辑</ElButton></div>
         <div v-else-if="!candidates.length" class="workspace-state"><ElEmpty :description="!enabled || !available.length ? '平台查询未就绪' : searched ? '未找到匹配结果' : '尚未搜索歌曲'" :image-size="48" /><p>{{ !enabled || !available.length ? '启用平台后可查询；也可直接完善当前歌曲。' : searched ? '可调整关键词、切换已启用平台，或手工填写。' : '输入歌名和歌手开始搜索。' }}</p><ElButton plain type="primary" @click="emit('edit')">手工编辑元数据</ElButton><ElButton @click="emit('cover')">选择或上传封面</ElButton></div>
         <div v-else class="candidate-scroll" @keydown="focusCandidate">
           <button v-for="candidate in sortedCandidates" :key="candidate.id" type="button" class="review-candidate" :class="{ chosen: selected?.id === candidate.id }" :aria-pressed="selected?.id === candidate.id" :aria-label="`${candidate.track.title}，${candidate.track.artists.join('、')}，${providerNames[candidate.track.provider]}，相似度${Math.round(candidate.score * 100)}%`" :title="[candidate.track.album, candidate.track.releaseDate].filter(Boolean).join(' · ')" :disabled="applying" @click="emit('choose', candidate)">
-            <MetadataCover :src="candidate.track.coverUrl ? metadata.candidateCover(candidate.id) : null" alt="候选歌曲封面" :retry-key="retryKey" @failed="coverFailed = true" />
+            <MetadataCover :src="candidate.track.coverUrl ? metadata.candidateCover(candidate.id, 'ORIGINAL') : null" alt="候选歌曲封面" :retry-key="retryKey" @failed="coverFailed = true" />
             <span class="candidate-info"><strong>{{ candidate.track.title }}</strong><span>{{ candidate.track.artists.join('、') || '未知歌手' }}</span><small><img :src="icon(candidate.track.provider)" alt="" width="16" height="16">{{ providerNames[candidate.track.provider] }}</small></span>
             <span class="candidate-score">{{ Math.round(candidate.score * 100) }}%</span>
           </button>

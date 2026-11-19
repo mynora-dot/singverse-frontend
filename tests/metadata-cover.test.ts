@@ -25,9 +25,14 @@ it('区分平台未提供图片、加载和失败，重试不会冒充没有封�
 it.each([
   ['NETEASE', 'https://p2.music.126.net/cover.jpg?param=640y640', 'https://p2.music.126.net/cover.jpg', 'https://p2.music.126.net/cover.jpg?param=2048y2048'],
   ['KUGOU', 'https://imge.kugou.com/stdmusic/400/cover.jpg', 'https://imge.kugou.com/stdmusic/0/cover.jpg', 'https://imge.kugou.com/stdmusic/2048/cover.jpg'],
+  ['KUGOU', 'https://imge.kugou.com/stdmusic/{size}/cover.jpg', 'https://imge.kugou.com/stdmusic/0/cover.jpg', 'https://imge.kugou.com/stdmusic/2048/cover.jpg'],
+  ['KUGOU', 'http://singerimg.kugou.com/uploadpic/softhead/{size}/20230804/a.jpg', 'https://singerimg.kugou.com/uploadpic/softhead/2048/20230804/a.jpg', 'https://singerimg.kugou.com/uploadpic/softhead/2048/20230804/a.jpg'],
+  ['KUGOU', 'https://singerimg.kugou.com/uploadpic/softhead/0/20230804/a.jpg', 'https://singerimg.kugou.com/uploadpic/softhead/2048/20230804/a.jpg', 'https://singerimg.kugou.com/uploadpic/softhead/2048/20230804/a.jpg'],
+  ['KUGOU', 'https://singerimg.kugou.com/uploadpic/pass/softhead/120/20230804/a.jpg', 'https://singerimg.kugou.com/uploadpic/pass/softhead/2048/20230804/a.jpg', 'https://singerimg.kugou.com/uploadpic/pass/softhead/2048/20230804/a.jpg'],
   ['KUWO', 'https://img1.kuwo.cn/star/albumcover/120/a.jpg', 'https://img1.kuwo.cn/star/albumcover/0/a.jpg', 'https://img1.kuwo.cn/star/albumcover/2048/a.jpg'],
   ['QISHUI', 'https://p3-luna.douyinpic.com/img/a~tplv-test-resize:640:640.png', 'https://p3-luna.douyinpic.com/img/a~tplv-test-image.image', 'https://p3-luna.douyinpic.com/img/a~tplv-test-resize:2048:2048.png'],
   ['QQ', 'https://y.gtimg.cn/music/photo_new/T002R300x300M000album.jpg', 'https://y.gtimg.cn/music/photo_new/T002M000album.jpg', 'https://y.gtimg.cn/music/photo_new/T002R1500x1500M000album.jpg'],
+  ['MIGU', 'https://d.musicapp.migu.cn/data/cover.webp', 'https://d.musicapp.migu.cn/data/cover.webp', 'https://d.musicapp.migu.cn/data/cover.webp'],
 ] as const)('%s 原图与高清草稿值使用真实 CDN 版本，避免保存缩略图', (provider, raw, original, high) => {
   expect(coverValue(provider, raw, 'ORIGINAL')).toBe(original)
   expect(coverValue(provider, raw, 'HIGH')).toBe(high)

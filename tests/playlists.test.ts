@@ -14,6 +14,18 @@ let wrapper:VueWrapper|undefined
 beforeEach(()=>{vi.mocked(playlists.list).mockResolvedValue({items:[playlist],totalElements:1});vi.mocked(playlists.get).mockResolvedValue(playlist);vi.mocked(playlists.save).mockResolvedValue({...playlist,revision:3});vi.mocked(ai.services).mockResolvedValue([{id:'m1',name:'已配置模型',enabled:true}] as never);vi.mocked(playlists.generate).mockResolvedValue({name:'AI聚会',description:'来自本地曲库',songIds:['song-1'],songs:[song],candidateCount:1,libraryCount:1});vi.mocked(playlists.remove).mockResolvedValue(undefined)})
 afterEach(()=>{wrapper?.unmount();wrapper=undefined;vi.clearAllMocks();vi.restoreAllMocks();document.body.innerHTML=''})
 async function page(){wrapper=mount(PlaylistsView,{global:{stubs:{teleport:true,SongPicker:{name:'SongPicker',props:['selectedIds','purpose'],emits:['confirm','selectedSongs','close'],template:'<div />'}}}});await flushPromises()}
+it('编辑保存后卡片立即采用服务端名称，重读失败不回退', async () => {
+  await page(); await button('编辑歌单').trigger('click'); await flushPromises()
+  await wrapper!.get('input[aria-label="歌单名称"]').setValue('用户输入的名称')
+  vi.mocked(playlists.save).mockResolvedValue({ ...playlist, name: '服务器确认的名称', revision: 3 })
+  let fail!: (reason: Error) => void
+  vi.mocked(playlists.list).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+  await button('保存歌单').trigger('click'); await flushPromises()
+  expect(wrapper!.get('.card').text()).toContain('服务器确认的名称')
+  fail(new Error('暂时无法重读')); await flushPromises()
+  expect(wrapper!.get('.card').text()).toContain('服务器确认的名称')
+  expect(wrapper!.text()).toContain('暂时无法重读')
+})
 function button(text:string){return wrapper!.findAll('button').find(b=>b.text()===text)!}
 async function openAI(){await wrapper!.get('.ai-entry').trigger('click');await flushPromises()}
 it('首次读取展示骨架，不提前显示空歌单提示', async () => {

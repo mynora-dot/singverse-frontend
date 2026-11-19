@@ -114,6 +114,39 @@ describe('歌曲管理集中展示扫描数据及详情', () => {
     expect(songs.list).toHaveBeenCalledTimes(before)
   })
 
+  it('第二页编辑成功立即回显，后续重读失败仍保留已保存的信息和筛选', async () => {
+    await router.replace('/library/songs?sourceId=source-1&page=2'); await flushPromises()
+    const saved = song()
+    saved.metadata = { track: { provider: null, externalId: null, title: '已保存的新歌名', artists: ['新歌手'], album: null, releaseDate: null, durationMs: null, aliases: [], coverUrl: 'asset:new-cover', availability: 'UNKNOWN', fetchedAt: '' }, fields: ['title', 'artists', 'cover'], appliedAt: '2026-11-19T10:00:00Z', stale: false, origins: {} }
+    let fail!: (reason: Error) => void
+    vi.mocked(songs.list).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+    const dialog = wrapper.findComponent({ name: 'SingleSongScrapeDialog' })
+    dialog.vm.$emit('applied', saved); await flushPromises()
+    dialog.vm.$emit('close'); await flushPromises()
+    expect(wrapper.get('.song-card-title strong').text()).toBe('已保存的新歌名')
+    expect(wrapper.get('.card-artist').text()).toBe('新歌手')
+    expect(wrapper.get('.page-range').text()).toContain('21–21')
+    expect(router.currentRoute.value.query).toEqual({ sourceId: 'source-1', page: '2' })
+    expect(songs.list).toHaveBeenLastCalledWith(expect.objectContaining({ sourceId: 'source-1', page: 1 }))
+    fail(new Error('重读暂不可用')); await flushPromises()
+    expect(wrapper.get('.song-card-title strong').text()).toBe('已保存的新歌名')
+    expect(wrapper.text()).toContain('重读暂不可用')
+  })
+
+  it('分类修改成功立即更新卡片标签，不等待歌曲重读', async () => {
+    vi.mocked(classification.tags).mockResolvedValue([{ id: 'genre-1', dimension: 'GENRE', name: '新风格', active: true, revision: 1, aliases: [], count: 1 }])
+    vi.mocked(classification.state).mockResolvedValue({ songId: 'song-1', revision: 0, dimensions: {} })
+    vi.mocked(classification.history).mockResolvedValue([])
+    await wrapper.get('.song-card-title').trigger('click'); await flushPromises()
+    await wrapper.findAll('button').find(item => item.text() === '编辑标签')!.trigger('click'); await flushPromises()
+    let fail!: (reason: Error) => void
+    vi.mocked(songs.list).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+    wrapper.findComponent({ name: 'ClassificationEditor' }).vm.$emit('changed', [{ songId: 'song-1', revision: 1, dimensions: { GENRE: { tagIds: ['genre-1'], origin: 'MANUAL', confirmed: true, locked: false } } }]); await flushPromises()
+    expect(wrapper.get('.song-card .card-tag').text()).toBe('新风格')
+    fail(new Error('歌曲重读暂不可用')); await flushPromises()
+    expect(wrapper.get('.song-card .card-tag').text()).toBe('新风格')
+  })
+
   it('每页数量决定完整渲染行数，顶部和底部分页数量同步', async () => {
     await wrapper.get('[aria-label="列表整理"]').trigger('click')
     vi.mocked(songs.list).mockImplementation(async input => result(Array.from({ length: input.size ?? 20 }, (_, i) => song(`row-${i}`)), 0, 137))
@@ -417,6 +450,28 @@ describe('歌曲管理集中展示扫描数据及详情', () => {
 
 
 describe('歌曲卡片复核状态', () => {
+  it('已加载的封面被替换时使用新图片地址，卡片无需卸载重建', async () => {
+    const row = song()
+    const confirmed = { track: { provider: null, externalId: null, title: null, artists: [], album: null, releaseDate: null, durationMs: null, aliases: [], coverUrl: 'asset:old-cover', availability: 'UNKNOWN', fetchedAt: '' }, fields: ['cover'], appliedAt: '', stale: false, origins: {} }
+    const w = mount(SongCard, { props: { song: { ...row, metadata: confirmed } } })
+    const oldAddress = w.get('.song-cover img').attributes('src')
+    await w.setProps({ song: { ...row, metadata: { ...confirmed, track: { ...confirmed.track, coverUrl: 'asset:new-cover' } } } })
+    expect(w.get('.song-cover img').attributes('src')).not.toBe(oldAddress)
+    // The first list reread may still expose the prior formal attachment.
+    await w.setProps({ song: { ...row, metadata: { ...confirmed } } })
+    expect(w.get('.song-cover img').attributes('src')).not.toBe(oldAddress)
+    expect(w.get('.song-cover img').attributes('src')).toContain('refresh=2')
+    w.unmount()
+  })
+
+  it('大封面卡片读取正式原图，避免在高像素密度屏幕放大缩略图', () => {
+    const row = song()
+    row.metadata = { track: { provider: 'KUGOU', externalId: 'track', title: '传奇', artists: ['郭沁'], album: null, releaseDate: null, durationMs: null, aliases: [], coverUrl: 'asset:chosen-cover', availability: 'UNKNOWN', fetchedAt: '' }, fields: ['cover'], appliedAt: '', stale: false, origins: {} }
+    const w = mount(SongCard, { props: { song: row } })
+    expect(w.get('.song-cover img').attributes('src')).toBe('/api/v1/metadata/songs/song-1/cover?v=asset%3Achosen-cover')
+    w.unmount()
+  })
+
   it('仅已确认的歌名与歌手显示复核标记，文件名完整不代表已复核', async () => {
     const row = song()
     const w = mount(SongCard, { props: { song: row } })
@@ -461,7 +516,7 @@ describe('歌曲明细表信息与交互', () => {
     const row = song()
     row.metadata = { track: { provider: null, externalId: null, title: null, artists: [], album: null, releaseDate: null, durationMs: null, aliases: [], coverUrl: 'asset:cover-one', availability: 'UNKNOWN', fetchedAt: '' }, fields: ['cover'], appliedAt: '', stale: false, origins: {} }
     const w = mount(SongLibraryTable, { props: { ...props(), items: [row] } })
-    expect(w.get('.song-cover img').attributes('src')).toBe('/api/v1/metadata/songs/song-1/cover?variant=thumbnail')
+    expect(w.get('.song-cover img').attributes('src')).toBe('/api/v1/metadata/songs/song-1/cover?variant=thumbnail&v=asset%3Acover-one')
     expect(w.get('.song-cover img').attributes('loading')).toBe('lazy')
     await w.get('.song-cover img').trigger('error')
     expect(w.find('.song-cover img').exists()).toBe(false)

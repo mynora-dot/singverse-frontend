@@ -11,7 +11,7 @@ import type { SingleReview, ReviewResult } from '../src/admin/modules/metadata/s
 import type { MetadataCandidate } from '../src/admin/modules/metadata/types'
 import SingleCoverPicker from '../src/admin/modules/metadata/components/SingleCoverPicker.vue'
 vi.mock('../src/admin/modules/metadata/api/single-review', () => ({ singleReview: { load: vi.fn(), apply: vi.fn(), covers: vi.fn(), upload: vi.fn(), assetUrl: (id: string) => `/api/v1/metadata/cover-assets/${id}` } }))
-vi.mock('../src/admin/modules/metadata/api/metadata', () => ({ metadata: { settings: vi.fn(), search: vi.fn(), candidateCover: (id: string) => `/api/v1/metadata/candidates/${id}/cover`, songCover: (id: string) => `/api/v1/metadata/songs/${id}/cover` } }))
+vi.mock('../src/admin/modules/metadata/api/metadata', () => ({ metadata: { settings: vi.fn(), search: vi.fn(), candidateCover: (id: string, quality?: string) => `/api/v1/metadata/candidates/${id}/cover${quality ? `?quality=${quality}` : ''}`, songCover: (id: string) => `/api/v1/metadata/songs/${id}/cover` } }))
 function context(): SingleReview { return { song: { id: 'song-1', sourceId: 'source', sourceName: '家庭曲库', relativePath: '歌手《歌名》.mkv', fileSize: 2000, modifiedAt: null, scannedAt: '', parserProfileId: 'default', parserRevision: 0, selectedRuleId: null, result: preview().result }, fingerprint: 'fingerprint', version: 'version', values: { title: '歌名', artists: ['歌手'], album: null, releaseDate: null, aliases: [], durationMs: null, cover: null } } }
 function result(): ReviewResult { return { metadata: null, before: context().values, after: { ...context().values, title: '手工歌名' }, updated: ['title'], skipped: [], retained: ['artists', 'album', 'releaseDate', 'aliases', 'durationMs', 'cover'] } }
 const candidate: MetadataCandidate = { id: 'candidate', score: .95, track: { provider: 'QQ', externalId: 'id', title: '歌名', artists: ['歌手'], album: '新专辑', releaseDate: null, aliases: [], durationMs: null, coverUrl: null, availability: 'UNKNOWN', fetchedAt: '' } }
@@ -24,6 +24,9 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; document.body.innerHTML = ''; vi.clearAllMocks(); vi.restoreAllMocks() })
 it('没有平台也能编辑并真实提交，成功使用服务端反馈', async () => {
+  const response = result()
+  response.metadata = { track: { provider: null, externalId: null, title: '手工歌名', artists: ['歌手'], album: null, releaseDate: null, aliases: [], durationMs: null, coverUrl: null, availability: 'UNKNOWN', fetchedAt: '' }, fields: ['title', 'artists'], origins: {}, appliedAt: '2026-11-19T10:00:00Z', stale: false }
+  vi.mocked(singleReview.apply).mockResolvedValue(response)
   wrapper = mount(SingleSongScrapeDialog, { props: { song: context().song }, global: { stubs: { teleport: true } } })
   await flushPromises()
   expect(wrapper.get('.review-workspace').classes()).toContain('review-mode')
@@ -40,6 +43,7 @@ it('没有平台也能编辑并真实提交，成功使用服务端反馈', asyn
   expect(wrapper.text()).toContain('元数据已应用成功')
   expect(wrapper.text()).toContain('本次更新 1 项')
   expect(wrapper.emitted('applied')).toHaveLength(1)
+  expect(wrapper.emitted('applied')![0]).toEqual([expect.objectContaining({ id: 'song-1', metadata: response.metadata })])
 })
 it('候选高分仍需确认，计数排除未变化和缺失字段', async () => {
   const state = useSingleSongScrape(); await state.open('song-1'); state.choose(candidate)
@@ -48,10 +52,25 @@ it('候选高分仍需确认，计数排除未变化和缺失字段', async () =
   state.fields.value = []
   await state.apply(); expect(singleReview.apply).not.toHaveBeenCalled()
 })
+it('切换酷狗候选后，列表、待应用预览和提交使用同一封面候选与画质', async () => {
+  vi.mocked(metadata.settings).mockResolvedValue({ enabled: true, providers: ['KUGOU'], autoApply: false, threshold: .95 })
+  const album: MetadataCandidate = { ...candidate, id: 'album', track: { ...candidate.track, provider: 'KUGOU', coverUrl: 'https://imge.kugou.com/stdmusic/0/album.jpg' } }
+  const portrait: MetadataCandidate = { ...candidate, id: 'portrait', track: { ...candidate.track, provider: 'KUGOU', coverUrl: 'https://singerimg.kugou.com/uploadpic/softhead/0/20230804/a.jpg' } }
+  vi.mocked(metadata.search).mockResolvedValue({ candidates: [album, portrait], errors: [] })
+  wrapper = mount(SingleSongScrapeDialog, { props: { song: context().song }, global: { stubs: { teleport: true } } }); await flushPromises()
+  const choices = wrapper.findAll('.review-candidate')
+  expect(wrapper.get('img[alt="待核对封面"]').attributes('src')).toBe(choices[0]!.get('img[alt="候选歌曲封面"]').attributes('src'))
+  await choices[1]!.trigger('click'); await flushPromises()
+  expect(wrapper.get('img[alt="待核对封面"]').attributes('src')).toBe('/api/v1/metadata/candidates/portrait/cover?quality=ORIGINAL')
+  expect(wrapper.get('img[alt="待核对封面"]').attributes('src')).toBe(choices[1]!.get('img[alt="候选歌曲封面"]').attributes('src'))
+  expect(singleReview.apply).not.toHaveBeenCalled()
+  await wrapper.get('.footer-actions .el-button--primary').trigger('click'); await flushPromises()
+  expect(singleReview.apply).toHaveBeenCalledWith('song-1', expect.objectContaining({ candidateId: 'portrait', coverCandidateId: 'portrait', coverQuality: 'ORIGINAL', fields: expect.arrayContaining(['cover']) }))
+})
 it('高相似度候选自动选中但只有确认才应用', async () => {
   vi.mocked(metadata.settings).mockResolvedValue({ enabled: true, providers: ['QQ'], autoApply: false, threshold: .95 })
   const state = useSingleSongScrape(); await state.open('song-1')
-  expect(metadata.search).toHaveBeenCalledWith('song-1', '歌名 歌手', ['QQ'])
+  expect(metadata.search).toHaveBeenCalledWith('song-1', '歌名 歌手', ['QQ'], expect.any(AbortSignal))
   expect(state.selected.value?.id).toBe('candidate'); expect(state.autoSelected.value).toBe(true)
   expect(singleReview.apply).not.toHaveBeenCalled()
   await state.apply()
@@ -107,7 +126,7 @@ it('未选字段不提交，上传封面加入真实变更摘要', async () => {
 it('总开关关闭时配置中的平台不会显示为可选或已勾选，未搜索不显示结果数', async () => {
   wrapper = mount(SingleSongScrapeDialog, { props: { song: context().song }, global: { stubs: { teleport: true } } }); await flushPromises()
   const platforms = wrapper.find('.platform-select').findAll('input[type=checkbox]')
-  expect(platforms).toHaveLength(5)
+  expect(platforms).toHaveLength(6)
   for (const input of platforms) { expect((input.element as HTMLInputElement).checked).toBe(false); expect((input.element as HTMLInputElement).disabled).toBe(true) }
   expect(wrapper.text()).toContain('尚未搜索')
   expect(wrapper.text()).not.toContain('0 条结果')
@@ -117,11 +136,11 @@ it('总开关关闭时配置中的平台不会显示为可选或已勾选，未�
   expect(wrapper.findAll('button').find(b => b.text() === '重新搜索')!.attributes('disabled')).toBeDefined()
 })
 
-it.each(['KUGOU', 'KUWO', 'QISHUI'] as const)('单曲匹配真实提交所选的 %s 平台，仍需确认后应用', async provider => {
+it.each(['KUGOU', 'KUWO', 'QISHUI', 'MIGU'] as const)('单曲匹配真实提交所选的 %s 平台，仍需确认后应用', async provider => {
   vi.mocked(metadata.settings).mockResolvedValue({ enabled: true, providers: [provider], autoApply: false, threshold: .95 })
   const state = useSingleSongScrape()
   await state.open('song-1')
-  expect(metadata.search).toHaveBeenCalledWith('song-1', '歌名 歌手', [provider])
+  expect(metadata.search).toHaveBeenCalledWith('song-1', '歌名 歌手', [provider], expect.any(AbortSignal))
   expect(singleReview.apply).not.toHaveBeenCalled()
 })
 
@@ -141,7 +160,45 @@ it('封面窗口可独立选择新增平台和原图/高清，画质与草稿一
   expect(singleReview.apply).toHaveBeenCalledWith('song-1', expect.objectContaining({ coverCandidateId: 'candidate', coverQuality: 'HIGH', fields: ['cover'] }))
   await wrapper.findAll('.cover-platforms label').find(label => label.text().includes('酷我音乐'))!.get('input').setValue(true)
   await wrapper.find('form.cover-search').trigger('submit'); await flushPromises()
-  expect(singleReview.covers).toHaveBeenCalledWith('song-1', '歌名 歌手', ['QISHUI', 'KUWO'])
+  expect(singleReview.covers).toHaveBeenCalledWith('song-1', '歌名 歌手', ['QISHUI'], expect.any(AbortSignal))
+  expect(singleReview.covers).toHaveBeenCalledWith('song-1', '歌名 歌手', ['KUWO'], expect.any(AbortSignal))
+})
+
+async function pendingCoverSearch() {
+  type Result = Awaited<ReturnType<typeof singleReview.covers>>
+  let quick!: (value: Result) => void, late!: (value: Result) => void
+  const fast = new Promise<Result>(resolve => { quick = resolve }), slow = new Promise<Result>(resolve => { late = resolve })
+  vi.mocked(singleReview.covers).mockImplementation((_id, _keyword, providers) => providers[0] === 'QQ' ? fast : slow)
+  wrapper = mount(SingleCoverPicker, { props: { open: false, songId: 'song-1', fingerprint: 'fingerprint', keyword: '歌名 歌手', candidates: [], providers: ['QQ', 'QISHUI'], enabled: true, currentUrl: null, currentValue: null, selection: null }, global: { stubs: { teleport: true } } })
+  await wrapper.setProps({ open: true }); await flushPromises()
+  await wrapper.get('form.cover-search').trigger('submit'); await flushPromises()
+  const item: Result['items'][number] = { candidateId: 'quick-cover', provider: 'QQ', externalId: '1', title: '快结果', artists: ['歌手'], album: null, coverUrl: 'https://y.gtimg.cn/cover.jpg', width: null, height: null }
+  return { quick, late, item }
+}
+
+it('更多封面同时查平台、先显示快结果，查询中可以确认且晚结果保留已选封面', async () => {
+  const { quick, late, item } = await pendingCoverSearch()
+  expect(singleReview.covers).toHaveBeenCalledTimes(2)
+  quick({ items: [item], errors: [] }); await flushPromises()
+  expect(wrapper!.text()).toContain('1 / 2 个平台')
+  expect(wrapper!.findAll('.cover-grid > button')).toHaveLength(1)
+  await wrapper!.get('.cover-grid > button').trigger('click')
+  const confirm = wrapper!.findAll('button').find(b => b.text() === '使用此封面')!
+  expect(confirm.attributes('disabled')).toBeUndefined()
+  late({ items: [{ ...item, candidateId: 'late-cover', provider: 'QISHUI', title: '慢结果' }], errors: [] }); await flushPromises()
+  expect(wrapper!.get('.cover-grid > button[aria-pressed="true"]').text()).toContain('快结果')
+  await confirm.trigger('click')
+  expect(wrapper!.emitted('select')![0]![0]).toMatchObject({ id: 'quick-cover' })
+})
+
+it.each(['close', 'song'] as const)('封面窗口关闭或切歌后取消平台请求并丢弃迟到结果：%s', async mode => {
+  const { quick, late, item } = await pendingCoverSearch()
+  const signals = vi.mocked(singleReview.covers).mock.calls.map(call => call[3]!)
+  if (mode === 'close') await wrapper!.setProps({ open: false })
+  else await wrapper!.setProps({ songId: 'song-2', fingerprint: 'changed' })
+  expect(signals.every(signal => signal.aborted)).toBe(true)
+  quick({ items: [item], errors: [] }); late({ items: [{ ...item, candidateId: 'late' }], errors: [] }); await flushPromises()
+  expect(wrapper!.findAll('.cover-grid > button')).toHaveLength(0)
 })
 it('平台已启用时真实空结果和请求失败有不同状态，部分失败保留成功候选', async () => {
   vi.mocked(metadata.settings).mockResolvedValue({ enabled: true, providers: ['QQ'], autoApply: false, threshold: .95 })

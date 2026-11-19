@@ -11,7 +11,7 @@ import ClassificationResultCard from '../components/ClassificationResultCard.vue
 import ClassificationSongPicker from '../components/ClassificationSongPicker.vue'
 import TagCoverEditor from '../components/TagCoverEditor.vue'
 import ClassificationEditor from '../components/ClassificationEditor.vue'
-import { dimensionNames, originNames, statusNames, type Dimension, type Item, type Preview, type Settings, type Start, type Tag, type Task } from '../types'
+import { dimensionNames, originNames, statusNames, type ClassState, type Dimension, type Item, type Preview, type Settings, type Start, type Tag, type Task } from '../types'
 function toggleList(list: Dimension[], dim: Dimension, checked: boolean) { const at = list.indexOf(dim); if (checked && at < 0) list.push(dim); else if (!checked && at >= 0) list.splice(at, 1) }
 
 const route = useRoute(), router = useRouter()
@@ -86,10 +86,20 @@ async function applyReview() {
 async function saveTag() {
   if (!tagEdit.value) return
   const edit = tagEdit.value
-  await perform(async () => { await classification.saveTag({ dimension: edit.dimension, name: edit.name, aliases: edit.aliases.split(/[、,\n]/).map(a => a.trim()).filter(Boolean), active: edit.active, revision: edit.revision }, edit.id); tags.value = await classification.tags(); tagEdit.value = null; ElMessage.success('词表已保存；已有任务采用原词表快照，受影响建议需新建任务') })
+  await perform(async () => {
+    const saved = await classification.saveTag({ dimension: edit.dimension, name: edit.name, aliases: edit.aliases.split(/[、,\n]/).map(a => a.trim()).filter(Boolean), active: edit.active, revision: edit.revision }, edit.id)
+    tags.value = tags.value.some(tag => tag.id === saved.id) ? tags.value.map(tag => tag.id === saved.id ? saved : tag) : [...tags.value, saved]
+    tagEdit.value = null; ElMessage.success('词表已保存；已有任务采用原词表快照，受影响建议需新建任务')
+    tags.value = await classification.tags()
+  })
 }
 function openTag(tag?: Tag) { tagEdit.value = tag ? { ...tag, aliases: tag.aliases.join('、') } : { dimension: 'CUSTOM', name: '', aliases: '', active: true, revision: 0 } }
 async function changed() { try { tags.value = await classification.tags(); await refresh() } catch (e) { notifyFailure(e) } }
+async function classificationChanged(states: ClassState[]) {
+  const saved = new Map(states.map(state => [state.songId, state]))
+  if (task.value) task.value = { ...task.value, items: task.value.items.map(item => saved.has(item.songId) ? { ...item, current: saved.get(item.songId)! } : item) }
+  await changed()
+}
 watch(() => route.query.task, id => { page.value = 1; filter.value = ''; reviewing.value = null; task.value = null; if (id) tab.value = 'history'; void refresh() })
 async function initialize() { try { await Promise.all([readSettings(), classification.tags().then(v => { if (active) tags.value = v })]); if (active) await refresh() } catch (e) { if (active) notifyFailure(e) } }
 onMounted(() => { void initialize(); poll() })
@@ -140,7 +150,7 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer) })
     <ElDialog class="classification-dialog" :model-value="!!tagEdit" title="维护分类标签" width="min(520px, calc(100vw - 32px))" :show-close="!busy" @close="tagEdit = null"><ElForm v-if="tagEdit" label-position="top" class="tag-edit-form" @submit.prevent="saveTag"><label>分类内容<ElSelect v-model="tagEdit.dimension" :disabled="!!tagEdit.id || busy"><ElOption v-for="(name, dim) in dimensionNames" :key="dim" :value="dim" :label="name" /></ElSelect></label><label>标签名称<ElInput v-model="tagEdit.name" maxlength="80" :disabled="busy" /></label><label>别名<ElInput v-model="tagEdit.aliases" placeholder="多个别名用顿号分隔" :disabled="busy" /></label><ElCheckbox v-model="tagEdit.active" :disabled="busy">启用这个标签</ElCheckbox><ElAlert v-if="error" :title="error" type="error" :closable="false" /><ElButton type="primary" native-type="submit" :loading="busy">保存标签</ElButton></ElForm></ElDialog>
     <TagCoverEditor v-if="coverTag" :tag="coverTag" @close="coverTag = null" @changed="coverChanged" />
     <ClassificationSongPicker v-if="songPickerOpen" :selected-ids="selectedIds" @close="songPickerOpen = false" @confirm="chooseSongs" />
-    <ClassificationEditor v-if="editing.length" :song-ids="editing" @close="editing = []" @changed="changed" />
+    <ClassificationEditor v-if="editing.length" :song-ids="editing" @close="editing = []" @changed="classificationChanged" />
   </section>
 </template>
 <style scoped src="../styles/classification.css"></style>

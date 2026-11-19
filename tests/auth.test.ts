@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { auth, authRequest, refreshAccount, ApiError } from '../src/admin/core/auth/api'
 import { router } from '../src/admin/app/router/index'
+import { flushPromises } from '@vue/test-utils'
 
 afterEach(() => { vi.unstubAllGlobals(); auth.account = null })
 it('未登录访问管理路由会跳转登录并保留目标', async () => {
@@ -49,4 +50,55 @@ it('规则错误的定位字段通过 HTTP 客户端保留', async () => {
     expect(error).toBeInstanceOf(ApiError)
     expect((error as ApiError).details).toMatchObject({ ruleId: 'bad', ruleIndex: 2, field: 'expression' })
   }
+})
+
+it('调用方已取消的请求不读取 CSRF，也不发送业务请求', async () => {
+  const fetcher = vi.fn()
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new AbortController(); controller.abort()
+  await expect(authRequest('/api/v1/metadata/songs/song/search', 'POST', {}, 30000, controller.signal)).rejects.toThrow()
+  expect(fetcher).not.toHaveBeenCalled()
+})
+
+it('CSRF 等待期间取消后，即使 CSRF 迟到也不会发送搜索', async () => {
+  let finish!: (response: Response) => void
+  const fetcher = vi.fn().mockImplementation(() => new Promise<Response>(resolve => { finish = resolve }))
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new AbortController()
+  const pending = authRequest('/api/v1/metadata/songs/song/search', 'POST', {}, 30000, controller.signal)
+  controller.abort(); finish(Response.json({ token: 'csrf' }))
+  await expect(pending).rejects.toThrow()
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  expect((fetcher.mock.calls[0]![1] as RequestInit).signal?.aborted).toBe(true)
+})
+
+it('取消信号传给正在执行的搜索，同时保留客户端超时限制', async () => {
+  let requestSignal: AbortSignal | undefined
+  const fetcher = vi.fn().mockImplementation((path: string, options: RequestInit) => {
+    if (path.endsWith('/csrf')) return Promise.resolve(Response.json({ token: 'csrf' }))
+    requestSignal = options.signal as AbortSignal
+    return new Promise<Response>((_resolve, reject) => requestSignal!.addEventListener('abort', () => reject(new DOMException('已取消', 'AbortError')), { once: true }))
+  })
+  vi.stubGlobal('fetch', fetcher)
+  const controller = new AbortController()
+  const pending = authRequest('/api/v1/metadata/songs/song/search', 'POST', {}, 30000, controller.signal)
+  await flushPromises()
+  expect(requestSignal?.aborted).toBe(false)
+  controller.abort()
+  await expect(pending).rejects.toThrow()
+  expect(requestSignal?.aborted).toBe(true)
+  expect(fetcher).toHaveBeenCalledTimes(2)
+})
+
+it('调用方未取消时，搜索仍受客户端超时限制', async () => {
+  let requestSignal: AbortSignal | undefined
+  vi.stubGlobal('fetch', vi.fn().mockImplementation((path: string, options: RequestInit) => {
+    if (path.endsWith('/csrf')) return Promise.resolve(Response.json({ token: 'csrf' }))
+    requestSignal = options.signal as AbortSignal
+    return new Promise<Response>((_resolve, reject) => requestSignal!.addEventListener('abort', () => reject(new Error('超时')), { once: true }))
+  }))
+  const controller = new AbortController()
+  await expect(authRequest('/api/v1/metadata/songs/song/search', 'POST', {}, 20, controller.signal)).rejects.toThrow()
+  expect(requestSignal?.aborted).toBe(true)
+  expect(controller.signal.aborted).toBe(false)
 })

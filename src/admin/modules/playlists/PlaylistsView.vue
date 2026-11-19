@@ -86,6 +86,8 @@ async function save() {
   try {
     const result = await playlists.save({ ...form, songIds: [...form.songIds] }, current.value?.id)
     if (!active) return
+    if (current.value) items.value = items.value.map(item => item.id === result.id ? result : item)
+    else { items.value = [result, ...items.value]; total.value++ }
     current.value = result; form.revision = result.revision; open.value = false; undoSnapshot.value = null
     await load()
   } catch (e) { failure(e) }

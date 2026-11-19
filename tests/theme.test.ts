@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { flushPromises, mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DEFAULT_THEME, THEMES, initTheme, setTheme, useTheme } from '../src/admin/app/composables/use-theme'
 import ThemeSwitcher from '../src/admin/shared/ui/ThemeSwitcher.vue'
@@ -93,19 +93,22 @@ it('迁移与切换遇到存储写入失败时仍能应用主题', () => {
   expect(useTheme().currentTheme.value).toBe('light')
 })
 
-it('顶栏切换器有无障碍名称，菜单仅列出明暗两个选项', async () => {
+it('顶栏按钮点击直接往返切换明暗主题，提示下一步操作并记住选择', async () => {
   const wrapper = mount(ThemeSwitcher, { attachTo: document.body })
   try {
-    expect(wrapper.get('.theme-trigger').attributes('aria-label')).toBe('外观主题')
-    await wrapper.get('.theme-trigger').trigger('click')
-    await flushPromises()
-    const options = Array.from(document.querySelectorAll<HTMLElement>('.theme-option'))
-    expect(options).toHaveLength(2)
-    expect(options.map(option => option.querySelector('strong')?.textContent)).toEqual(['浅色', '深色'])
-    options[1]!.click()
-    await flushPromises()
+    const button = wrapper.get('.theme-trigger')
+    expect(button.attributes('aria-label')).toBe('切换到深色模式')
+    expect(button.attributes('title')).toBe('切换到深色模式')
+    await button.trigger('click')
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(localStorage.getItem(STORAGE_KEY)).toBe('dark')
+    expect(button.attributes('aria-label')).toBe('切换到浅色模式')
+    expect(button.attributes('title')).toBe('切换到浅色模式')
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    await button.trigger('click')
+    expect(document.documentElement.dataset.theme).toBe('light')
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('light')
+    expect(button.attributes('aria-label')).toBe('切换到深色模式')
   } finally { wrapper.unmount() }
 })
 

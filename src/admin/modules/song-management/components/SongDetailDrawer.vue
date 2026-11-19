@@ -7,7 +7,7 @@ import SongCover from './SongCover.vue'
 import EmbeddedMetadataPanel from '../../media-library/components/EmbeddedMetadataPanel.vue'
 import type { FormalLyrics } from '../../metadata/types'
 import type { EmbeddedDetail } from '../../media-library/api/embeddedMetadata'
-import { songTitle, songArtists } from '../../metadata/utils'
+import { songTitle, songArtists, songCoverUrl } from '../../metadata/utils'
 import type { Tag } from '../../classification/types'
 import { confirmedField, fileFormat, fileSize, platformDuration, displayTime, songTags, songReviewLabel, needsSongReview, sharedIdentity, languageLabels, versionLabels } from '../presentation'
 import type { MediaSong } from '../../media-library/types'
@@ -35,7 +35,7 @@ const audio = computed(() => rolesSummary(roles.value))
 const artwork = computed(() => {
   const song = props.song
   if (!song) return ''
-  if (song.metadata && !song.metadata.stale && song.metadata.fields.includes('cover')) return song.metadata.track.coverUrl ? `/api/v1/metadata/songs/${encodeURIComponent(song.id)}/cover?variant=thumbnail` : ''
+  if (song.metadata && !song.metadata.stale && song.metadata.fields.includes('cover')) return song.metadata.track.coverUrl ? songCoverUrl(song) : ''
   return embedded.value?.result?.cover ? `/api/v1/media-songs/${encodeURIComponent(song.id)}/embedded-metadata/cover` : ''
 })
 watch(artwork, () => { coverFailed.value = false })

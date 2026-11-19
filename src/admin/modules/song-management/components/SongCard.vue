@@ -18,7 +18,7 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
 <template>
   <article class="song-card" :class="{ selected }">
     <div class="card-artwork">
-      <button type="button" class="artwork-open" :aria-label="`查看 ${songTitle(song)} 的详情`" @click="emit('click')"><SongCover :song="song" /></button>
+      <button type="button" class="artwork-open" :aria-label="`查看 ${songTitle(song)} 的详情`" @click="emit('click')"><SongCover :song="song" variant="original" /></button>
       <label v-if="selectionMode" class="selection-checkbox"><input type="checkbox" :checked="selected" :aria-label="`选择 ${songTitle(song)}`" @change="emit('select', song, ($event.target as HTMLInputElement).checked)"></label>
       <span v-if="platformDuration(song)" class="cover-duration">{{ platformDuration(song) }}</span>
       <button type="button" class="cover-play" :aria-label="`播放 ${songTitle(song)}`" @click="emit('play')"><ElIcon><VideoPlay /></ElIcon></button>

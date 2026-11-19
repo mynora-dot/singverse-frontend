@@ -6,7 +6,7 @@ export const singleReview = {
   load: (id: string) => authRequest<SingleReview>(`${base}/songs/${segment(id)}/review`),
   apply: (id: string, input: ReviewApply) => authRequest<ReviewResult>(`${base}/songs/${segment(id)}/review/apply`, 'POST', input),
   applyBatch: (batchId: string, itemId: string, input: ReviewApply) => authRequest<ReviewResult>(`${base}/batches/${segment(batchId)}/items/${segment(itemId)}/review/apply`, 'POST', input),
-  covers: (id: string, keyword: string, providers: MusicProvider[]) => authRequest<{ items: CoverChoice[]; errors: SearchResult['errors'] }>(`${base}/songs/${segment(id)}/covers/search`, 'POST', { keyword, providers }, 90000),
+  covers: (id: string, keyword: string, providers: MusicProvider[], signal?: AbortSignal) => authRequest<{ items: CoverChoice[]; errors: SearchResult['errors'] }>(`${base}/songs/${segment(id)}/covers/search`, 'POST', { keyword, providers }, 30000, signal),
   assetUrl: (id: string) => `${base}/cover-assets/${segment(id)}`,
   upload: async (id: string, fingerprint: string, file: File, progress: (value: number) => void, signal: AbortSignal): Promise<CoverAsset> => {
     const csrf = await authRequest<{ token: string }>('/api/v1/auth/csrf')

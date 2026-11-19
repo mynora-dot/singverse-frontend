@@ -7,7 +7,7 @@ import { RefreshRight, Search, EditPen, Grid, List, Plus, Filter, MoreFilled } f
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { classification } from '../../classification/api/classification'
 import ClassificationEditor from '../../classification/components/ClassificationEditor.vue'
-import type { Tag } from '../../classification/types'
+import type { ClassState, Tag } from '../../classification/types'
 import SingleSongScrapeDialog from '../../metadata/components/SingleSongScrapeDialog.vue'
 import { singleReview } from '../../metadata/api/single-review'
 import SongVideoDialog from '../components/SongVideoDialog.vue'
@@ -86,15 +86,28 @@ watch(() => route.query.detailSongId, async id => {
 }, { immediate: true })
 watch(() => route.query.reviewSongId, id => { scrapingSongId.value = typeof id === 'string' ? id : null }, { immediate: true })
 
-async function load() {
+async function load(preserveItems = false) {
   const token = ++generation
-  loading.value = true; error.value = ''; items.value = []; selectedIds.value = []
+  loading.value = true; error.value = ''
+  if (!preserveItems) { items.value = []; selectedIds.value = [] }
   try {
     const result = await songs.list({ sourceId: typeof route.query.sourceId === 'string' ? route.query.sourceId : '', q: typeof route.query.q === 'string' ? route.query.q : '', ...(typeof route.query.search === 'string' && route.query.search ? { search: route.query.search } : {}), status: typeof route.query.status === 'string' ? route.query.status : 'ALL', page: page.value - 1, ...(typeof route.query.tagIds === 'string' && route.query.tagIds ? { tagIds: route.query.tagIds.split(',') } : {}), ...(route.query.unclassified === 'true' ? { unclassified: true } : {}), ...(pageSize.value === 20 ? {} : { size: pageSize.value }) })
     if (!active || token !== generation) return
     items.value = result.items; total.value = result.totalElements; loaded.value = true
+    if (preserveItems) selectedIds.value = selectedIds.value.filter(id => result.items.some(song => song.id === id))
   } catch (failure) { if (active && token === generation) error.value = failure instanceof Error ? failure.message : '读取歌曲失败' }
   finally { if (active && token === generation) loading.value = false }
+}
+async function reviewApplied(song: MediaSong) {
+  items.value = items.value.map(item => item.id === song.id ? song : item)
+  if (detailSong.value?.id === song.id) detailSong.value = song
+  if (playing.value?.id === song.id) playing.value = song
+  await load(true)
+}
+async function classificationChanged(states: ClassState[]) {
+  const saved = new Map(states.map(state => [state.songId, state]))
+  items.value = items.value.map(song => saved.has(song.id) ? { ...song, classification: saved.get(song.id)! } : song)
+  await Promise.all([load(true), loadTags()])
 }
 async function loadSources() {
   sourcesError.value = ''
@@ -220,7 +233,7 @@ onBeforeUnmount(() => { active = false; generation++ })
         >
           批量操作
         </ElButton>
-        <ElButton class="songs-refresh-button" :icon="RefreshRight" :loading="loading" aria-label="刷新歌曲" @click="load"><span class="refresh-label">刷新</span></ElButton>
+        <ElButton class="songs-refresh-button" :icon="RefreshRight" :loading="loading" aria-label="刷新歌曲" @click="load()"><span class="refresh-label">刷新</span></ElButton>
       </div>
     </div>
 
@@ -239,7 +252,7 @@ onBeforeUnmount(() => { active = false; generation++ })
 
     <!-- 错误提示 -->
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon class="error-alert">
-      <ElButton text @click="load">重试</ElButton>
+      <ElButton text @click="load()">重试</ElButton>
     </ElAlert>
 
     <!-- 空状态 -->
@@ -296,14 +309,14 @@ onBeforeUnmount(() => { active = false; generation++ })
     />
 
     <!-- 元数据刮削弹窗 -->
-    <SingleSongScrapeDialog :song-id="scrapingSongId" @close="scrapingSongId = null" @applied="load" />
+    <SingleSongScrapeDialog :song-id="scrapingSongId" @close="scrapingSongId = null" @applied="reviewApplied" />
 
     <!-- 分类编辑器 -->
     <ClassificationEditor
       v-if="editingClasses.length"
       :song-ids="editingClasses"
       @close="editingClasses = []"
-      @changed="load(); loadTags()"
+      @changed="classificationChanged"
     />
 
     <p class="feature-note">列表来自本地目录或 WebDAV 的已保存扫描索引；在媒体库重新扫描后更新。</p>

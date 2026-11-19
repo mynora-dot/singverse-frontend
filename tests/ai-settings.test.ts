@@ -29,6 +29,18 @@ beforeEach(() => {
   vi.mocked(ai.discoverModels).mockResolvedValue({ items: [{ id: 'local-model', name: '本地模型' }], truncated: false })
 })
 afterEach(() => { wrapper?.unmount(); vi.clearAllMocks(); vi.restoreAllMocks(); document.body.innerHTML = '' })
+it('服务保存后立即更新外层卡片，重读失败也保留服务器确认值', async () => {
+  await page(); await button('编辑').trigger('click'); await flushPromises()
+  await wrapper.get('input[placeholder="例如：日常分类模型"]').setValue('用户输入名称')
+  vi.mocked(ai.save).mockResolvedValue({ ...model, name: '服务器确认的模型名', revision: 2 })
+  let fail!: (reason: Error) => void
+  vi.mocked(ai.providers).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+  await button('保存服务').trigger('click'); await flushPromises()
+  expect(wrapper.get('.ai-service-card').text()).toContain('服务器确认的模型名')
+  fail(new Error('配置重读暂不可用')); await flushPromises()
+  expect(wrapper.get('.ai-service-card').text()).toContain('服务器确认的模型名')
+  expect(wrapper.text()).toContain('配置重读暂不可用')
+})
 it('查询和锚点更新保留服务编辑草稿，不触发离页确认', async () => {
   const confirm = vi.spyOn(ElMessageBox, 'confirm')
   const router = await page()

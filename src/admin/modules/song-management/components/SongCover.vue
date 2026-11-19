@@ -1,17 +1,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { MediaSong } from '../../media-library/types'
-import { songTitle } from '../../metadata/utils'
+import { songCoverUrl, songTitle } from '../../metadata/utils'
 // Playback records carry a song ID rather than the complete library metadata.
-const props = defineProps<{ song?: MediaSong; songId?: string; title?: string; fallbackOnly?: boolean }>()
+const props = withDefaults(defineProps<{ song?: MediaSong; songId?: string; title?: string; fallbackOnly?: boolean; variant?: 'thumbnail' | 'original' }>(), { variant: 'thumbnail' })
 const failed = ref(false)
+const refreshVersion = ref(0)
+watch(() => props.song?.metadata, () => { refreshVersion.value++ })
 const id = computed(() => props.song?.id ?? props.songId ?? '')
 const title = computed(() => props.song ? songTitle(props.song) : props.title || '未命名歌曲')
 const artwork = computed(() => {
   if (!id.value) return ''
   const metadata = props.song?.metadata
   const available = !props.song || (metadata && !metadata.stale && metadata.fields.includes('cover') && metadata.track.coverUrl)
-  return available ? `/api/v1/metadata/songs/${encodeURIComponent(id.value)}/cover?variant=thumbnail` : ''
+  if (!available) return ''
+  const url = songCoverUrl(props.song ?? { id: id.value }, props.variant)
+  // A fresh snapshot can precede the background cover attachment. Revalidate
+  // even when its formal cover reference has not advanced yet.
+  return refreshVersion.value ? `${url}${url.includes('?') ? '&' : '?'}refresh=${refreshVersion.value}` : url
 })
 watch(() => [id.value, props.song?.metadata, artwork.value], () => { failed.value = false })
 </script>

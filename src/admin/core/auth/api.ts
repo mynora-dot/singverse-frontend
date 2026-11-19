@@ -5,11 +5,13 @@ export class ApiError extends Error {
   constructor(readonly status: number, message: string,
     readonly details?: { ruleId?: string | null; ruleIndex?: number; field?: string; referencedBy?: { id: string; name: string }[] }) { super(message) }
 }
-export async function authRequest<T = void>(path: string, method = 'GET', body?: unknown, timeoutMs = 10000): Promise<T> {
+export async function authRequest<T = void>(path: string, method = 'GET', body?: unknown, timeoutMs = 10000, signal?: AbortSignal): Promise<T> {
   if (!path.startsWith('/api/v1/')) throw new Error('接口必须使用同源 /api/v1/')
+  signal?.throwIfAborted()
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (method !== 'GET') {
-    const csrf = await authRequest<{ token: string }>('/api/v1/auth/csrf')
+    const csrf = await authRequest<{ token: string }>('/api/v1/auth/csrf', 'GET', undefined, 10000, signal)
+    signal?.throwIfAborted()
     headers['X-CSRF-Token'] = csrf.token
     if (body !== undefined) headers['Content-Type'] = 'application/json'
   }
@@ -17,7 +19,7 @@ export async function authRequest<T = void>(path: string, method = 'GET', body?:
   try {
     response = await fetch(path, {
       method, headers, body: body === undefined ? undefined : JSON.stringify(body),
-      credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
+      credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
     })
   } catch { throw new Error('连接失败，请检查网络后重试') }
   if (!response.ok) {

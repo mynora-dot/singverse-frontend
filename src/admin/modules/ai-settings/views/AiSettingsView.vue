@@ -94,7 +94,10 @@ async function saveService() {
   if (!draft.name.trim() || !draft.endpoint.trim() || editorKind.value === 'MODEL' && !draft.model.trim()) { formError.value = '请填写名称、服务地址及模型 ID。'; return }
   busy.value = true; formError.value = ''
   try {
-    await ai.save(editorKind.value, { ...draft, name: draft.name.trim(), endpoint: draft.endpoint.trim(), model: draft.model.trim() }, editingId.value)
+    const saved = await ai.save(editorKind.value, { ...draft, name: draft.name.trim(), endpoint: draft.endpoint.trim(), model: draft.model.trim() }, editingId.value)
+    if (!active) return
+    const target = saved.kind === 'MODEL' ? models : searches
+    target.value = target.value.some(service => service.id === saved.id) ? target.value.map(service => service.id === saved.id ? saved : service) : [...target.value, saved]
     editing.value = false; draft.apiKey = ''; ElMessage.success('服务配置已保存'); await load()
   } catch (e) { formError.value = message(e) }
   finally { busy.value = false }

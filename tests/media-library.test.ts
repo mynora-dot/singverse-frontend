@@ -94,6 +94,20 @@ it('WebDAV 地址在卡片中显示解码后的中文，编辑时保留原地址
   expect(button('下一步')).toBeUndefined()
   expect((wrapper.findComponent(ElDialog).get('input[placeholder="https://nas.example/dav/歌曲目录/"]').element as HTMLInputElement).value).toBe(location)
 })
+it('来源保存后立即回显服务器确认的名称，列表重读失败仍保留', async () => {
+  const source = { id: 'source-1', name: '原来源', type: 'WEBDAV' as const, location: 'https://nas.example.invalid/dav/', username: '', parserProfileId: 'default', passwordConfigured: false, createdAt: '', updatedAt: '' }
+  vi.mocked(media.list).mockResolvedValue({ items: [source], page: 0, size: 100, totalElements: 1 })
+  wrapper = mount(MediaLibraryView, { attachTo: document.body, global: { plugins: [router], stubs: { teleport: true, ...dropdownStubs } } })
+  await flushPromises(); await (await sourceAction('编辑')).trigger('click'); await flushPromises()
+  await wrapper.get('input#source-name').setValue('用户输入来源')
+  vi.mocked(media.save).mockResolvedValue({ ...source, name: '服务器确认的来源' })
+  let fail!: (reason: Error) => void
+  vi.mocked(media.list).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+  await button('保存修改').trigger('click'); await flushPromises()
+  expect(wrapper.get('.source-cards').text()).toContain('服务器确认的来源')
+  fail(new Error('来源重读暂不可用')); await flushPromises()
+  expect(wrapper.get('.source-cards').text()).toContain('服务器确认的来源')
+})
 it.each([true, false])('本地目录无资料包也可保存，独立于远端认证，startScan=%s', async startScan => {
   wrapper = mount(MediaLibraryView, { attachTo: document.body, global: { plugins: [router], stubs: { teleport: true, ...dropdownStubs } } })
   await flushPromises()

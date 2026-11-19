@@ -19,6 +19,17 @@ beforeEach(()=>{vi.mocked(artists.latestArtworkBatch).mockResolvedValue(null);vi
 afterEach(()=>{wrapper?.unmount();wrapper=undefined;vi.clearAllMocks();vi.restoreAllMocks();document.body.innerHTML=''})
 async function page(){const router=createRouter({history:createMemoryHistory(),routes:[{path:'/:pathMatch(.*)*',component:{template:'<div />'}}]});await router.push('/library/artists');await router.isReady();wrapper=mount(ArtistsView,{global:{plugins:[router],stubs:{teleport:true,SingleSongScrapeDialog:{name:'SingleSongScrapeDialog',props:['song'],emits:['close','applied'],template:'<div data-editor="true" />'}}}});await flushPromises();return wrapper}
 function button(text:string){return wrapper!.findAll('button').find(b=>b.text()===text)!}
+it('图片保存后外层歌手卡片立即更新，不等待列表重读', async () => {
+  await page(); await wrapper!.get('.artist-open').trigger('click'); await flushPromises()
+  await wrapper!.findAll('.artist-images button')[0]!.trigger('click'); await flushPromises()
+  let fail!: (reason: Error) => void
+  vi.mocked(artists.list).mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+  const next = { ...profile, portraitPath: '/api/portrait', portraitVersion: 'new-version' }
+  wrapper!.findComponent(ArtistImageEditor).vm.$emit('changed', next); await flushPromises()
+  expect(wrapper!.get('.artist-banner img').attributes('src')).toBe('/api/portrait?v=new-version')
+  fail(new Error('歌手重读暂不可用')); await flushPromises()
+  expect(wrapper!.get('.artist-banner img').attributes('src')).toBe('/api/portrait?v=new-version')
+})
 it('扫描空库提示自动生成，不提供建档关联操作',async()=>{vi.mocked(artists.list).mockResolvedValue({items:[],page:0,size:12,totalElements:0});await page();expect(wrapper!.text()).toContain('扫描歌曲后，这里会自动出现歌手');expect(wrapper!.text()).not.toContain('新建歌手');expect(wrapper!.text()).not.toContain('曲库署名关联')})
 it('歌手类型与歌曲数筛选提交到分页查询，类型可在详情标注',async()=>{await page();await button('乐队 / 组合').trigger('click');await wrapper!.get('input[aria-label="歌曲数量小于"]').setValue('25');expect(artists.list).toHaveBeenLastCalledWith('',0,20,'GROUP',25,'');await wrapper!.get('.artist-open').trigger('click');await flushPromises();vi.mocked(artists.category).mockResolvedValue({...profile,type:'GROUP',revision:2});await wrapper!.get('select[aria-label="设置歌手类型"]').setValue('GROUP');await flushPromises();expect(artists.category).toHaveBeenCalledWith('artist-1','GROUP',1)})
 it('歌手来自歌曲，打开后可订正歌曲而非维护人物资料',async()=>{await page();await wrapper!.get('.artist-open').trigger('click');await flushPromises();expect(artists.songs).toHaveBeenCalledWith('artist-1',0);expect(wrapper!.text()).toContain('曲库歌曲');expect(wrapper!.text()).toContain('没有可靠匹配');await button('订正歌曲').trigger('click');expect(wrapper!.findComponent({name:'SingleSongScrapeDialog'}).props('song')).toEqual(song)})

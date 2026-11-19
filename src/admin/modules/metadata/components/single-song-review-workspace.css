@@ -24,6 +24,8 @@ summary::-webkit-details-marker { display: none; }
 .review-workspace { display: grid; grid-template-columns: 340px minmax(0, 1fr); flex: 1; min-height: 0; min-width: 0; }
 .candidate-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--sv-surface-1); border-right: 1px solid var(--sv-border-subtle); }
 .candidate-tools { flex: none; padding: 12px 16px 0; }
+.single-review-workspace .search-progress { margin: 4px 0 8px; color: var(--sv-text-secondary); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.search-progress small { display: block; color: var(--sv-text-tertiary); font-size: inherit; }
 .pane-title, .pane-title > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pane-title { justify-content: space-between; margin-bottom: 8px; }
 .pane-title h3 { font-size: 16px; font-weight: 600; }

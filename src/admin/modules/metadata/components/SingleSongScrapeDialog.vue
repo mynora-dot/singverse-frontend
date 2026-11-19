@@ -15,27 +15,29 @@ import SingleMetadataEditor from './SingleMetadataEditor.vue'
 import SingleCoverPicker from './SingleCoverPicker.vue'
 import MetadataCover from './MetadataCover.vue'
 import SingleSongReviewWorkspace from './SingleSongReviewWorkspace.vue'
+import { songCoverUrl } from '../utils'
 const props = defineProps<{ song?: MediaSong | null; songId?: string | null; initialCandidates?: MetadataCandidate[]; batchId?: string; itemId?: string; autoSelectThreshold?: number; presentation?: 'dialog' | 'drawer' }>()
-const emit = defineEmits<{ close: []; applied: [] }>()
+const emit = defineEmits<{ close: []; applied: [song: MediaSong] }>()
 const isDrawer = computed(() => props.presentation === 'drawer')
 const state = useSingleSongScrape()
 const { review, keyword, providers, available, enabled, loading, searching, applying, error, searchError, warning, candidates,
-  selected, draft, fields, edits, cover, result, changed, dirty, autoSelected, preview, canSearch, searched, settingsStatus } = state
+  selected, draft, fields, edits, cover, result, changed, dirty, autoSelected, preview, canSearch, searched, settingsStatus, pendingProviders, searchProgress } = state
 const mobilePane = ref<'candidates' | 'review'>('candidates')
 const editorOpen = ref(false), coverOpen = ref(false), resultCoverFailed = ref(false)
 const coverFailed = ref(false), coverRetryKey = ref(0)
+const pendingLabel = computed(() => pendingProviders.value.map(p => providerNames[p]).join('、'))
 const platforms = Object.keys(providerNames) as (keyof typeof providerNames)[]
 const manualDraft = computed(() => Object.keys(edits.value).length > 0 || (!!cover.value && (cover.value.kind !== 'candidate' || cover.value.id !== selected.value?.id)))
 const previewCover = computed(() => preview.value?.cover === review.value?.values.cover ? currentCover.value : cover.value?.url ?? null)
 const resultCover = computed(() => {
   if (!result.value?.updated.includes('cover') || !result.value.after.cover) return null
   const value = String(result.value.after.cover)
-  return value.startsWith('asset:') ? singleReview.assetUrl(value.slice(6)) : review.value ? metadata.songCover(review.value.song.id) : null
+  return value.startsWith('asset:') ? singleReview.assetUrl(value.slice(6)) : review.value ? songCoverUrl({ ...review.value.song, metadata: result.value.metadata }) : null
 })
 const skippedLabels = computed(() => result.value?.skipped.map(f => fieldNames[f]).join('、') ?? '')
 const retainedLabels = computed(() => result.value?.retained.map(f => fieldNames[f]).join('、') ?? '')
 const changedLabels = computed(() => changed.value.map(field => fieldNames[field]).join('、'))
-const currentCover = computed(() => review.value?.values.cover ? metadata.songCover(review.value.song.id) : null)
+const currentCover = computed(() => review.value?.values.cover ? songCoverUrl(review.value.song) : null)
 const fileFormat = computed(() => (review.value?.song.relativePath.split('.').pop() ?? '').toUpperCase())
 const fileSize = computed(() => review.value?.song.fileSize == null ? '大小未知' : `${(review.value.song.fileSize / 1024 / 1024).toFixed(1)} MB`)
 const coverKeyword = computed(() => draft.value ? [draft.value.title, ...(draft.value.artists as string[] ?? [])].filter(Boolean).join(' ').slice(0, 200) : keyword.value)
@@ -92,7 +94,16 @@ async function openSettings() {
 async function reload() { if (!activeSongId.value) return; if (dirty.value && !await discard('重新加载会放弃草稿，并读取最新歌曲数据。')) return; await state.open(activeSongId.value, props.initialCandidates, props.autoSelectThreshold) }
 function saveEdits(values: Values) { state.saveEdits(values); mobilePane.value = 'review'; editorOpen.value = false }
 function chooseCover(value: CoverSelection) { state.chooseCover(value); mobilePane.value = 'review'; coverOpen.value = false }
-async function apply() { resultCoverFailed.value = false; await state.apply(props.batchId && props.itemId ? (_songId, input) => singleReview.applyBatch(props.batchId!, props.itemId!, input) : singleReview.apply); if (result.value) emit('applied') }
+function editMetadata() { state.beginEditing(); editorOpen.value = true }
+function editCover() { state.beginEditing(); coverOpen.value = true }
+async function apply() {
+  resultCoverFailed.value = false
+  await state.apply(props.batchId && props.itemId ? (_songId, input) => singleReview.applyBatch(props.batchId!, props.itemId!, input) : singleReview.apply)
+  if (result.value && review.value) {
+    const song = review.value.song
+    emit('applied', { ...song, metadata: result.value.metadata ? { ...song.metadata, ...result.value.metadata } : song.metadata })
+  }
+}
 </script>
 <template>
   <component :is="isDrawer ? ElDrawer : ElDialog" :model-value="!!activeSongId" title="核对歌曲信息" :width="isDrawer ? undefined : result ? 'min(780px, calc(100vw - 32px))' : 'min(1368px, calc(100vw - 48px))'" :size="isDrawer ? 'min(680px, 100vw)' : undefined" top="3vh" :class="['single-scrape-dialog', { 'single-scrape-success': !!result, 'single-scrape-drawer': isDrawer, 'single-review-dialog': !isDrawer }]" :close-on-click-modal="false" :close-on-press-escape="!applying" :show-close="!applying" :before-close="close">
@@ -108,33 +119,36 @@ async function apply() { resultCoverFailed.value = false; await state.apply(prop
         <form class="workspace-search" @submit.prevent="search"><div class="platform-select"><span>查询平台 <ElButton text :disabled="searching || applying" @click="openSettings">管理平台</ElButton></span><div><ElCheckbox v-for="platform in platforms" :key="platform" :model-value="enabled && available.includes(platform) && providers.includes(platform)" :disabled="!enabled || !available.includes(platform) || searching || applying || loading" @change="value => providers = value ? [...providers, platform] : providers.filter(p => p !== platform)">{{ providerNames[platform] }}<small v-if="!enabled || !available.includes(platform)">（未启用）</small></ElCheckbox></div></div><ElInput v-model="keyword" aria-label="单曲搜索关键词" placeholder="歌名 歌手" maxlength="200" :prefix-icon="Search" :disabled="applying" /><ElButton type="primary" native-type="submit" :loading="searching" :disabled="!canSearch">重新搜索</ElButton></form>
         <div v-if="!enabled || !available.length" class="platform-notice"><span>{{ settingsStatus === 'error' ? '无法读取平台配置。' : '平台查询未启用。' }}仍可手工编辑或上传封面。</span><a href="#/system/music-platforms" @click.prevent="openSettings">打开音乐平台设置 ↗</a></div>
         </component>
-        <div v-if="isDrawer && candidates.length" class="drawer-candidate-select"><label for="drawer-candidate">匹配候选 <span>{{ candidates.length }} 条结果</span></label><select id="drawer-candidate" :value="selected?.id ?? ''" :disabled="applying || searching || loading" @change="changeCandidate"><option value="">选择候选后核对字段</option><option v-for="candidate in candidates" :key="candidate.id" :value="candidate.id">{{ providerNames[candidate.track.provider] }} · {{ candidate.track.title }} / {{ candidate.track.artists.join('、') }} / {{ candidate.track.album || '未知专辑' }} / {{ Math.round(candidate.score * 100) }}%</option></select></div>
+        <div v-if="isDrawer && candidates.length" class="drawer-candidate-select"><label for="drawer-candidate">匹配候选 <span>{{ candidates.length }} 条结果</span></label><select id="drawer-candidate" :value="selected?.id ?? ''" :disabled="applying || loading" @change="changeCandidate"><option value="">选择候选后核对字段</option><option v-for="candidate in candidates" :key="candidate.id" :value="candidate.id">{{ providerNames[candidate.track.provider] }} · {{ candidate.track.title }} / {{ candidate.track.artists.join('、') }} / {{ candidate.track.album || '未知专辑' }} / {{ Math.round(candidate.score * 100) }}%</option></select></div>
+        <p v-if="isDrawer && searching" class="search-progress" role="status" aria-live="polite">已完成 {{ searchProgress.completed }}/{{ searchProgress.total }} 个平台<span v-if="pendingLabel"> · 正在查询{{ pendingLabel }}</span><small v-if="candidates.length">可先选择候选并核对字段</small></p>
         <ElAlert v-if="isDrawer && versionWarning" :title="versionWarning" type="warning" :closable="false" show-icon />
         <ElAlert v-if="warning" :title="warning" type="warning" :closable="false" /><p v-if="coverFailed" role="status" class="cover-load-notice">部分封面加载失败，可重试或在“选择封面”中切换平台与图片版本。<ElButton text @click="coverRetryKey++; coverFailed = false">重试封面</ElButton></p>
         <div v-if="!isDrawer" class="mobile-review-switch" role="group" aria-label="审核工作区"><button :aria-pressed="mobilePane === 'candidates'" @click="mobilePane = 'candidates'">查找匹配候选</button><button :aria-pressed="mobilePane === 'review'" @click="mobilePane = 'review'">核对与编辑字段 <span v-if="changed.length">{{ changed.length }}</span></button></div>
-        <div class="review-workspace" :class="{ 'review-mode': isDrawer || mobilePane === 'review' }"><section v-if="!isDrawer || searching || searchError || !candidates.length" class="candidate-pane" aria-label="歌曲候选"><div class="pane-title"><h3>匹配候选</h3><span>{{ searching ? '查询中' : searchError ? '查询失败' : searched ? `${candidates.length} 条结果` : '尚未搜索' }}</span></div>
-          <div v-if="searching" class="workspace-state" role="status"><span class="search-pulse">⌕</span><h3>正在搜索匹配结果…</h3><p>正在查询所选平台，请稍候。搜索不会应用元数据。</p></div>
-          <div v-else-if="searchError" class="workspace-state"><h3>平台请求失败</h3><p role="alert">{{ searchError }}</p><ElButton @click="search">重试搜索</ElButton><ElButton @click="editorOpen = true">手工编辑</ElButton></div>
-          <div v-else-if="!candidates.length" class="workspace-state"><ElEmpty :description="!enabled || !available.length ? '平台查询未就绪' : searched ? '未找到匹配结果' : '尚未搜索歌曲'" :image-size="48" /><p>{{ !enabled || !available.length ? '启用平台后可查询；也可直接完善当前歌曲。' : searched ? '可调整关键词、切换已启用平台，或手工填写。' : '输入歌名和歌手，选择可用平台开始搜索。' }}</p><div class="empty-actions"><ElButton type="primary" plain @click="editorOpen = true">手工编辑元数据</ElButton><ElButton @click="coverOpen = true">选择或上传封面</ElButton></div></div>
-          <div v-else class="candidate-scroll"><button v-for="candidate in candidates" :key="candidate.id" type="button" class="review-candidate" :class="{ chosen: selected?.id === candidate.id }" :aria-pressed="selected?.id === candidate.id" :disabled="applying" @click="choose(candidate)"><span class="candidate-radio">{{ selected?.id === candidate.id ? '◉' : '○' }}</span><MetadataCover :src="candidate.track.coverUrl ? metadata.candidateCover(candidate.id) : null" alt="候选歌曲封面" :retry-key="coverRetryKey" @failed="coverFailed = true" /><span class="candidate-info"><strong>{{ candidate.track.title }}</strong><span>{{ candidate.track.artists.join('、') || '未知歌手' }}</span><small>{{ candidate.track.album || '未知专辑' }} · {{ candidate.track.releaseDate || '日期未知' }}</small><ElTag size="small" effect="plain">{{ providerNames[candidate.track.provider] }}</ElTag></span><span class="candidate-score"><strong>{{ Math.round(candidate.score * 100) }}%</strong><small>匹配相似度</small></span></button></div>
-        </section><section class="preview-pane" aria-label="元数据预览与审核"><div class="pane-title"><h3>{{ selected ? '选中候选与应用预览' : manualDraft ? '手工编辑草稿 · 尚未应用' : '当前入库信息 · 尚未选择候选' }}</h3><div><ElButton v-if="selected" link :disabled="applying" @click="clearSelection">取消候选</ElButton><ElButton link type="primary" :icon="Edit" :disabled="applying" @click="editorOpen = true">编辑元数据</ElButton><ElButton link type="primary" :icon="Picture" :disabled="applying" @click="coverOpen = true">选择封面</ElButton></div></div>
+        <div class="review-workspace" :class="{ 'review-mode': isDrawer || mobilePane === 'review' }"><section v-if="!isDrawer || !candidates.length" class="candidate-pane" aria-label="歌曲候选"><div class="pane-title"><h3>匹配候选</h3><span>{{ searching ? '查询中' : searchError ? '查询失败' : searched ? `${candidates.length} 条结果` : '尚未搜索' }}</span></div>
+          <div v-if="searching && !candidates.length" class="workspace-state" role="status"><span class="search-pulse">⌕</span><h3>正在搜索匹配结果…</h3><p>正在查询所选平台，请稍候。搜索不会应用元数据。</p></div>
+          <div v-else-if="searchError" class="workspace-state"><h3>平台请求失败</h3><p role="alert">{{ searchError }}</p><ElButton @click="search">重试搜索</ElButton><ElButton @click="editMetadata">手工编辑</ElButton></div>
+          <div v-else-if="!candidates.length" class="workspace-state"><ElEmpty :description="!enabled || !available.length ? '平台查询未就绪' : searched ? '未找到匹配结果' : '尚未搜索歌曲'" :image-size="48" /><p>{{ !enabled || !available.length ? '启用平台后可查询；也可直接完善当前歌曲。' : searched ? '可调整关键词、切换已启用平台，或手工填写。' : '输入歌名和歌手，选择可用平台开始搜索。' }}</p><div class="empty-actions"><ElButton type="primary" plain @click="editMetadata">手工编辑元数据</ElButton><ElButton @click="editCover">选择或上传封面</ElButton></div></div>
+          <div v-else class="candidate-scroll"><button v-for="candidate in candidates" :key="candidate.id" type="button" class="review-candidate" :class="{ chosen: selected?.id === candidate.id }" :aria-pressed="selected?.id === candidate.id" :disabled="applying" @click="choose(candidate)"><span class="candidate-radio">{{ selected?.id === candidate.id ? '◉' : '○' }}</span><MetadataCover :src="candidate.track.coverUrl ? metadata.candidateCover(candidate.id, 'ORIGINAL') : null" alt="候选歌曲封面" :retry-key="coverRetryKey" @failed="coverFailed = true" /><span class="candidate-info"><strong>{{ candidate.track.title }}</strong><span>{{ candidate.track.artists.join('、') || '未知歌手' }}</span><small>{{ candidate.track.album || '未知专辑' }} · {{ candidate.track.releaseDate || '日期未知' }}</small><ElTag size="small" effect="plain">{{ providerNames[candidate.track.provider] }}</ElTag></span><span class="candidate-score"><strong>{{ Math.round(candidate.score * 100) }}%</strong><small>匹配相似度</small></span></button></div>
+        </section><section class="preview-pane" aria-label="元数据预览与审核"><div class="pane-title"><h3>{{ selected ? '选中候选与应用预览' : manualDraft ? '手工编辑草稿 · 尚未应用' : '当前入库信息 · 尚未选择候选' }}</h3><div><ElButton v-if="selected" link :disabled="applying" @click="clearSelection">取消候选</ElButton><ElButton link type="primary" :icon="Edit" :disabled="applying" @click="editMetadata">编辑元数据</ElButton><ElButton link type="primary" :icon="Picture" :disabled="applying" @click="editCover">选择封面</ElButton></div></div>
           <div class="preview-scroll"><p v-if="autoSelected && selected && !isDrawer" class="selection-hint">已自动选中高相似度候选，仅用于预览，尚未写入。{{ hasCloseAlternative(candidates, selected) ? '存在其他接近候选，请核对版本后确认。' : '核对字段后点击确认应用。' }}</p><p class="selection-hint">{{ isDrawer && selected ? '取消勾选可保留当前值；确认应用后才会写入。' : selected ? '下方预览仅包含勾选的有效变更，取消勾选会保留当前值。' : manualDraft ? '正在编辑本次草稿，确认应用前不会写入。' : '尚未选择候选，当前显示原始入库信息与有效确认值。' }}</p><div v-if="!isDrawer" class="selected-preview"><MetadataCover :src="previewCover" alt="审核草稿封面" empty-text="尚未选择封面" retryable :retry-key="coverRetryKey" @failed="coverFailed = true" /><div class="preview-copy"><h3>{{ display(preview?.title) }}</h3><p>{{ display(preview?.artists) }}</p><p>{{ display(preview?.album) }} · {{ display(preview?.releaseDate) }}</p><ElTag v-if="selected" size="small">{{ providerNames[selected.track.provider] }}</ElTag><ElTag v-else size="small" type="info">{{ manualDraft ? '手工草稿 · 尚未应用' : '当前有效值' }}</ElTag><small v-if="cover?.kind === 'asset' && changed.includes('cover')" class="upload-note">本地封面已上传，尚未应用</small></div><div v-if="selected" class="preview-score">{{ Math.round(selected.score * 100) }}%<small>相似度</small></div></div>
           <p v-if="Object.values(review.song.metadata?.origins ?? {}).some(origin => origin.kind === 'FILE')" class="selection-hint">人工确认的字段会直接保存为正式资料，重新扫描、提取和共享更新均保留本地决定。</p><div class="comparison-title"><strong>将更新的字段</strong><span>共 {{ changed.length }} 项</span></div><MetadataFieldComparison :before="review.values" :draft="draft" :fields="fields" :edits="edits" :disabled="applying" @change="fields = $event" />
           <p class="overwrite-note">勾选“将修改”的字段会覆盖当前确认值；未勾选、无变化及空值均保留现状。</p>
         </div></section></div>
         </template>
-        <SingleSongReviewWorkspace v-else :state="state" :version-warning="versionWarning" @search="search" @settings="openSettings" @choose="choose" @clear="clearSelection" @edit="editorOpen = true" @cover="coverOpen = true" />
-        <SingleMetadataEditor :open="editorOpen" :before="review.values" :draft="draft" :original="selected ? candidateValues(selected) : null" @close="editorOpen = false" @save="saveEdits" @cover="coverOpen = true" />
+        <SingleSongReviewWorkspace v-else :state="state" :version-warning="versionWarning" @search="search" @settings="openSettings" @choose="choose" @clear="clearSelection" @edit="editMetadata" @cover="editCover" />
+        <SingleMetadataEditor :open="editorOpen" :before="review.values" :draft="draft" :original="selected ? candidateValues(selected) : null" @close="editorOpen = false" @save="saveEdits" @cover="editCover" />
         <SingleCoverPicker :open="coverOpen" :song-id="review.song.id" :fingerprint="review.fingerprint" :keyword="coverKeyword" :candidates="candidates" :providers="providers" :available="available" :enabled="enabled" :current-url="currentCover" :current-value="review.values.cover as string | null" :selection="cover" @close="coverOpen = false" @select="chooseCover" />
       </template>
     </div>
     <template #footer>
-      <div v-if="!isDrawer && !result" class="review-dialog-footer"><div class="change-summary" role="status" aria-live="polite"><p><strong>{{ changed.length }}</strong> 项变更已勾选</p><small>{{ changed.length ? `将应用${changedLabels}` : '勾选需要应用的字段' }}</small></div><div class="footer-actions"><ElButton :disabled="applying" @click="close">取消</ElButton><ElButton type="primary" :loading="applying" :disabled="!changed.length || loading || searching" @click="apply">确认应用（{{ changed.length }} 项）</ElButton></div></div>
-      <div v-else class="workspace-footer"><p class="footer-full">仅应用已勾选且有效的变更；搜索和上传不会自动写入歌曲，原始文件保持只读。</p><p class="footer-short">确认只更新勾选字段，媒体原件保持只读。</p><div><ElButton :disabled="applying" @click="close">{{ result ? '关闭' : '取消' }}</ElButton><ElButton v-if="!result" type="primary" :loading="applying" :disabled="!changed.length || loading || searching" @click="apply">确认应用（{{ changed.length }} 项）</ElButton></div></div>
+      <div v-if="!isDrawer && !result" class="review-dialog-footer"><div class="change-summary" role="status" aria-live="polite"><p><strong>{{ changed.length }}</strong> 项变更已勾选</p><small>{{ changed.length ? `将应用${changedLabels}` : '勾选需要应用的字段' }}</small></div><div class="footer-actions"><ElButton :disabled="applying" @click="close">取消</ElButton><ElButton type="primary" :loading="applying" :disabled="!changed.length || loading" @click="apply">确认应用（{{ changed.length }} 项）</ElButton></div></div>
+      <div v-else class="workspace-footer"><p class="footer-full">仅应用已勾选且有效的变更；搜索和上传不会自动写入歌曲，原始文件保持只读。</p><p class="footer-short">确认只更新勾选字段，媒体原件保持只读。</p><div><ElButton :disabled="applying" @click="close">{{ result ? '关闭' : '取消' }}</ElButton><ElButton v-if="!result" type="primary" :loading="applying" :disabled="!changed.length || loading" @click="apply">确认应用（{{ changed.length }} 项）</ElButton></div></div>
     </template>
   </component>
 </template>
 <style scoped>
+.search-progress { margin: 4px 0 12px; color: var(--sv-text-secondary); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.search-progress small { display: block; color: var(--sv-text-tertiary); font-size: inherit; }
 /* Header/footer are ordinary flex siblings: no overlay positioning or guessed deductions. */
 :global(.single-scrape-dialog.el-dialog) {
   display: flex;

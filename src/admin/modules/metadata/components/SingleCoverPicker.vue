@@ -16,7 +16,8 @@ const selectedProviders = ref<MusicProvider[]>([]), quality = ref<CoverQuality>(
 const availableProviders = computed(() => props.available ?? props.providers)
 const loading = ref(false), uploading = ref(false), progress = ref(0), upload = ref<CoverSelection | null>(null), fileInput = ref<HTMLInputElement | null>(null)
 const previewSize = ref<{ width: number; height: number } | null>(null), previewFailed = ref(false), retryKey = ref(0), failedChoices = ref(false)
-let generation = 0, uploadAbort: AbortController | null = null
+let generation = 0, uploadAbort: AbortController | null = null, searchAbort: AbortController | null = null
+const searchProgress = ref({ completed: 0, total: 0 })
 const selectedKey = computed(() => selected.value ? `${selected.value.kind}:${selected.value.id}` : '')
 const previewUrl = computed(() => selected.value ? `${selected.value.url}${selected.value.url.includes('?') ? '&' : '?'}retry=${retryKey.value}` : '')
 function variant(selection: CoverSelection): CoverSelection {
@@ -26,8 +27,8 @@ function variant(selection: CoverSelection): CoverSelection {
 }
 watch(quality, () => { choices.value = choices.value.map(variant); if (selected.value) selected.value = variant(selected.value) })
 watch(previewUrl, () => { previewSize.value = null; previewFailed.value = false })
-watch(() => props.open, open => {
-  generation++; uploadAbort?.abort(); loading.value = false; uploading.value = false
+watch(() => [props.open, props.songId, props.fingerprint] as const, ([open]) => {
+  generation++; uploadAbort?.abort(); searchAbort?.abort(); loading.value = false; uploading.value = false
   if (!open) return
   quality.value = props.selection?.quality ?? 'ORIGINAL'
   selectedProviders.value = [...props.providers]
@@ -36,24 +37,39 @@ watch(() => props.open, open => {
   choices.value = props.candidates.filter(c => c.track.coverUrl).map(c => variant({ kind: 'candidate', id: c.id, value: c.track.coverUrl!, originalValue: c.track.coverUrl!, provider: c.track.provider, url: '', label: `${providerNames[c.track.provider]} · ${c.track.album || c.track.title}` }))
 })
 async function search() {
-  const providers = selectedProviders.value.filter(p => availableProviders.value.includes(p))
+  const providers = [...new Set(selectedProviders.value.filter(p => availableProviders.value.includes(p)))]
   if (!props.enabled || !providers.length || !query.value.trim() || loading.value || uploading.value) return
   const token = ++generation; loading.value = true; error.value = ''; warning.value = ''
+  const controller = new AbortController(); searchAbort?.abort(); searchAbort = controller
+  const responses = new Map<MusicProvider, Awaited<ReturnType<typeof singleReview.covers>>>()
+  const active = () => token === generation && !controller.signal.aborted
+  searchProgress.value = { completed: 0, total: providers.length }
+  choices.value = []; failedChoices.value = false
   try {
-    const result = await singleReview.covers(props.songId, query.value.trim(), providers)
-    if (token !== generation) return
-    choices.value = result.items.map(c => variant({ kind: 'candidate', id: c.candidateId, value: c.coverUrl, originalValue: c.coverUrl, provider: c.provider, url: '', label: `${providerNames[c.provider]} · ${c.album || c.title}` }))
-    failedChoices.value = false
-    warning.value = result.errors.map(e => `${providerNames[e.provider]}：${e.message}`).join('；')
-  } catch (failure) { if (token === generation) error.value = failure instanceof Error ? failure.message : '封面搜索失败' }
-  finally { if (token === generation) loading.value = false }
+    await Promise.all(providers.map(async provider => {
+      try {
+        const result = await singleReview.covers(props.songId, query.value.trim(), [provider], controller.signal)
+        if (!active()) return
+        responses.set(provider, result)
+      } catch (failure) {
+        if (!active()) return
+        responses.set(provider, { items: [], errors: [{ provider, message: failure instanceof Error ? failure.message : '封面搜索失败' }] })
+      }
+      if (!active()) return
+      const results = providers.flatMap(p => responses.has(p) ? [responses.get(p)!] : [])
+      const items = new Map(results.flatMap(r => r.items).map(c => [c.candidateId, c]))
+      choices.value = [...items.values()].map(c => variant({ kind: 'candidate', id: c.candidateId, value: c.coverUrl, originalValue: c.coverUrl, provider: c.provider, url: '', label: `${providerNames[c.provider]} · ${c.album || c.title}` }))
+      warning.value = results.flatMap(r => r.errors).map(e => `${providerNames[e.provider]}：${e.message}`).join('；')
+      searchProgress.value = { completed: responses.size, total: providers.length }
+    }))
+  } finally { if (active()) { loading.value = false; searchAbort = null } }
 }
 async function uploadFile(event: Event) {
   const input = event.target as HTMLInputElement, file = input.files?.[0]; input.value = ''
   if (!file) return
   error.value = ''
   if (!['image/jpeg', 'image/png'].includes(file.type) || file.size > 32 * 1024 * 1024) { error.value = '请选择 32 MiB 以内的 JPEG 或 PNG'; return }
-  const token = ++generation; uploadAbort?.abort(); uploadAbort = new AbortController(); uploading.value = true; progress.value = 0
+  const token = ++generation; searchAbort?.abort(); loading.value = false; uploadAbort?.abort(); uploadAbort = new AbortController(); uploading.value = true; progress.value = 0
   try {
     const asset = await singleReview.upload(props.songId, props.fingerprint, file, value => { if (token === generation) progress.value = value }, uploadAbort.signal)
     if (token !== generation) return
@@ -64,23 +80,23 @@ async function uploadFile(event: Event) {
 function readSize(event: Event) { const image = event.target as HTMLImageElement; previewSize.value = { width: image.naturalWidth, height: image.naturalHeight } }
 function retryImages() { retryKey.value++; failedChoices.value = false }
 function selectCover() { if (selected.value) emit('select', { ...selected.value, ...(previewSize.value ?? {}) }) }
-function close() { generation++; uploadAbort?.abort(); emit('close') }
-onBeforeUnmount(() => { generation++; uploadAbort?.abort() })
+function close() { generation++; uploadAbort?.abort(); searchAbort?.abort(); emit('close') }
+onBeforeUnmount(() => { generation++; uploadAbort?.abort(); searchAbort?.abort() })
 </script>
 <template>
   <ElDialog :model-value="open" title="选择歌曲封面" class="song-cover-dialog" width="min(820px, calc(100vw - 32px))" top="4vh" append-to-body :close-on-click-modal="false" @close="close">
-    <p class="cover-help">选择仅更新审核草稿，主窗口确认后才应用。默认保留平台原图，预览缩小显示不会改变保存的图片。</p>
-    <div class="cover-quality" role="group" aria-label="平台封面画质"><span>图片版本</span><div><button v-for="option in [{ value: 'ORIGINAL', label: '原图' }, { value: 'HIGH', label: '高清' }]" :key="option.value" type="button" :aria-pressed="quality === option.value" @click="quality = option.value as CoverQuality">{{ option.label }}</button></div><small>{{ quality === 'ORIGINAL' ? '保留原始分辨率与文件' : '使用平台提供的高清版本，尺寸因平台而异' }}</small></div>
+    <p class="cover-help">选择仅更新审核草稿，主窗口确认后才应用。默认读取平台原图；仅有尺寸版本时使用平台大图，预览缩小不会改变保存的图片。</p>
+    <div class="cover-quality" role="group" aria-label="平台封面画质"><span>图片版本</span><div><button v-for="option in [{ value: 'ORIGINAL', label: '原图' }, { value: 'HIGH', label: '高清' }]" :key="option.value" type="button" :aria-pressed="quality === option.value" @click="quality = option.value as CoverQuality">{{ option.label }}</button></div><small>{{ quality === 'ORIGINAL' ? '保留原图；仅有尺寸版本时读取平台大图' : '使用平台提供的高清版本，尺寸因平台而异' }}</small></div>
     <div class="cover-existing"><div v-if="currentUrl"><small>当前有效封面</small><ElImage :src="currentUrl" :preview-src-list="[currentUrl]" preview-teleported fit="cover"><template #error><span>当前封面加载失败</span></template></ElImage><ElButton size="small" @click="selected = { kind: 'current', id: 'current', value: currentValue!, url: currentUrl!, label: '保留当前封面' }">保留当前封面</ElButton></div><div v-if="selected"><small>本次选择 · 点击图片看大图</small><ElImage :key="previewUrl" :src="previewUrl" :preview-src-list="[selected.url]" preview-teleported fit="contain" @load="readSize" @error="previewFailed = true"><template #error><span>封面加载失败</span></template></ElImage><span>{{ selected.label }}<template v-if="selected.kind === 'candidate'"> · {{ quality === 'ORIGINAL' ? '原图' : '高清' }}</template></span><small v-if="previewSize" class="cover-dimensions">{{ previewSize.width }} × {{ previewSize.height }} 像素</small><ElButton v-if="previewFailed" size="small" @click="retryImages">重试封面</ElButton></div></div>
     <form class="cover-search" @submit.prevent="search"><fieldset class="cover-platforms"><legend>查询平台</legend><ElCheckbox v-for="platform in platforms" :key="platform" :model-value="enabled && selectedProviders.includes(platform)" :disabled="!enabled || !availableProviders.includes(platform) || loading || uploading" @change="checked => selectedProviders = checked ? [...selectedProviders, platform] : selectedProviders.filter(p => p !== platform)">{{ providerNames[platform] }}<small v-if="!availableProviders.includes(platform)">（未启用）</small></ElCheckbox></fieldset><div class="cover-query"><ElInput v-model="query" aria-label="封面搜索关键词" placeholder="歌名 歌手 专辑" maxlength="200" :disabled="uploading" /><ElButton native-type="submit" type="primary" :loading="loading" :disabled="!enabled || !selectedProviders.length || !query.trim() || uploading">搜索更多封面</ElButton></div></form>
     <p v-if="!enabled" class="cover-help">平台搜索未启用，仍可上传本地封面。</p>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" /><ElAlert v-if="warning" :title="warning" type="warning" :closable="false" />
-    <p v-if="loading" role="status" class="cover-help">正在查询真实平台封面…</p><p v-else-if="!choices.length" class="cover-help">平台未提供封面候选，可修改关键词、切换平台或上传本地图片。</p>
+    <p v-if="loading" role="status" class="cover-help">已完成 {{ searchProgress.completed }} / {{ searchProgress.total }} 个平台，可先选择已找到的封面。</p><p v-else-if="!choices.length" class="cover-help">平台未提供封面候选，可修改关键词、切换平台或上传本地图片。</p>
     <p v-if="failedChoices" role="status" class="cover-failure">部分图片加载失败，候选信息仍可核对。<ElButton text @click="retryImages">重试封面</ElButton></p>
     <div class="cover-grid"><button v-for="item in choices" :key="item.id" type="button" :aria-pressed="selectedKey === `${item.kind}:${item.id}`" :class="{ chosen: selectedKey === `${item.kind}:${item.id}` }" @click="selected = item"><MetadataCover :src="item.url" alt="候选封面" :retry-key="retryKey" @failed="failedChoices = true" /><span>{{ item.label }}</span><small>{{ quality === 'ORIGINAL' ? '原图' : '高清' }}</small></button></div>
     <div class="upload-row"><input ref="fileInput" type="file" accept="image/jpeg,image/png" aria-label="上传本地封面文件" class="file-input" @change="uploadFile" /><ElButton :loading="uploading" :disabled="loading" @click="fileInput?.click()">{{ upload ? '更换本地图片' : '上传本地图片' }}</ElButton><ElTag v-if="upload" type="info">已上传，尚未应用 · {{ upload.width }} × {{ upload.height }}</ElTag><small>本地上传：JPEG / PNG，32 MiB 以内。</small></div>
     <ElProgress v-if="uploading" :percentage="progress" /><p v-if="uploading" role="status" class="cover-help">{{ progress === 100 ? '文件已传输，服务器正在校验图片…' : '正在上传文件…' }}</p>
-    <template #footer><ElButton @click="close">取消选择</ElButton><ElButton type="primary" :disabled="!selected || loading || uploading || previewFailed" @click="selectCover">使用此封面</ElButton></template>
+    <template #footer><ElButton @click="close">取消选择</ElButton><ElButton type="primary" :disabled="!selected || uploading || previewFailed" @click="selectCover">使用此封面</ElButton></template>
   </ElDialog>
 </template>
 <style scoped>

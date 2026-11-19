@@ -6,7 +6,7 @@ const segment = encodeURIComponent
 export const metadata = {
   settings: () => authRequest<MetadataSettings>(`${base}/settings`),
   saveSettings: (input: MetadataSettings) => authRequest<MetadataSettings>(`${base}/settings`, 'PUT', input),
-  search: (songId: string, keyword: string, providers: MusicProvider[]) => authRequest<SearchResult>(`${base}/songs/${segment(songId)}/search`, 'POST', { keyword, providers }, 90000),
+  search: (songId: string, keyword: string, providers: MusicProvider[], signal?: AbortSignal) => authRequest<SearchResult>(`${base}/songs/${segment(songId)}/search`, 'POST', { keyword, providers }, 30000, signal),
   start: (all: boolean, songIds: string[], sourceId?: string) => authRequest<MetadataBatch>(`${base}/batches`, 'POST', { all, songIds, ...(sourceId ? { sourceId } : {}) }, 30000),
   latest: () => authRequest<MetadataBatch | undefined>(`${base}/batches/latest`),
   batch: (id: string, page = 0, status = '', q = '', sort = 'DEFAULT') => authRequest<MetadataBatch>(`${base}/batches/${segment(id)}?${new URLSearchParams({ page: String(page), size: '20', status, q, sort })}`),

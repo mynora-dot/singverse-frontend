@@ -7,5 +7,6 @@
 - kugou.png：酷狗音乐，https://www.kugou.com/favicon.ico
 - kuwo.png：酷我音乐，https://www.kuwo.cn/favicon.ico
 - qishui.png：汽水音乐，官网HTML所指 https://lf-luna.qishui.com/obj/music-luna-fe/luna/home/1.0.0.287/favicon.png
+- migu.png：咪咕音乐，2026-11-19 根据官网跳转后的 HTML 读取 https://music.migu.cn/v5/favicon.png，保留原始 PNG。
 
 ICO来源保留原图形转为PNG，无重绘。各商标权利归对应权利人所有。

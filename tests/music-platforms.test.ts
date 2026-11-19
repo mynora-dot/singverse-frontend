@@ -34,11 +34,11 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks(); vi.clearAllMocks(); document.body.innerHTML = '' })
 
-it('五个平台直接可见并展示服务端默认状态，自动应用保持关闭', async () => {
+it('六个平台直接可见并展示服务端状态，自动应用保持关闭', async () => {
   await page()
   for (const provider of platforms) expect((wrapper!.get(`input[value="${provider}"]`).element as HTMLInputElement).checked).toBe(true)
   expect(wrapper!.get('[aria-label="高相似度时自动应用"]').attributes('aria-checked')).toBe('false')
-  expect(wrapper!.text()).toContain('已开启 5 个平台')
+  expect(wrapper!.text()).toContain('已开启 6 个平台')
   expect(button('保存设置').attributes('disabled')).toBeDefined()
   expect(metadata.saveSettings).not.toHaveBeenCalled()
 })
@@ -68,7 +68,7 @@ it('读取失败不冒充全部已开启，重试成功后才展示真实配置'
   expect(wrapper!.text()).toContain('网络暂不可用')
   expect(wrapper!.find('form').exists()).toBe(false)
   await button('重新读取').trigger('click'); await flushPromises()
-  expect(wrapper!.text()).toContain('已开启 5 个平台')
+  expect(wrapper!.text()).toContain('已开启 6 个平台')
 })
 it('保存失败保留平台选择与输入供重试', async () => {
   vi.mocked(metadata.saveSettings).mockRejectedValueOnce(new Error('保存连接超时'))
@@ -133,6 +133,20 @@ it('离开后迟到的配置不能覆盖重新进入读取的状态', async () =
   const router = await page(); expect(wrapper!.text()).toContain('正在读取')
   await router.push('/library/songs'); await router.push('/system/music-platforms'); await flushPromises()
   resolve({ ...initial, enabled: false, providers: ['QQ'] }); await flushPromises()
-  expect(wrapper!.text()).toContain('已开启 5 个平台')
+  expect(wrapper!.text()).toContain('已开启 6 个平台')
   expect(metadata.saveSettings).not.toHaveBeenCalled()
+})
+
+it('保留旧五平台配置，咪咕可以单独启用并保存', async () => {
+  const previous = platforms.filter(provider => provider !== 'MIGU')
+  vi.mocked(metadata.settings).mockResolvedValue({ ...initial, providers: previous })
+  await page()
+  expect(wrapper!.text()).toContain('已开启 5 个平台')
+  const migu = wrapper!.get('input[aria-label="咪咕音乐"]')
+  expect((migu.element as HTMLInputElement).checked).toBe(false)
+  expect(metadata.saveSettings).not.toHaveBeenCalled()
+  await migu.setValue(true)
+  await save()
+  expect(metadata.saveSettings).toHaveBeenCalledWith({ ...initial, providers: platforms })
+  expect(wrapper!.text()).toContain('已开启 6 个平台')
 })

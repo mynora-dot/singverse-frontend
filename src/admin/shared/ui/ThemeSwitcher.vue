@@ -1,26 +1,19 @@
 <script setup lang="ts">
-import { ElDropdown, ElDropdownItem, ElDropdownMenu, ElIcon } from 'element-plus'
+import { computed } from 'vue'
+import { ElIcon } from 'element-plus'
 import { Check, Moon, Sunny } from '@element-plus/icons-vue'
 import { useTheme } from '../../app/composables/use-theme'
 
 withDefaults(defineProps<{ variant?: 'bar' | 'sheet' }>(), { variant: 'bar' })
 const { themes, currentTheme, setTheme } = useTheme()
+const nextTheme = computed(() => currentTheme.value === 'dark' ? 'light' : 'dark')
+const toggleLabel = computed(() => nextTheme.value === 'dark' ? '切换到深色模式' : '切换到浅色模式')
 </script>
 
 <template>
-  <ElDropdown v-if="variant === 'bar'" trigger="click" placement="bottom-end" popper-class="theme-popper" class="theme-switcher">
-    <button class="theme-trigger" type="button" aria-label="外观主题" title="外观主题"><ElIcon><Moon v-if="currentTheme === 'dark'" /><Sunny v-else /></ElIcon></button>
-    <template #dropdown>
-      <ElDropdownMenu class="theme-menu">
-        <ElDropdownItem v-for="theme in themes" :key="theme.id" class="theme-option" :class="{ 'is-active': theme.id === currentTheme }" @click="setTheme(theme.id)">
-          <ElIcon aria-hidden="true"><Moon v-if="theme.id === 'dark'" /><Sunny v-else /></ElIcon>
-          <span class="theme-copy"><strong>{{ theme.label }}</strong><span class="theme-desc">{{ theme.description }}</span></span>
-          <span class="theme-check" aria-hidden="true"><ElIcon v-if="theme.id === currentTheme"><Check /></ElIcon></span>
-          <span v-if="theme.id === currentTheme" class="sr-only">当前主题</span>
-        </ElDropdownItem>
-      </ElDropdownMenu>
-    </template>
-  </ElDropdown>
+  <button v-if="variant === 'bar'" class="theme-switcher theme-trigger" type="button" :aria-label="toggleLabel" :title="toggleLabel" @click="setTheme(nextTheme)">
+    <ElIcon aria-hidden="true"><Moon v-if="currentTheme === 'dark'" /><Sunny v-else /></ElIcon>
+  </button>
   <section v-else class="theme-sheet" aria-labelledby="theme-sheet-title">
     <h2 id="theme-sheet-title" class="nav-group-title">外观主题</h2>
     <div class="theme-grid" role="group" aria-label="选择外观主题">
@@ -60,48 +53,9 @@ const { themes, currentTheme, setTheme } = useTheme()
 }
 
 .theme-trigger .el-icon,
-.theme-option > .el-icon,
 .theme-card > .el-icon {
   flex: none;
   font-size: 16px;
-}
-
-.theme-popper .el-dropdown-menu {
-  min-width: 240px;
-  max-width: calc(100vw - 32px);
-  padding: 4px;
-}
-
-.theme-popper .el-dropdown-menu__item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 56px;
-  padding: 8px 12px;
-  border-radius: var(--sv-radius-md);
-  line-height: 1.5;
-  color: var(--sv-text-secondary);
-}
-
-.theme-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
-}
-
-.theme-copy strong {
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 500;
-  color: var(--sv-text-primary);
-}
-
-.theme-desc {
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--sv-text-secondary);
 }
 
 .theme-check {
@@ -111,10 +65,6 @@ const { themes, currentTheme, setTheme } = useTheme()
   width: 16px;
   color: var(--sv-accent-primary);
   font-size: 16px;
-}
-
-.theme-option.is-active {
-  background: var(--sv-surface-3);
 }
 
 .theme-sheet {

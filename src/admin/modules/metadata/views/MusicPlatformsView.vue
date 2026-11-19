@@ -8,7 +8,7 @@ import { metadataDefaults, providerNames, type MetadataBatch, type MetadataSetti
 
 const route = useRoute(), router = useRouter()
 const platforms = Object.keys(providerNames) as MusicProvider[]
-const marks: Record<MusicProvider, string> = { NETEASE: '云', QQ: 'Q', KUGOU: '酷', KUWO: '我', QISHUI: '汽' }
+const marks: Record<MusicProvider, string> = { NETEASE: '云', QQ: 'Q', KUGOU: '酷', KUWO: '我', QISHUI: '汽', MIGU: '咪' }
 const config = ref<MetadataSettings>({ enabled: true, providers: [...platforms], autoApply: false, ...metadataDefaults })
 const ready = ref(false), loading = ref(false), busy = ref(false), error = ref(''), baseline = ref('')
 const latest = ref<MetadataBatch | null>(null), taskUnknown = ref(false)
@@ -63,7 +63,7 @@ onBeforeUnmount(() => { active = false; generation++; window.removeEventListener
 
 <template>
   <section class="music-platforms-page management-page">
-    <PageHeader title="音乐平台" description="为歌曲信息匹配和封面查找选择来源。新安装默认开启全部五个平台，可按需调整。">
+    <PageHeader title="音乐平台" description="支持六个音乐平台，可按需选择歌曲信息匹配和封面查找的来源。">
       <template v-if="ready" #meta><ElTag :type="dirty ? 'warning' : 'info'" effect="light">{{ dirty ? '有未保存的修改' : config.enabled ? `已开启 ${config.providers.length} 个平台` : '查询已关闭' }}</ElTag></template>
       <template #actions><ElButton :disabled="busy" @click="router.push(returnTo)">{{ route.query.returnTo ? '返回原页面' : '查看歌曲信息' }}</ElButton></template>
     </PageHeader>
