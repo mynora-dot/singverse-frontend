@@ -104,7 +104,8 @@ export const modelNames: Record<string, { name: string; hint: string }> = {
   'uvr-mdxnet-9482-rknn': { name: '瑞芯微 NPU 分离模型', hint: '仅适用于 RKNN，需在节点本地部署转换模型' },
   'uvr-mdxnet-9482': { name: '轻量两轨分离模型', hint: '干净档；先验证独立 CPU，再启用对应加速设备' },
 }
-export const profileNames: Record<SeparationProfile, string> = { DSP_FAST: '极速档 · 中心抵消', AI_CLEAN: '干净档 · 轻量 AI', LEGACY_DEMUCS: '高级 · HTDemucs' }
+export const generationProfiles = ['DSP_FAST', 'LEGACY_DEMUCS'] as const
+export const profileNames: Record<SeparationProfile, string> = { DSP_FAST: '极速档', AI_CLEAN: '轻量 AI（历史版本）', LEGACY_DEMUCS: '高级档' }
 export function profileName(profile?: SeparationProfile) { return profileNames[profile || 'LEGACY_DEMUCS'] }
 export function profileReady(capabilities: SeparationCapabilities | undefined, profile: SeparationProfile, legacyReady: boolean) {
   return capabilities ? capabilities.profiles.some(item => item.id === profile && item.ready) : profile === 'LEGACY_DEMUCS' && legacyReady

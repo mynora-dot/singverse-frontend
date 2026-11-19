@@ -219,7 +219,7 @@ it('状态快捷筛选立即生效，并按状态给出对应的单曲操作', a
   expect(wrapper!.text()).toContain('待标记'); expect(wrapper!.text()).toContain('已有伴奏'); expect(wrapper!.text()).toContain('素材或模型不支持此任务')
   expect(button('试听伴奏')).toBeTruthy(); expect(button('重新生成')).toBeTruthy()
   await button('标记原唱').trigger('click'); await flushPromises()
-  const drawer = wrapper!.get('.drawer')
+  const drawer = wrapper!.get('.audio-song-dialog')
   expect(drawer.text()).toContain('哪一条是原唱'); expect(drawer.text()).toContain('音轨 1 · AAC 立体声')
   expect(authRequest).toHaveBeenCalledWith('/api/v1/media-songs/%E5%8F%8C%E8%BD%A8/audio-roles')
 })
@@ -227,7 +227,7 @@ it('从歌曲详情带入的歌曲会自动打开音轨面板，并可返回全�
   router.route.query = { song: 'a' }; await open()
   expect(requested('songId=a')).toBe(true)
   expect(wrapper!.text()).toContain('正在查看单首歌曲：a')
-  expect(wrapper!.get('.drawer').text()).toContain('哪一条是原唱')
+  expect(wrapper!.get('.audio-song-dialog').text()).toContain('哪一条是原唱')
   await button('查看全部歌曲').trigger('click'); await flushPromises()
   expect(router.route.query.song).toBeUndefined()
 })
@@ -460,20 +460,21 @@ it('选歌后才显示处理栏，打开配置或取消均不会创建批次', a
 it('新版方案卡只选择加速设备并保留方案请求，极速档不依赖 Demucs', async () => {
   ready = false
   const previous = vi.mocked(authRequest).getMockImplementation()!
-  vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/node') ? { ...node(), separation: { version: 1,
-    profiles: [{ id: 'DSP_FAST', ready: true }, { id: 'AI_CLEAN', ready: true }, { id: 'LEGACY_DEMUCS', ready: false }],
+  vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/node') ? { ...node(), backends: [{ id: 'mlx', state: 'AVAILABLE', reason: '' }], separation: { version: 1,
+    profiles: [{ id: 'DSP_FAST', ready: true }, { id: 'AI_CLEAN', ready: true }, { id: 'LEGACY_DEMUCS', ready: true }],
     backends: [{ id: 'cpu', state: 'AVAILABLE' }, { id: 'openvino-cpu', state: 'AVAILABLE' }, { id: 'mlx', state: 'AVAILABLE' }],
   } } as never : previous(...args))
   await open(); await wrapper!.get('input[aria-label="选择a"]').setValue(true)
   await configureGeneration()
   expect(button('预览处理范围').attributes('disabled')).toBeUndefined()
-  await wrapper!.get('.profile-card input[value="AI_CLEAN"]').setValue(true)
+  expect(wrapper!.find('.profile-card input[value="AI_CLEAN"]').exists()).toBe(false)
+  await wrapper!.get('.profile-card input[value="LEGACY_DEMUCS"]').setValue(true)
   const devices = wrapper!.get('select[aria-label="生成伴奏使用的设备"]')
   expect(devices.find('option[value="cpu"]').exists()).toBe(false)
   expect(devices.find('option[value="openvino-cpu"]').exists()).toBe(false)
   await devices.setValue('mlx')
   await button('预览处理范围').trigger('click'); await flushPromises()
-  expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/batches/preview', 'POST', expect.objectContaining({ ids: ['a'], all: false, backend: 'mlx', separationProfile: 'AI_CLEAN', outputFormat: 'aac' }), 120000)
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/batches/preview', 'POST', expect.objectContaining({ ids: ['a'], all: false, backend: 'mlx', separationProfile: 'LEGACY_DEMUCS', outputFormat: 'aac' }), 120000)
   expect(requested('/submit')).toBe(false)
 })
 
@@ -533,16 +534,16 @@ it('未读取音轨的行先进入检查面板，不直接生成批次', async (
   const previous = vi.mocked(authRequest).getMockImplementation()!
   vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/songs?') ? { totalElements: 1, items: [row('未知', { category: 'UNPROBED', audio: { state: 'UNKNOWN', jobs: [] } })] } as never : previous(...args))
   await open(); await button('读取音轨').trigger('click'); await flushPromises()
-  expect(wrapper!.get('.drawer').text()).toContain('未知')
+  expect(wrapper!.get('.audio-song-dialog').text()).toContain('未知')
   expect(requested('/batches/preview')).toBe(false)
 })
 
-it('生成任务可返回对应歌曲并自动打开音轨抽屉', async () => {
+it('生成任务可返回对应歌曲并自动打开音轨面板', async () => {
   router.route.query = { tab: 'tasks', batch: 'batch' }; await open()
   await button('查看歌曲').trigger('click'); await flushPromises()
   expect(router.route.query).toEqual({ song: 'a' })
   expect(wrapper!.get('#audio-tab-songs').attributes('aria-selected')).toBe('true')
-  expect(wrapper!.get('.drawer').text()).toContain('哪一条是原唱')
+  expect(wrapper!.get('.audio-song-dialog').text()).toContain('哪一条是原唱')
 })
 
 it('更多筛选支持 Escape 收起，且不应用未提交的条件', async () => {

@@ -48,6 +48,7 @@ it('单音轨已生成伴奏时提供试听，未生成时可提交分离', asyn
   vi.mocked(authRequest).mockResolvedValue({ state: 'CONFIRMED', revision: 0, originalId: 'stream:1', streams: [{ id: 'stream:1' }], backingResource: { jobId: 'job 1' }, jobs: [] })
   wrapper = mount(AudioRolesPanel, { props: { songId: 'song' } }); await flushPromises()
   expect(wrapper.text()).toContain('已生成独立伴奏')
+  await wrapper.get('button[aria-label="播放试听"]').trigger('click'); await flushPromises()
   expect(wrapper.get('audio').attributes('src')).toBe('/api/v1/media-songs/song/accompaniment/job%201')
   wrapper.unmount()
   vi.mocked(authRequest).mockResolvedValue({ state: 'CONFIRMED', revision: 0, originalId: 'stream:1', streams: [{ id: 'stream:1' }], jobs: [] })

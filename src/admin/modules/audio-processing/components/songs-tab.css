@@ -913,3 +913,10 @@
 
 .songs-tab, .filter-panel { grid-template-columns: minmax(0, 1fr); }
 .filter-panel, .filters, .filter-bottom { min-width: 0; }
+
+.audio-dialog-heading{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:600;color:var(--sv-text-primary)}
+:global(.audio-song-dialog.el-dialog){max-width:calc(100vw - 48px);margin:5vh auto;padding:0;border-radius:16px;overflow:hidden;background:var(--sv-surface-2)}
+:global(.audio-song-dialog .el-dialog__header){margin:0;padding:20px 28px;border-bottom:1px solid var(--sv-border-subtle)}
+:global(.audio-song-dialog .el-dialog__headerbtn){top:10px;right:14px;width:44px;height:44px}
+:global(.audio-song-dialog .el-dialog__body){padding:28px 32px 22px}
+@media(max-width:560px){:global(.audio-song-dialog.el-dialog){width:100%;max-width:100%;min-height:100dvh;margin:0;border-radius:0}:global(.audio-song-dialog .el-dialog__header){padding:18px 20px}:global(.audio-song-dialog .el-dialog__body){padding:24px 20px}:global(.audio-song-dialog .el-dialog__headerbtn){top:8px;right:10px}}

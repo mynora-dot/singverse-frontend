@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Headset as SongPlaceholderIcon } from '@element-plus/icons-vue'
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
-import { ElIcon, ElAlert, ElButton, ElDrawer, ElEmpty, ElInput, ElPagination, ElSkeleton, ElTag } from 'element-plus'
+import { ElIcon, ElAlert, ElButton, ElDialog, ElEmpty, ElInput, ElPagination, ElSkeleton, ElTag } from 'element-plus'
 import { Search, Operation } from '@element-plus/icons-vue'
 import AudioRolesPanel from '../../song-management/components/AudioRolesPanel.vue'
 import { authRequest } from '../../../core/auth/api'
@@ -222,9 +222,10 @@ defineExpose({ refresh: loadRows, clear })
       <ElButton :disabled="busy || loading" @click="configure('recognize')">识别已有音轨</ElButton><ElButton type="primary" :disabled="busy || loading" @click="configure('generate')">生成伴奏</ElButton>
     </div>
     <BatchOptionsDialog v-model:profile="profile" v-model:backend="preferred" v-model:recognition-kind="recognitionKind" :mode="options" :count="optionsCount" :busy="busy" :error="optionsError" :backends="available" :separation="separation" :readiness="readiness" :ready="ready" :recognition-ready="canRecognize" :fast-ready="fastReady" @confirm="prepare" @close="closeOptions" @setup="closeOptions(); emit('setup')" />
-    <ElDrawer :model-value="!!editor" :title="editor?.title || '音轨详情'" size="min(600px, 100vw)" :append-to-body="true" class="audio-song-drawer" @close="editor = undefined">
-      <template v-if="editor"><div class="drawer-song-meta"><span>{{ editor.artists?.join(' / ') || '未知歌手' }}</span><span>{{ editor.sourceName || '未指定媒体库' }} · {{ extension(editor) }}</span></div><AudioRolesPanel :key="editor.id" :song-id="editor.id" :can-process="readiness.ready" :separation="separation" :backends="backends" workbench @changed="loadRows" @setup="editor = undefined; emit('setup')" /></template>
-    </ElDrawer>
+    <ElDialog :model-value="!!editor" title="原唱与伴奏" width="1040px" :append-to-body="true" destroy-on-close class="audio-song-dialog" @close="editor = undefined">
+      <template #header><div class="audio-dialog-heading"><img src="/assets/brand/logo-mark.svg" alt="" width="24" height="24"><span>原唱与伴奏</span></div></template>
+      <AudioRolesPanel v-if="editor" :key="editor.id" :song-id="editor.id" :song="editor" :can-process="readiness.ready" :separation="separation" :backends="backends" workbench @changed="loadRows" @setup="editor = undefined; emit('setup')" />
+    </ElDialog>
   </div>
 </template>
 

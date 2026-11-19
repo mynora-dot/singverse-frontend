@@ -17,8 +17,8 @@ export interface AudioExecution {
 export type SeparationProfile = 'DSP_FAST' | 'AI_CLEAN' | 'LEGACY_DEMUCS'
 export type AudioBatchKind = 'SEPARATE' | 'FAST' | 'ANALYZE'
 export interface SeparationRecipe { separationProfile?: SeparationProfile; modelId?: string; outputFormat?: 'aac' | 'flac'; preview?: boolean }
-export interface AudioVersion extends SeparationRecipe { jobId: string; mediaType?: string; duration?: number; active?: boolean }
-export interface AudioJob extends AudioExecution, SeparationRecipe { id: string; kind: string; state: string; error?: string; resultState?: string; reason?: string; evidence?: AnalysisEvidence }
+export interface AudioVersion extends SeparationRecipe { jobId: string; mediaType?: string; duration?: number; active?: boolean; createdAt?: number }
+export interface AudioJob extends AudioExecution, SeparationRecipe { id: string; kind: string; state: string; error?: string; resultState?: string; reason?: string; evidence?: AnalysisEvidence; createdAt?: number }
 /** `/api/v1/media-songs/{id}/audio-roles` 与列表行 `audio` 共用的音轨角色视图。 */
 export interface AudioRoles {
   state: string; revision?: number; origin?: string; originalId?: string; backingId?: string
@@ -26,6 +26,7 @@ export interface AudioRoles {
   originalSelection?: { kind: 'UNIQUE_AUDIO' }
   backingResource?: AudioVersion
   versions?: AudioVersion[]
+  duration?: number
   streams?: AudioStream[]; jobs: AudioJob[]
 }
 export interface AudioRow {
