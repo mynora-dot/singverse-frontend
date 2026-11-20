@@ -67,8 +67,8 @@
       "sha256": "69043de4096f7df473cca354364b9e6ae4451780d9ece54b15e5ffc7e6d6733d"
     },
     "contracts/openapi/README.md": {
-      "sha256": "804492fcb15c06d0445c0293b7ad63f9939be601ac0b37e354ceb545fb02760c",
-      "revision": "801094a3bd38bacc6566f20f3c1a3c4d004d0aba"
+      "sha256": "bc39b7f7a9455397b8440b27690e0a4e95a1fa48f577b91be9782c3f7f763fd5",
+      "revision": "4a0787a4ca9141507d12802582ef05dd33d2239e"
     },
     "contracts/openapi/auth-test-vectors.json": {
       "sha256": "d1d9cca13627c3c54cbb97a3cc57c8e592721ac50db1390ccd54977912109e04"
@@ -77,8 +77,8 @@
       "sha256": "791094bcbdce4e7adad9a76e92e270e0cdca1e57d2d3a649388836816ad0776c"
     },
     "contracts/openapi/singverse.openapi.json": {
-      "sha256": "e503700495eaab9e9f9d30320a0eb0e0b4193cc89ba7ff948d2798010bd3c819",
-      "revision": "801094a3bd38bacc6566f20f3c1a3c4d004d0aba"
+      "sha256": "2eb8aa4867ce7a8d2121cea8f085eb815716518529f3647bab962202d303428d",
+      "revision": "4a0787a4ca9141507d12802582ef05dd33d2239e"
     },
     "contracts/song-activity.md": {
       "sha256": "ec2b7ded6f3d84993231321f0ef611c8b25a288efbda6d99e3cf8febffb6ba30"

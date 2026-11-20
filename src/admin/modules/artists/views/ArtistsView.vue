@@ -6,7 +6,7 @@ import { ElIcon, ElAlert, ElButton, ElDialog, ElInput, ElPagination, ElTable, El
 import { ApiError } from '../../../core/auth/api'
 import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { artists } from '../api/artists'
-import { artistTypes, type Artist, type ArtistFilter, type ArtworkBatch, type ImageKind } from '../types'
+import { artistTypes, type Artist, type ArtistFilter, type ArtistSort, type ArtworkBatch, type ImageKind } from '../types'
 import type { MediaSong } from '../../media-library/types'
 import ArtistImageEditor from '../components/ArtistImageEditor.vue'
 import ArtistArtworkDialog from '../components/ArtistArtworkDialog.vue'
@@ -16,6 +16,7 @@ import SingleSongScrapeDialog from '../../metadata/components/SingleSongScrapeDi
 const route = useRoute(), router = useRouter()
 const pageSize = 20
 const mobileFiltersOpen = ref(false)
+const sort = ref<ArtistSort>('NAME_ASC')
 const query = ref(''), artistType = ref(''), artworkFilter = ref(''), countLessThan = ref<number|null>(null)
 const page = ref(1), total = ref(0), profiles = ref<Artist[]>([]), loading = ref(false), error = ref('')
 const profile = ref<Artist|null>(null), songs = ref<MediaSong[]>([]), songPage = ref(1), songTotal = ref(0), songsLoading = ref(false)
@@ -44,7 +45,7 @@ function coverCaption(artist:Artist) {
 }
 function failure(e:unknown) { if (active) error.value = e instanceof Error ? e.message : '读取失败，请重试' }
 function filterFromForm():ArtistFilter { return { q:query.value.trim(), type:artistType.value, artwork:artworkFilter.value, countLessThan:typeof countLessThan.value === 'number' && Number.isInteger(countLessThan.value) && countLessThan.value > 0 ? countLessThan.value : null } }
-function fetchList(filter=appliedFilter.value) { return artists.list(filter.q,page.value-1,pageSize,filter.type,filter.countLessThan,filter.artwork) }
+function fetchList(filter=appliedFilter.value) { return artists.list(filter.q,page.value-1,pageSize,filter.type,filter.countLessThan,filter.artwork,sort.value) }
 async function load(reset=false) {
   if (reset) { page.value = 1; appliedFilter.value = filterFromForm() }
   const epoch = ++generation
@@ -212,6 +213,7 @@ onBeforeUnmount(()=>{ active=false; generation++; detailGeneration++; candidateG
       <span v-if="selectedCount" class="selection-count">已选 <strong>{{ selectedCount }}</strong> 位<span class="selection-explanation"> · 跨页保留</span></span><span v-else class="collection-count">{{ loading ? '正在读取…' : `第 ${(page - 1) * pageSize + (profiles.length ? 1 : 0)}–${(page - 1) * pageSize + profiles.length} 位` }}</span>
       <div v-if="selectedCount" class="selection-actions"><ElButton size="small" @click="openArtwork()">批量获取封面</ElButton><ElButton size="small" @click="openCategories">标注歌手类型</ElButton><ElButton size="small" text @click="selected.clear()">取消选择</ElButton></div>
       <span v-else class="selection-tip">选择歌手，批量整理封面与分类</span>
+      <select v-model="sort" class="native-field artist-sort" aria-label="歌手排序" :disabled="loading" @change="load(true)"><option value="NAME_ASC">名称排序</option><option value="UPDATED_DESC">最新更新</option></select>
     </div>
     <div v-if="loading && !profiles.length" class="artists-grid" role="status" aria-label="正在读取歌手"><ElSkeleton v-for="index in 5" :key="index" animated><template #template><ElSkeletonItem variant="image" style="width:100%;height:auto;aspect-ratio:1" /><ElSkeletonItem variant="h3" style="width:60%;margin-top:16px" /><ElSkeletonItem variant="text" style="width:40%;margin-top:8px" /></template></ElSkeleton></div>
     <div v-else-if="!profiles.length" class="artists-empty"><span aria-hidden="true"><ElIcon><SongPlaceholderIcon /></ElIcon></span><h2>{{ hasFilters?'没有找到符合条件的歌手':'扫描歌曲后，这里会自动出现歌手' }}</h2><p>{{ hasFilters?'试试调整类型、封面状态或搜索词。':'歌手来自歌曲信息，无需手动建档。先到歌曲来源添加目录并扫描。' }}</p><ElButton v-if="hasFilters" @click="clearFilters">查看全部歌手</ElButton><RouterLink v-else class="empty-source-link" to="/library/media">添加歌曲来源 →</RouterLink></div>
@@ -394,6 +396,14 @@ onBeforeUnmount(()=>{ active=false; generation++; detailGeneration++; candidateG
 
 .selection-tip {
   margin-left:auto;
+}
+
+.artist-sort {
+  width:auto;
+  min-width:120px;
+  height:40px;
+  margin-left:auto;
+  font-size:12px;
 }
 
 .artists-grid {
@@ -940,6 +950,7 @@ onBeforeUnmount(()=>{ active=false; generation++; detailGeneration++; candidateG
   }
 
 @media(max-width:768px) {
+  .artist-sort { height:44px; }
   .artists-browser { padding:20px; }
   .page-selection { min-height: 44px; }
   .artist-name { min-height: 44px; min-width: 44px; }

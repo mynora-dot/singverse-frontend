@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { mediaVerification } from '../../media-library/api/shareImports'
 import { ElButton, ElDrawer, ElTag } from 'element-plus'
 import { VideoPlay, EditPen } from '@element-plus/icons-vue'
@@ -14,22 +14,32 @@ import type { MediaSong } from '../../media-library/types'
 import { authRequest } from '../../../core/auth/api'
 import { songRoles, type AudioRoles } from '../../audio-processing/api'
 import { rolesSummary } from '../../audio-processing/presentation'
+import { songs } from '../api/songs'
 const props = withDefaults(defineProps<{ song: MediaSong | null; visible: boolean; tags?: Tag[] }>(), { tags: () => [] })
 const emit = defineEmits<{ close: []; play: []; edit: []; classify: [] }>()
 const embedded = ref<EmbeddedDetail>(), coverFailed = ref(false)
 const assetLyrics = ref<FormalLyrics | null>(), lyricsError = ref(false)
+const fileLyrics = ref<FormalLyrics>()
 const roles = ref<AudioRoles>(), rolesError = ref(false)
-let rolesTurn = 0
-watch(() => [props.song?.id, props.visible], async () => {
-  assetLyrics.value = undefined; lyricsError.value = false; embedded.value = undefined; coverFailed.value = false; roles.value = undefined; rolesError.value = false
-  const turn = ++rolesTurn, id = props.song?.id
+let loadTurn = 0
+onBeforeUnmount(() => { loadTurn++ })
+watch(() => [props.song?.id, props.visible], () => {
+  assetLyrics.value = undefined; fileLyrics.value = undefined; lyricsError.value = false; embedded.value = undefined; coverFailed.value = false; roles.value = undefined; rolesError.value = false
+  const turn = ++loadTurn, id = props.song?.id
   if (!id || !props.visible) return
+  void authRequest<AudioRoles>(`${songRoles(id)}/audio-roles`).then(value => { if (turn === loadTurn) roles.value = value }).catch(() => { if (turn === loadTurn) rolesError.value = true })
   const variant = props.song?.metadata?.variant
   if (variant?.lyricsAsset && !Object.hasOwn(variant, 'lyrics')) {
-    void authRequest<{ lyrics: FormalLyrics | null }>(`/api/v1/metadata/entities/${encodeURIComponent(id)}/lyrics`).then(value => { if (turn === rolesTurn) assetLyrics.value = value.lyrics }).catch(() => { if (turn === rolesTurn) lyricsError.value = true })
+    void authRequest<{ lyrics: FormalLyrics | null }>(`/api/v1/metadata/entities/${encodeURIComponent(id)}/lyrics`).then(value => { if (turn === loadTurn) assetLyrics.value = value.lyrics }).catch(() => { if (turn === loadTurn) lyricsError.value = true })
+  } else if (!variant || !Object.hasOwn(variant, 'lyrics') && !Object.hasOwn(variant, 'lyricsAsset')) {
+    void songs.textTracks(id).then(value => {
+      if (turn !== loadTurn) return
+      const readable = value.items.filter(item => item.format === 'lrc' || item.format === 'text')
+      const item = readable.find(item => item.id === 'metadata-lyrics') ?? readable.find(item => item.text.trim())
+      fileLyrics.value = item ? { text: item.text, timing: item.format === 'lrc' ? 'lrc' : 'none' } : undefined
+      lyricsError.value = !item && value.warnings.length > 0
+    }).catch(() => { if (turn === loadTurn) lyricsError.value = true })
   }
-  try { const value = await authRequest<AudioRoles>(`${songRoles(id)}/audio-roles`); if (turn === rolesTurn) roles.value = value }
-  catch { if (turn === rolesTurn) rolesError.value = true }
 }, { immediate: true })
 const audio = computed(() => rolesSummary(roles.value))
 const artwork = computed(() => {
@@ -52,7 +62,7 @@ const lyricData = computed(() => {
   const variant = props.song?.metadata?.variant
   if (variant && Object.hasOwn(variant, 'lyrics')) return variant.lyrics
   if (variant && Object.hasOwn(variant, 'lyricsAsset')) return assetLyrics.value
-  return embedded.value?.result?.lyrics
+  return fileLyrics.value ?? embedded.value?.result?.lyrics
 })
 const lyrics = computed(() => {
   const value = lyricData.value

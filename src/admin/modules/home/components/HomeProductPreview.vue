@@ -40,7 +40,7 @@ const metrics = [
         <details class="sv-home-preview-scan"><summary>扫描详情<span>1 个目录 · 17 个条目</span></summary><p>新增 17 · 复用 0 · 1 首歌曲需复核</p></details>
         <div class="sv-home-preview-source-footer">
           <p><Clock aria-hidden="true" />自动扫描未开启</p>
-          <div><button class="is-primary" type="button" @click="emit('login', '/library/songs')">查看歌曲</button><button type="button" @click="emit('login', '/library/media')">完善信息</button></div>
+          <div><button class="is-primary" type="button" @click="emit('login', '/library/songs')">查看歌曲</button><button type="button" @click="emit('login', '/library/media')">分享资料</button></div>
         </div>
       </article>
     </div>

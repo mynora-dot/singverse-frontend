@@ -110,8 +110,8 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
 <template>
   <section class="share-import" aria-label="导入曲库资料">
     <h3>导入曲库资料</h3>
-    <p>先将媒体转存或挂载到自己的 OpenList，再选择收到的完整 ZIP。已有歌曲会补充资料，本地订正会保留。</p>
-    <p class="root">自己的媒体根目录：{{ source.location }}</p>
+    <p>导入 ZIP 资料包，保留本地修改。</p>
+    <p class="root">媒体目录：{{ source.location }}</p>
     <label class="file-choice" :class="{ disabled: uploading || working }">选择资料包<input type="file" accept=".zip,application/zip" aria-label="选择资料包" :disabled="uploading || working" @change="choose"></label>
     <div v-if="uploading" role="status"><ElProgress :percentage="0" indeterminate /><p>正在上传 {{ pendingFile?.name }}，请保持页面打开。上传完成后可关闭页面，后台会继续处理。</p><ElButton @click="controller?.abort()">取消上传</ElButton></div>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />

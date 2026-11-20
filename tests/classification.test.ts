@@ -23,6 +23,7 @@ async function page(path = '/library/classification?songIds=song-1') {
 }
 beforeEach(() => {
   vi.mocked(songs.list).mockResolvedValue({ items: [], page: 0, size: 20, totalElements: 0 })
+  vi.mocked(songs.sources).mockResolvedValue([])
   vi.mocked(classification.settings).mockResolvedValue(settings)
   vi.mocked(classification.tags).mockResolvedValue(tags)
   vi.mocked(classification.tasks).mockResolvedValue([])
@@ -34,7 +35,7 @@ beforeEach(() => {
 afterEach(() => { wrapper?.unmount(); vi.clearAllMocks(); vi.restoreAllMocks(); document.body.innerHTML = '' })
 it('任务默认不自动应用，先预览真实输入，确认才启动', async () => {
   vi.mocked(classification.start).mockResolvedValue(task())
-  await page(); await button('下一步，确认歌曲').trigger('click'); await flushPromises()
+  await page(); await button('确认分类').trigger('click'); await flushPromises()
   expect(classification.preview).toHaveBeenCalledWith(expect.objectContaining({ songIds: ['song-1'], autoDimensions: [] }))
   expect(classification.start).not.toHaveBeenCalled()
   expect(wrapper.text()).toContain('不会发送媒体、路径')
@@ -128,7 +129,7 @@ it('词表可按分类内容快速筛选并返回全部', async () => {
 
 it('分类仅展示当前模型摘要，不再内联配置地址和密钥', async () => {
   await page()
-  expect(wrapper.text()).toContain('当前分类模型')
+  expect(wrapper.find('[aria-label="当前分类模型"]').exists()).toBe(true)
   expect(wrapper.text()).toContain('fixture')
   expect(wrapper.find('a[href="/system/ai/features"]').exists()).toBe(true)
   expect(wrapper.find('input[aria-label="分类模型地址"]').exists()).toBe(false)
@@ -140,7 +141,7 @@ it('没有预选歌曲时给出选歌入口，选择整个曲库后才可预览'
   expect(button('选择歌曲')).toBeDefined()
   expect(classification.preview).not.toHaveBeenCalled()
   await wrapper.get('button[aria-pressed="false"]').trigger('click'); await flushPromises()
-  await button('下一步，确认歌曲').trigger('click'); await flushPromises()
+  await button('确认分类').trigger('click'); await flushPromises()
   expect(classification.preview).toHaveBeenCalledWith(expect.objectContaining({ all: true, songIds: [], autoDimensions: [] }))
 })
 it('结果筛选在服务端执行，不把当前页过滤冒充全部结果', async () => {
@@ -153,20 +154,38 @@ it('结果筛选在服务端执行，不把当前页过滤冒充全部结果', a
 it('未启用分类时明确给配置入口并阻止启动，记录仍可查看', async () => {
   vi.mocked(classification.settings).mockResolvedValue({ ...settings, enabled: false })
   await page()
-  expect(wrapper.text()).toContain('先连接一个 AI 模型')
-  expect(button('下一步，确认歌曲').attributes('disabled')).toBeDefined()
+  expect(wrapper.text()).toContain('分类服务未启用')
+  expect(button('确认分类').attributes('disabled')).toBeDefined()
   await button('分类记录').trigger('click'); await flushPromises()
   expect(wrapper.text()).toContain('还没有分类记录')
   expect(classification.preview).not.toHaveBeenCalled()
 })
 it('自动保存需明确选允许的分类内容，默认查看建议不会隐式开启', async () => {
   await page()
-  const automatic = wrapper.findAll('input[type="checkbox"]').find(input => input.element.closest('.save-policy'))!
+  expect(wrapper.find('.save-policy details').exists()).toBe(false)
+  expect(wrapper.findAll('.automatic-options input[type="checkbox"]')).toHaveLength(5)
+  expect(wrapper.findAll('.automatic-options input').every(input => input.attributes('disabled') !== undefined)).toBe(true)
+  const automatic = wrapper.get('.auto-save-switch input[type="checkbox"]')
   await automatic.setValue(true); await flushPromises()
-  expect(button('下一步，确认歌曲').attributes('disabled')).toBeDefined()
+  expect(button('确认分类').attributes('disabled')).toBeDefined()
   await wrapper.find('.automatic-options input[type="checkbox"]').setValue(true); await flushPromises()
-  await button('下一步，确认歌曲').trigger('click'); await flushPromises()
+  await button('确认分类').trigger('click'); await flushPromises()
   expect(classification.preview).toHaveBeenCalledWith(expect.objectContaining({ autoDimensions: ['LANGUAGE'] }))
+})
+it('取消生成分类会撤销对应自动保存，重新勾选生成不会隐式恢复保存', async () => {
+  await page()
+  await wrapper.get('.auto-save-switch input[type="checkbox"]').setValue(true)
+  const generated = wrapper.findAll('.dimension-options input[type="checkbox"]')
+  const saved = wrapper.findAll('.automatic-options input[type="checkbox"]')
+  await saved[0]!.setValue(true)
+  await saved[2]!.setValue(true)
+  await generated[0]!.setValue(false)
+  expect(saved[0]!.attributes('disabled')).toBeDefined()
+  expect((saved[0]!.element as HTMLInputElement).checked).toBe(false)
+  await generated[0]!.setValue(true)
+  expect((saved[0]!.element as HTMLInputElement).checked).toBe(false)
+  await button('确认分类').trigger('click'); await flushPromises()
+  expect(classification.preview).toHaveBeenCalledWith(expect.objectContaining({ autoDimensions: ['GENRE'] }))
 })
 it('快速切换筛选时清除旧列表，迟到响应不会覆盖当前结果', async () => {
   await page('/library/classification?task=task-1')
@@ -193,6 +212,6 @@ it('弹窗选歌不离开分类页，回填歌曲后保留分类内容', async (
   expect(wrapper.findComponent(ClassificationSongPicker).exists()).toBe(false)
   expect(router.currentRoute.value.query.songIds).toBe('song-2,song-3')
   expect(wrapper.text()).toContain('2 首歌曲')
-  await button('下一步，确认歌曲').trigger('click'); await flushPromises()
+  await button('确认分类').trigger('click'); await flushPromises()
   expect(classification.preview).toHaveBeenCalledWith(expect.objectContaining({ songIds: ['song-2', 'song-3'], dimensions: ['DECADE','GENRE','MOOD','SCENE'] }))
 })

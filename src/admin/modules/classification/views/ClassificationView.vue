@@ -4,9 +4,9 @@ import { requestId as newRequestId } from '../../../../shared/request-id'
 import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElCard, ElCheckbox, ElDialog, ElForm, ElIcon, ElInput, ElMessage, ElMessageBox, ElPagination, ElProgress, ElSelect, ElOption, ElTable, ElTableColumn, ElTag } from 'element-plus'
+import { ElAlert, ElButton, ElCard, ElCheckbox, ElDialog, ElForm, ElIcon, ElInput, ElMessage, ElMessageBox, ElPagination, ElProgress, ElSelect, ElOption, ElSwitch, ElTable, ElTableColumn, ElTag } from 'element-plus'
 import { classification } from '../api/classification'
-import { CollectionTag, MagicStick, ArrowRight, CircleCheck, Clock, Headset } from '@element-plus/icons-vue'
+import { CollectionTag, ArrowRight, Clock, Setting } from '@element-plus/icons-vue'
 import ClassificationResultCard from '../components/ClassificationResultCard.vue'
 import ClassificationSongPicker from '../components/ClassificationSongPicker.vue'
 import TagCoverEditor from '../components/TagCoverEditor.vue'
@@ -19,7 +19,10 @@ const tab = ref(route.query.task ? 'history' : 'start'), error = ref(''), busy =
 const config = ref<Settings>({ enabled: false, endpoint: '', model: '', hasKey: false, timeoutSeconds: 60, intervalSeconds: 3, revision: 0 }), settingsLoaded = ref(false)
 const tasks = ref<Task[]>([]), task = ref<Task | null>(null), taskPage = ref(0), page = ref(1), filter = ref(''), loadedAt = ref('')
 const dimensions = ref<Dimension[]>(['LANGUAGE', 'DECADE', 'GENRE', 'MOOD', 'SCENE']), automatic = ref<Dimension[]>([]), auto = ref(false), all = ref(false)
-const dimensionHints: Record<string,string> = { LANGUAGE: '国语、粤语、英语…', DECADE: '按已有发行年份归类', GENRE: '流行、摇滚、民谣…', MOOD: '轻快、治愈、伤感…', SCENE: '聚会、通勤、独处…' }
+function toggleGeneration(dim: Dimension, checked: boolean) {
+  toggleList(dimensions.value, dim, checked)
+  if (!checked) toggleList(automatic.value, dim, false)
+}
 const reviewCount = computed(() => task.value?.counts.REVIEW ?? 0)
 const startDisabled = computed(() => busy.value || !settingsLoaded.value || !config.value.enabled || !dimensions.value.length || (!all.value && !selectedIds.value.length) || (auto.value && !automatic.value.some(d => dimensions.value.includes(d))))
 function formatDate(value: string) { return new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
@@ -107,26 +110,63 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer) })
 </script>
 <template>
   <section class="classification-page management-page">
-    <PageHeader class="classification-header" title="歌曲分类" description="按语种、风格、场景等维度给歌曲打标签，电视和点歌页可按分类浏览。"><template #actions><ElButton text @click="router.push('/library/songs')">返回歌曲库 <ElIcon><ArrowRight /></ElIcon></ElButton></template></PageHeader>
+    <PageHeader class="classification-header" title="歌曲分类">
+      <template #actions>
+        <ElButton text @click="router.push('/library/songs')">返回曲库</ElButton>
+        <RouterLink class="model-settings" to="/system/ai/features"><ElIcon><Setting /></ElIcon>模型设置</RouterLink>
+      </template>
+    </PageHeader>
+    <div class="classification-workbench sv-glass">
     <nav class="classification-tabs" aria-label="歌曲分类分区"><button :aria-current="tab === 'start' ? 'page' : undefined" @click="tab = 'start'">开始分类</button><button :aria-current="tab === 'history' ? 'page' : undefined" @click="tab = 'history'">分类记录</button><button :aria-current="tab === 'tags' ? 'page' : undefined" @click="tab = 'tags'">分类词表</button></nav>
+    <div class="classification-panel">
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton text :disabled="busy || loading" @click="initialize">重新加载</ElButton></ElAlert>
 
     <template v-if="tab === 'start'">
       <div v-if="!settingsLoaded" class="setup-banner" role="status">正在检查分类服务…</div>
-      <div v-else-if="!config.enabled" class="setup-banner"><ElIcon><MagicStick /></ElIcon><div><strong>先连接一个 AI 模型</strong><p>配置并启用分类服务后，就可以让 AI 帮你整理歌曲。</p></div><RouterLink to="/system/ai/features">前往 AI 设置 <ElIcon><ArrowRight /></ElIcon></RouterLink></div>
-      <div class="model-note"><span class="service-dot" :class="{ ready: config.enabled }" /><div><strong>当前分类模型</strong><p>{{ settingsLoaded ? (config.serviceName || config.model || '尚未配置') : '检查中…' }}</p><small v-if="config.enabled">{{ config.model }} · 请求间隔 {{ config.intervalSeconds }} 秒</small><RouterLink to="/system/ai/features">前往 AI 设置 →</RouterLink></div></div>
-      <div class="start-layout">
-        <ElCard shadow="never" class="start-card">
-          <section class="workflow-section"><div class="workflow-heading"><span>1</span><div><h2>想整理哪些歌曲？</h2><p>先选少量歌曲试试，也可以整理整个曲库。</p></div></div>
-            <div class="scope-options" role="group" aria-label="分类歌曲范围"><button :aria-pressed="!all" :disabled="busy" @click="all = false; openSongPicker()"><ElIcon><Headset /></ElIcon><strong>选择歌曲 <span v-if="selectedIds.length">{{ selectedIds.length }} 首</span></strong><small>{{ selectedIds.length ? '已选择，可继续添加或移除' : '搜索并勾选想整理的歌曲' }}</small><span class="choice-check" aria-hidden="true">{{ !all ? '✓' : '' }}</span></button><button :aria-pressed="all" :disabled="busy" @click="all = true"><ElIcon><CollectionTag /></ElIcon><strong>整个曲库</strong><small>一次最多整理 5000 首</small><span class="choice-check" aria-hidden="true">{{ all ? '✓' : '' }}</span></button></div>
-            <ElButton v-if="!all && selectedIds.length" class="choose-songs" :disabled="busy" @click="openSongPicker">重新选择歌曲 <ElIcon><ArrowRight /></ElIcon></ElButton>
-          </section>
-          <section class="workflow-section"><div class="workflow-heading"><span>2</span><div><h2>想按什么来分类？</h2><p>可多选，已有的人工分类会受到保护。</p></div></div><div class="dimension-options"><label v-for="dim in aiDimensions" :key="dim" :class="{ selected: dimensions.includes(dim) }"><ElCheckbox :model-value="dimensions.includes(dim)" :disabled="busy" @change="v => toggleList(dimensions, dim, !!v)">{{ dimensionNames[dim] }}</ElCheckbox><small>{{ dimensionHints[dim] }}</small></label></div></section>
-          <section class="save-policy"><div><ElIcon><CircleCheck /></ElIcon><strong>{{ auto ? '部分分类将自动保存' : '先看建议，再决定保存' }}</strong><span v-if="auto" class="auto-warning">已开启部分自动保存</span></div><p>{{ auto ? '已选内容会自动保存 AI 推断，其他建议仍需确认。人工确认和锁定的分类受保护。' : '默认不会直接改动歌曲分类。生成后，你可以逐首确认，也可以手动调整。' }}</p><details><summary>更多保存选项</summary><ElCheckbox v-model="auto" :disabled="busy">生成后自动保存以下分类</ElCheckbox><p>仅在你选中的分类内容上自动保存 AI 推断。AI 可能判断有误；人工确认或锁定的分类不会被自动覆盖。</p><div v-if="auto" class="automatic-options"><ElCheckbox v-for="dim in dimensions" :key="dim" :model-value="automatic.includes(dim)" :disabled="busy" @change="v => toggleList(automatic, dim, !!v)">{{ dimensionNames[dim] }}</ElCheckbox><p v-if="!automatic.some(d => dimensions.includes(d))" class="inline-error">请选择允许自动保存的分类内容。</p></div></details></section>
-          <footer class="start-footer"><div><strong>{{ all ? '整个曲库' : selectedIds.length ? `${selectedIds.length} 首歌曲` : '还没有选择歌曲' }}</strong><span>{{ dimensions.length ? dimensionLabels(dimensions) : '请选择至少一种分类内容' }}</span></div><ElButton v-if="!all && !selectedIds.length && config.enabled" type="primary" @click="openSongPicker">选择歌曲 <ElIcon><ArrowRight /></ElIcon></ElButton><ElButton v-else type="primary" :loading="busy" :disabled="startDisabled" @click="preview">下一步，确认歌曲 <ElIcon><ArrowRight /></ElIcon></ElButton></footer>
-        </ElCard>
+      <div v-else-if="!config.enabled" class="setup-banner" role="status">分类服务未启用</div>
+      <div class="start-card">
+        <section class="start-section">
+          <div class="start-section-heading">
+            <h2 id="classification-scope-title">歌曲范围</h2>
+          </div>
+          <div class="scope-controls">
+            <div class="scope-options" role="group" aria-labelledby="classification-scope-title">
+              <button type="button" :aria-pressed="!all" :disabled="busy" @click="all = false; if (!selectedIds.length) openSongPicker()">选择歌曲</button>
+              <button type="button" :aria-pressed="all" :disabled="busy" @click="all = true">整个曲库</button>
+            </div>
+            <span v-if="!all && selectedIds.length" class="scope-status" aria-live="polite">{{ selectedIds.length }} 首歌曲</span>
+            <ElButton v-if="!all && selectedIds.length" class="choose-songs" text type="primary" :disabled="busy" @click="openSongPicker">重新选择歌曲</ElButton>
+          </div>
+        </section>
+        <section class="start-section">
+          <div class="start-section-heading"><h2 id="classification-dimensions-title">分类内容</h2></div>
+          <div class="dimension-options" role="group" aria-labelledby="classification-dimensions-title">
+            <ElCheckbox v-for="dim in aiDimensions" :key="dim" :model-value="dimensions.includes(dim)" :disabled="busy" @change="v => toggleGeneration(dim, !!v)">{{ dimensionNames[dim] }}</ElCheckbox>
+          </div>
+          <p v-if="!dimensions.length" class="start-validation" role="alert">至少选择一项分类</p>
+        </section>
+        <section class="start-section save-policy">
+          <div class="start-section-heading auto-heading">
+            <h2 id="classification-save-title"><label for="classification-auto-save">生成后自动保存</label></h2>
+            <ElSwitch id="classification-auto-save" v-model="auto" class="auto-save-switch" :disabled="busy" aria-label="生成后自动保存" />
+          </div>
+          <div class="automatic-options" role="group" aria-labelledby="classification-save-title">
+            <ElCheckbox v-for="dim in aiDimensions" :key="dim" :model-value="automatic.includes(dim)" :disabled="busy || !auto || !dimensions.includes(dim)" @change="v => toggleList(automatic, dim, !!v)">{{ dimensionNames[dim] }}</ElCheckbox>
+          </div>
+          <p v-if="auto && !automatic.some(d => dimensions.includes(d))" class="start-validation" role="alert">请选择自动保存分类</p>
+        </section>
+        <footer class="start-footer">
+          <div class="model-summary" aria-label="当前分类模型">
+            <div class="model-line">
+              <span v-if="config.serviceName && config.serviceName !== config.model" class="model-service">{{ config.serviceName }}</span>
+              <span class="model-name">{{ settingsLoaded ? config.model || '尚未配置' : '检查中…' }}</span>
+            </div>
+            <span v-if="config.enabled" class="model-interval">间隔 {{ config.intervalSeconds }} 秒</span>
+          </div>
+          <ElButton v-if="!all && !selectedIds.length && config.enabled" type="primary" :disabled="busy" @click="openSongPicker">选择歌曲</ElButton>
+          <ElButton v-else type="primary" :loading="busy" :disabled="startDisabled" @click="preview">确认分类</ElButton>
+        </footer>
       </div>
-      <details class="classification-help"><summary>分类依据与注意事项</summary><p>用已有的歌名、歌手和专辑信息生成分类建议。AI 推断可能不准确。发行年代只依据已有年份，未知信息保留为空；不会修改原始媒体文件。</p></details>
     </template>
 
     <template v-else-if="tab === 'history'">
@@ -145,6 +185,9 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer) })
 
     <ElCard v-else shadow="never" class="vocabulary-card"><div class="section-heading"><div><h2>分类词表</h2><p>管理分类时可用的标签，AI 不会自行新增或发布标签。</p></div><div class="button-row"><ElButton @click="changed">刷新词表</ElButton><ElButton type="primary" @click="openTag()">新增标签</ElButton></div></div><div class="vocabulary-filters"><ElInput v-model="tagSearch" placeholder="搜索标签或别名" aria-label="搜索分类标签" clearable /><ElSelect v-model="tagDimension" aria-label="分类维度筛选"><ElOption label="全部分类内容" value="" /><ElOption v-for="(name, dim) in dimensionNames" :key="dim" :value="dim" :label="name" /></ElSelect></div><div class="vocabulary-quick-filters" role="group" aria-label="按分类内容快速筛选"><button type="button" :aria-pressed="tagDimension === ''" @click="tagDimension = ''">全部 <span>{{ tagCount('') }}</span></button><button v-for="(name, dim) in dimensionNames" :key="dim" type="button" :aria-pressed="tagDimension === dim" @click="tagDimension = dim">{{ name }} <span>{{ tagCount(dim) }}</span></button></div><div class="tag-list"><article v-for="label in visibleTags" :key="label.id" class="vocabulary-row"><button class="tag-cover-thumb" :aria-label="`设置${label.name}封面`" @click="coverTag = label"><img v-if="label.coverPath" :src="`${label.coverPath}?v=${label.coverVersion}`" :alt="`${label.name}封面`" /><span v-else>{{ label.name.slice(0, 2) }}</span></button><span class="tag-dimension">{{ dimensionNames[label.dimension] }}</span><div><strong>{{ label.name }}</strong><p>{{ label.aliases.length ? `别名：${label.aliases.join('、')}` : '没有别名' }}</p></div><ElTag v-if="!label.active" size="small" type="info">已停用</ElTag><ElButton text :disabled="!label.active" @click="router.push({ path: '/library/songs', query: { tagIds: label.id } })">{{ label.count }} 首歌曲</ElButton><ElButton text @click="coverTag = label">{{ label.coverPath ? '更换封面' : '上传封面' }}</ElButton><ElButton text type="primary" @click="openTag(label)">编辑</ElButton></article><div v-if="!visibleTags.length" class="filtered-empty">没有找到符合条件的标签，试试其他关键词。</div></div><p class="results-note">停用标签后不再参与正式筛选，已有分类和历史仍会保留。修改词表后，已有任务继续使用原快照。</p></ElCard>
 
+    </div>
+    </div>
+
     <ElDialog class="classification-dialog" :model-value="!!pendingPreview" title="确认这次分类" width="min(760px, calc(100vw - 32px))" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" @close="pendingPreview = null; pendingStart = null"><template v-if="pendingPreview"><div class="preview-summary"><div><strong>{{ pendingPreview.total }}</strong><span>首歌曲</span></div><div><strong>{{ pendingStart?.dimensions.length }}</strong><span>种分类内容</span></div><div><strong>{{ pendingStart?.autoDimensions.length ? '部分自动保存' : '先看建议' }}</strong><span>{{ pendingStart?.autoDimensions.length ? dimensionLabels(pendingStart.autoDimensions) : '确认后才会写入分类' }}</span></div></div><p class="dialog-copy">{{ dimensionLabels(pendingStart?.dimensions ?? []) }}</p><ElAlert title="将歌曲文字信息发送给已配置模型，AI 判断可能有误。不会发送媒体、路径或修改原文件。" type="info" :closable="false" show-icon /><h3 class="preview-list-heading">将整理的歌曲 <small>预览前 {{ pendingPreview.items.length }} 首，共 {{ pendingPreview.total }} 首</small></h3><div class="preview-songs"><div v-for="song in pendingPreview.items" :key="song.songId"><strong>{{ song.title || '未识别歌名' }}</strong><span>{{ song.artists.join('、') || '未识别歌手' }}</span></div></div><details class="task-details"><summary>查看专辑、年份等补充信息</summary><p>模型：{{ pendingPreview.model.model }}</p><ElTable :data="pendingPreview.items" max-height="250"><ElTableColumn prop="title" label="歌名" /><ElTableColumn prop="album" label="专辑" /><ElTableColumn prop="releaseDate" label="发行日期" /><ElTableColumn prop="language" label="语种" /><ElTableColumn prop="version" label="版本" /><ElTableColumn label="质量标签"><template #default="{ row }">{{ row.qualityTags.join('、') }}</template></ElTableColumn></ElTable></details></template><template #footer><ElButton :disabled="busy" @click="pendingPreview = null; pendingStart = null">返回修改</ElButton><ElButton type="primary" :loading="busy" @click="start">确认开始分类</ElButton></template></ElDialog>
     <ElDialog class="classification-dialog" :model-value="!!reviewing" title="确认歌曲的分类" width="min(760px, calc(100vw - 32px))" :show-close="!busy" :close-on-click-modal="false" :close-on-press-escape="!busy" @close="reviewing = null"><template v-if="reviewing"><div class="review-song"><span class="song-review-icon"><ElIcon><SongPlaceholderIcon /></ElIcon></span><div><h3>{{ reviewing.input.title || '未识别歌名' }}</h3><p>{{ reviewing.input.artists.join('、') || '未识别歌手' }}</p></div></div><p class="dialog-copy">勾选要保存的分类，未勾选的保持原样。已锁定的分类不能覆盖。</p><section v-for="dim in task?.dimensions" :key="dim" class="review-dimension"><ElCheckbox :model-value="reviewDims.includes(dim)" @change="v => toggleList(reviewDims, dim, !!v)" :disabled="busy || !reviewing.suggestion?.dimensions[dim]?.length || reviewing.current.dimensions[dim]?.locked">{{ dimensionNames[dim] }} <span v-if="reviewing.current.dimensions[dim]?.locked">· 已锁定</span></ElCheckbox><div class="review-comparison"><div><small>当前分类</small><p>{{ names(reviewing.current.dimensions[dim]?.tagIds) }}</p><span v-if="reviewing.current.dimensions[dim]">{{ originNames[reviewing.current.dimensions[dim]!.origin] }}</span></div><ElIcon><ArrowRight /></ElIcon><div><small>AI 建议</small><p>{{ names(reviewing.suggestion?.dimensions[dim]) }}</p></div></div><p class="review-reason">{{ reviewing.suggestion?.reasons[dim] || '暂无补充说明' }}</p></section><ElAlert v-if="error" :title="error" type="error" :closable="false" /><p class="results-note">保存后标记为人工确认。若替换已有人工确认分类，会再次提醒你确认。</p></template><template #footer><ElButton :disabled="busy" @click="reviewing = null">暂不保存</ElButton><ElButton type="primary" :disabled="!reviewDims.length" :loading="busy" @click="applyReview">保存选中的分类</ElButton></template></ElDialog>
     <ElDialog class="classification-dialog" :model-value="!!tagEdit" title="维护分类标签" width="min(520px, calc(100vw - 32px))" :show-close="!busy" @close="tagEdit = null"><ElForm v-if="tagEdit" label-position="top" class="tag-edit-form" @submit.prevent="saveTag"><label>分类内容<ElSelect v-model="tagEdit.dimension" :disabled="!!tagEdit.id || busy"><ElOption v-for="(name, dim) in dimensionNames" :key="dim" :value="dim" :label="name" /></ElSelect></label><label>标签名称<ElInput v-model="tagEdit.name" maxlength="80" :disabled="busy" /></label><label>别名<ElInput v-model="tagEdit.aliases" placeholder="多个别名用顿号分隔" :disabled="busy" /></label><ElCheckbox v-model="tagEdit.active" :disabled="busy">启用这个标签</ElCheckbox><ElAlert v-if="error" :title="error" type="error" :closable="false" /><ElButton type="primary" native-type="submit" :loading="busy">保存标签</ElButton></ElForm></ElDialog>
@@ -154,3 +197,4 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer) })
   </section>
 </template>
 <style scoped src="../styles/classification.css"></style>
+<style scoped src="../styles/start-form.css"></style>

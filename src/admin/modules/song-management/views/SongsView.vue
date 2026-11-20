@@ -15,7 +15,7 @@ import SongCard from '../components/SongCard.vue'
 import SongLibraryTable from '../components/SongLibraryTable.vue'
 import { songColumns, defaultSongColumns, indexTags, songTags, needsSongReview, identityReviewed, type SongColumn } from '../presentation'
 import SongDetailDrawer from '../components/SongDetailDrawer.vue'
-import { songs } from '../api/songs'
+import { songs, type SongSort } from '../api/songs'
 import type { MediaSong, MediaSource } from '../../media-library/types'
 
 import { embeddedMetadata } from '../../media-library/api/embeddedMetadata'
@@ -42,6 +42,7 @@ const tagsLoaded = ref(false)
 const visibleRange = computed(() => items.value.length ? `${(page.value - 1) * pageSize.value + 1}–${(page.value - 1) * pageSize.value + items.value.length}` : '0')
 const items = ref<MediaSong[]>([]), sources = ref<MediaSource[]>([]), total = ref(0), page = ref(1)
 const pageSize = ref(20)
+const sort = ref<SongSort>('SCANNED_DESC')
 const tags = ref<Tag[]>([]), tagIds = ref<string[]>([]), unclassified = ref(false), classificationError = ref(''), editingClasses = ref<string[]>([])
 const tagIndex = computed(() => indexTags(tags.value))
 async function loadTags() { try { const result = await classification.tags(); if (!active) return; tags.value = result; tagsLoaded.value = true; classificationError.value = '' } catch (e) { classificationError.value = e instanceof Error ? e.message : '分类词表读取失败' } }
@@ -91,7 +92,17 @@ async function load(preserveItems = false) {
   loading.value = true; error.value = ''
   if (!preserveItems) { items.value = []; selectedIds.value = [] }
   try {
-    const result = await songs.list({ sourceId: typeof route.query.sourceId === 'string' ? route.query.sourceId : '', q: typeof route.query.q === 'string' ? route.query.q : '', ...(typeof route.query.search === 'string' && route.query.search ? { search: route.query.search } : {}), status: typeof route.query.status === 'string' ? route.query.status : 'ALL', page: page.value - 1, ...(typeof route.query.tagIds === 'string' && route.query.tagIds ? { tagIds: route.query.tagIds.split(',') } : {}), ...(route.query.unclassified === 'true' ? { unclassified: true } : {}), ...(pageSize.value === 20 ? {} : { size: pageSize.value }) })
+    const result = await songs.list({
+      sourceId: typeof route.query.sourceId === 'string' ? route.query.sourceId : '',
+      q: typeof route.query.q === 'string' ? route.query.q : '',
+      ...(typeof route.query.search === 'string' && route.query.search ? { search: route.query.search } : {}),
+      status: typeof route.query.status === 'string' ? route.query.status : 'ALL',
+      page: page.value - 1,
+      ...(typeof route.query.tagIds === 'string' && route.query.tagIds ? { tagIds: route.query.tagIds.split(',') } : {}),
+      ...(route.query.unclassified === 'true' ? { unclassified: true } : {}),
+      ...(route.query.sort === 'UPDATED_DESC' ? { sort: 'UPDATED_DESC' as const } : {}),
+      ...(pageSize.value === 20 ? {} : { size: pageSize.value }),
+    })
     if (!active || token !== generation) return
     items.value = result.items; total.value = result.totalElements; loaded.value = true
     if (preserveItems) selectedIds.value = selectedIds.value.filter(id => result.items.some(song => song.id === id))
@@ -116,6 +127,7 @@ async function loadSources() {
 }
 async function apply(nextPage = 1) {
   const query: Record<string, string> = {}
+  if (sort.value !== 'SCANNED_DESC') query.sort = sort.value
   if (sourceId.value) query.sourceId = sourceId.value
   if (keyword.value.trim()) query[searchMode.value === 'path' ? 'q' : 'search'] = keyword.value.trim()
   if (status.value !== 'ALL' || tagIds.value.length > 0 || unclassified.value) query.status = status.value
@@ -141,9 +153,10 @@ async function reset() {
 watch([
   () => route.query.tagIds, () => route.query.unclassified, () => route.query.sourceId,
   () => route.query.q, () => route.query.search, () => route.query.status,
-  () => route.query.size, () => route.query.page,
+  () => route.query.size, () => route.query.page, () => route.query.sort,
 ], () => {
   const query = route.query
+  sort.value = query.sort === 'UPDATED_DESC' ? 'UPDATED_DESC' : 'SCANNED_DESC'
   tagIds.value = typeof query.tagIds === 'string' ? query.tagIds.split(',').filter(Boolean) : []
   unclassified.value = query.unclassified === 'true'
   sourceId.value = typeof query.sourceId === 'string' ? query.sourceId : ''
@@ -220,6 +233,7 @@ onBeforeUnmount(() => { active = false; generation++ })
         <div v-if="loaded && items.length && !loading" id="song-page-summary" class="page-summary" :class="{ expanded: mobileSummaryOpen }" aria-label="当前页歌曲统计"><span>仅本页</span><span><b>{{ reviewCount }}</b> 待复核</span><span><b>{{ matchedCount }}</b> 文件名完整</span><span v-if="reviewedCount"><b>{{ reviewedCount }}</b> 已复核</span><span v-if="tagsLoaded"><b>{{ unclassifiedCount }}</b> 未分类</span></div>
       </div>
       <div class="toolbar-right">
+        <select v-model="sort" class="song-sort" aria-label="歌曲排序" :disabled="loading" @change="apply()"><option value="SCANNED_DESC">最近扫描</option><option value="UPDATED_DESC">最新更新</option></select>
         <label class="page-size-selector top-page-size">每页<select v-model.number="pageSize" aria-label="每页歌曲数" :disabled="loading" @change="changeSize"><option :value="20">20</option><option :value="50">50</option><option :value="100">100</option></select>首</label>
         <div class="view-switch" role="group" aria-label="歌曲显示方式"><button type="button" :aria-pressed="view === 'covers'" aria-label="封面浏览" @click="view = 'covers'"><Grid /></button><button type="button" :aria-pressed="view === 'list'" aria-label="列表整理" @click="view = 'list'"><List /></button></div>
         <label v-if="view === 'list'" class="density-control"><input v-model="compact" type="checkbox">紧凑显示</label>
@@ -451,6 +465,12 @@ onBeforeUnmount(() => { active = false; generation++ })
   height: 40px;
   padding: 0 24px 0 8px;
   font-size: 12px
+}
+
+.song-sort {
+  height: 40px;
+  padding: 0 28px 0 12px;
+  font-size: 12px;
 }
 
 .density-control {
@@ -793,6 +813,7 @@ onBeforeUnmount(() => { active = false; generation++ })
   .songs-workspace, .filters-card { padding: 16px; }
 }
 @media(max-width: 650px) {
+  .song-sort { height: 44px; padding-left: 10px; padding-right: 24px; }
   .page-size-selector select { height: 44px; }
   .view-switch button { width: 44px; height: 44px; }
 }

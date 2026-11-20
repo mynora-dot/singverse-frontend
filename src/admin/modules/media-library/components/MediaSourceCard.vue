@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { ElButton, ElCard, ElDropdown, ElDropdownItem, ElDropdownMenu, ElIcon, ElTag } from 'element-plus'
-import { ArrowRight, Clock, Delete, Edit, FolderOpened, Loading, MoreFilled, RefreshRight, Share, Warning } from '@element-plus/icons-vue'
+import { ArrowRight, Clock, Delete, Edit, FolderOpened, Loading, MoreFilled, RefreshRight, Warning } from '@element-plus/icons-vue'
 import StatusBadge from '../../../shared/ui/StatusBadge.vue'
 import type { EmbeddedSummary } from '../api/embeddedMetadata'
 import type { MediaSource, ScanTask } from '../types'
@@ -125,12 +125,11 @@ const scanErrors = computed(() => [...new Set([props.ingest?.error, props.task?.
       <p class="source-schedule"><ElIcon aria-hidden="true"><Clock /></ElIcon><span>{{ source.scanEnabled ? '自动扫描已开启' : '自动扫描未开启' }}<span v-if="nextScan" class="next-scan">下次：{{ nextScan }}</span></span></p>
       <div class="source-actions">
         <ElButton type="primary" @click="$emit('songs')">查看歌曲</ElButton>
-        <ElButton @click="$emit('metadata')">完善信息</ElButton>
+        <ElButton @click="$emit('metadata')">分享资料</ElButton>
         <ElDropdown trigger="click" placement="top-end" :popper-options="menuPopperOptions" :teleported="true" :show-arrow="false" popper-class="source-actions-dropdown">
           <ElButton :icon="MoreFilled" :aria-label="`${source.name}的更多操作`" title="更多操作" />
           <template #dropdown>
             <ElDropdownMenu>
-              <ElDropdownItem :icon="Share" @click="$emit('metadata')">分享资料</ElDropdownItem>
               <ElDropdownItem :icon="RefreshRight" :disabled="scanDisabled || activeIngest || activeScan" @click="$emit('scan')">扫描歌曲</ElDropdownItem>
               <ElDropdownItem :icon="Edit" @click="$emit('edit')">编辑</ElDropdownItem>
               <ElDropdownItem class="source-remove-action" :icon="Delete" divided @click="$emit('remove')">移除</ElDropdownItem>

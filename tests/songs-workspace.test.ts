@@ -30,7 +30,8 @@ describe('歌曲透镜深链判定', () => {
   it('显式透镜原样放行', () => { expect(resolveSongsLens(to({ lens: 'songs' }))).toBe(true); expect(resolveSongsLens(to({ lens: 'formal' }))).toBe(true) })
   it('旧正式深链补 lens=formal 并保留参数与 hash', () => { expect(resolveSongsLens(to({ search: '周杰伦', page: '2' }, '#x'))).toEqual({ path: '/library/songs', query: { search: '周杰伦', page: '2', lens: 'formal' }, hash: '#x' }) })
   it('仅 sourceId 也视为正式深链', () => { expect(resolveSongsLens(to({ sourceId: 's1' }))).toEqual({ path: '/library/songs', query: { sourceId: 's1', lens: 'formal' }, hash: '' }) })
-  it('文件专属参数走歌曲透镜', () => { for (const key of ['q', 'status', 'tagIds', 'unclassified', 'size', 'detailSongId', 'reviewSongId']) expect(resolveSongsLens(to({ [key]: 'x' }))).toBe(true) })
+  it('文件专属参数走歌曲透镜', () => { for (const key of ['q', 'status', 'tagIds', 'unclassified', 'size', 'sort', 'detailSongId', 'reviewSongId']) expect(resolveSongsLens(to({ [key]: 'x' }))).toBe(true) })
+  it('排序深链保留歌曲搜索和翻页语义', () => { expect(resolveSongsLens(to({ sort: 'UPDATED_DESC', sourceId: 's1', search: '歌名', page: '2' }))).toBe(true) })
   it('正式参数与文件参数共存时优先歌曲透镜', () => { expect(resolveSongsLens(to({ search: 'a', detailSongId: 'b' }))).toBe(true) })
 })
 

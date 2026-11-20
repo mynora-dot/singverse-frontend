@@ -1,0 +1,122 @@
+/* 沿用相邻「原唱与伴奏」页的全宽玻璃工作区、页签与组件规格。 */
+.classification-header :deep(.sv-page-header-actions) { gap: 8px; }
+.model-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 8px;
+  border-radius: 8px;
+  color: var(--sv-text-secondary);
+  font-size: 13px;
+  text-decoration: none;
+}
+.model-settings:hover { background: var(--sv-surface-3); color: var(--sv-text-primary); }
+.model-settings:focus-visible { outline: 2px solid var(--sv-accent-primary); outline-offset: 2px; }
+.classification-workbench { min-width: 0; }
+.classification-tabs {
+  display: flex;
+  gap: 16px;
+  padding: 0 24px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--sv-border-subtle);
+}
+.classification-tabs button {
+  flex-shrink: 0;
+  min-height: 54px;
+  padding: 0 4px;
+  margin-bottom: -1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--sv-text-secondary);
+  font: 400 14px var(--sv-font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.classification-tabs button:hover { color: var(--sv-text-primary); }
+.classification-tabs button[aria-current] {
+  border-bottom-color: var(--sv-accent-primary);
+  color: var(--sv-accent-primary);
+  font-weight: 600;
+}
+.classification-panel { display: grid; gap: 16px; min-width: 0; padding: 20px 24px; }
+.start-card { min-width: 0; }
+.start-section {
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 24px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--sv-border-subtle);
+}
+.start-section:first-child { padding-top: 0; }
+.start-section-heading { display: flex; align-items: center; gap: 12px; min-height: 40px; }
+.start-section-heading h2 { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.5; }
+.scope-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; }
+.scope-status { color: var(--sv-text-secondary); font-size: 13px; }
+.scope-options { display: flex; gap: 8px; }
+.scope-options button {
+  min-height: 40px;
+  padding: 8px 20px;
+  border: 1px solid var(--sv-border-default);
+  border-radius: 8px;
+  background: var(--sv-surface-2);
+  color: var(--sv-text-secondary);
+  font: 400 14px var(--sv-font-sans);
+  cursor: pointer;
+}
+.scope-options button[aria-pressed='true'] {
+  border-color: var(--sv-accent-primary);
+  background: var(--sv-accent-soft);
+  color: var(--sv-accent-primary);
+}
+.scope-options button:disabled { cursor: not-allowed; }
+.scope-options button:not(:disabled):hover { border-color: var(--sv-accent-primary); color: var(--sv-accent-primary); }
+.dimension-options,
+.automatic-options {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(80px, 110px));
+  align-items: center;
+  gap: 0 12px;
+  min-width: 0;
+}
+.start-card .el-checkbox { min-width: 0; min-height: 40px; height: auto; margin: 0; }
+.auto-heading { justify-content: space-between; }
+.auto-heading label { cursor: pointer; }
+.auto-save-switch { flex: none; min-height: 40px; }
+.start-validation { grid-column: 2; margin: 0; color: var(--sv-semantic-danger); font-size: 14px; line-height: 1.5; }
+.start-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding-top: 20px; }
+.model-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
+.model-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.model-service { flex: none; max-width: 50%; padding: 2px 7px; border-radius: 4px; background: var(--sv-surface-3); color: var(--sv-text-secondary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.model-name { min-width: 0; color: var(--sv-text-secondary); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.model-interval { color: var(--sv-text-tertiary); font-size: 12px; }
+.start-footer .el-button { flex: none; min-width: 104px; }
+.setup-banner { padding: 12px 16px; border-radius: 8px; background: var(--sv-accent-soft); color: var(--sv-text-secondary); font-size: 14px; }
+
+@media (max-width: 1000px) {
+  .start-section { grid-template-columns: 164px minmax(0, 1fr); gap: 8px 20px; }
+  .dimension-options,
+  .automatic-options { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 12px; }
+}
+@media (max-width: 768px) {
+  .model-settings { min-height: 44px; }
+  .classification-header :deep(.sv-page-header-actions) { gap: 0; }
+  .classification-tabs { padding: 0 16px; }
+  .classification-tabs button { min-height: 48px; }
+  .classification-panel { padding: 16px; }
+  .start-section { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 12px 0; }
+  .start-section-heading { min-height: 24px; }
+  .scope-controls { gap: 8px 12px; }
+  .scope-options { width: 100%; }
+  .scope-options button { flex: 1; min-width: 0; min-height: 44px; padding: 8px 12px; }
+  .dimension-options,
+  .automatic-options { grid-template-columns: 1fr 1.35fr 1fr; gap: 0 8px; }
+  .start-card .el-checkbox { min-height: 44px; }
+  .auto-heading { min-height: 44px; }
+  .auto-save-switch { min-height: 44px; }
+  .start-validation { grid-column: 1; }
+  .start-footer { flex-wrap: nowrap; gap: 12px; padding-top: 16px; }
+  .model-summary { display: grid; gap: 4px; }
+}

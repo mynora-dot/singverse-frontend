@@ -1,6 +1,6 @@
 import type { RouteLocationNormalized, RouteRecordRaw } from 'vue-router'
 
-const fileOnlyParams = ['q', 'status', 'tagIds', 'unclassified', 'size', 'detailSongId', 'reviewSongId']
+const fileOnlyParams = ['q', 'status', 'tagIds', 'unclassified', 'size', 'sort', 'detailSongId', 'reviewSongId']
 
 /** 旧正式资料深链仅带 search/sourceId/page，补 lens=formal 保留语义；文件专属参数与空查询默认歌曲透镜。 */
 export function resolveSongsLens(to: RouteLocationNormalized) {

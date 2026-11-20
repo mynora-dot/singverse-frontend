@@ -62,16 +62,20 @@ it('折叠扫描明细时仍直接显示失败原因，避免重复显示同一�
   expect(wrapper.get('.scan-error').element.closest('details')).toBeNull()
 })
 
-it('更多菜单挂载在卡片外，操作后关闭并回传正确事件', async () => {
+it('分享资料直接显示，更多菜单移除重复入口并回传正确事件', async () => {
   render()
+  const actions = wrapper.get('.source-actions')
+  expect(actions.findAll('button').map(button => button.text())).toEqual(['查看歌曲', '分享资料', ''])
+  await actions.findAll('button')[1]!.trigger('click')
+  expect(wrapper.emitted('metadata')).toHaveLength(1)
   await wrapper.get('button[aria-label="WebDAV 歌曲的更多操作"]').trigger('click')
   await flushPromises()
   const menu = document.body.querySelector('[role="menu"]')!
   expect(menu).not.toBeNull()
   expect(menu.closest('.source-card')).toBeNull()
   const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')]
-  expect(items.map(item => item.textContent?.trim())).toEqual(['分享资料', '扫描歌曲', '编辑', '移除'])
-  items[2]!.click()
+  expect(items.map(item => item.textContent?.trim())).toEqual(['扫描歌曲', '编辑', '移除'])
+  items[1]!.click()
   await flushPromises()
   expect(wrapper.emitted('edit')).toHaveLength(1)
   expect(wrapper.get('button[aria-label="WebDAV 歌曲的更多操作"]').attributes('aria-expanded')).toBe('false')

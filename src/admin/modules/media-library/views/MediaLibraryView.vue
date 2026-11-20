@@ -410,7 +410,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
           <ElFormItem :label="editing?.passwordConfigured ? '密码 / 应用密码（留空保留）' : '密码 / 应用密码（可选）'"><ElInput v-model="draft.password" type="password" show-password autocomplete="new-password" maxlength="1024" :disabled="saving || clearPassword" /></ElFormItem>
           <ElCheckbox v-if="editing?.passwordConfigured" v-model="clearPassword" :disabled="saving" @change="draft.password = ''">清除已保存密码</ElCheckbox>
           <p class="profile-help">凭据仅加密保存在服务端，不会回显。建议使用 HTTPS。OpenList 地址填写 /dav/ 加挂载目录，账号需开启 WebDAV 读取权限。</p>
-          <p v-if="editing" class="profile-help">修改地址或账号时需重新填写密码或明确清除。迁移媒体目录并保留已整理资料，请从“完善信息 → 高级选项 → 重新绑定自己的媒体目录”操作。</p>
+          <p v-if="editing" class="profile-help">修改地址或账号时需重新填写密码或明确清除。迁移媒体目录并保留已整理资料，请从“分享资料 → 高级选项 → 重新绑定自己的媒体目录”操作。</p>
         </template>
         <ElFormItem label="名称（可选）" for="source-name" class="source-name"><ElInput id="source-name" v-model="draft.name" :placeholder="draft.type === 'LOCAL' ? '留空使用文件夹名称' : '留空使用 WebDAV 歌曲'" maxlength="100" :disabled="saving" /></ElFormItem>
         </section>

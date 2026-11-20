@@ -15,8 +15,10 @@ function song(id = 'song-one'): MediaSong {
 }
 let wrapper: ReturnType<typeof mount>
 beforeEach(() => {
-  vi.clearAllMocks()
-  vi.mocked(authRequest).mockResolvedValue({ state: 'UNKNOWN', revision: 0, streams: [{ id: 'stream:1' }, { id: 'stream:2' }], jobs: [] })
+  vi.resetAllMocks()
+  vi.mocked(authRequest).mockImplementation(async path => path.endsWith('/text-tracks')
+    ? { songId: 'song-one', items: [], warnings: [] }
+    : { state: 'UNKNOWN', revision: 0, streams: [{ id: 'stream:1' }, { id: 'stream:2' }], jobs: [] })
   vi.mocked(embeddedMetadata.detail).mockResolvedValue({ state: 'PARTIAL', result: { state: 'PARTIAL', cover: 'embedded-cover', technical: { container: 'flac', duration: 352 }, lyrics: { text: '[ti:曲名]\n[00:01.00]第一句歌词\n[00:02.50]第二句歌词', timing: 'lrc' } } })
 })
 afterEach(() => wrapper?.unmount())
@@ -68,4 +70,78 @@ it('原唱与伴奏显示真实音轨状态并直达处理入口', async () => {
   vi.mocked(authRequest).mockRejectedValueOnce(new Error('offline'))
   await wrapper.setProps({ song: song('two') }); await flushPromises()
   expect(wrapper.get('.audio-summary').text()).toContain('暂时无法读取音轨信息')
+})
+
+it.each([
+  { format: 'text', text: '下载的第一句\n下载的第二句', synced: false },
+  { format: 'lrc', text: '[ti:测试歌曲]\n[00:01.00]下载的第一句\n[00:02.50]下载的第二句', synced: true },
+])('没有内嵌歌词时读取下载目录的 $format 歌词', async ({ format, text, synced }) => {
+  vi.mocked(embeddedMetadata.detail).mockResolvedValue({ state: 'PENDING' })
+  vi.mocked(authRequest).mockImplementation(async path => path.endsWith('/text-tracks')
+    ? { songId: 'song-one', items: [{ id: 'lrc', format, text }], warnings: [] }
+    : { state: 'UNKNOWN', revision: 0, streams: [], jobs: [] })
+  wrapper = mount(SongDetailDrawer, { props: { song: song(), visible: true }, global: { stubs: { teleport: true, transition: false } } }); await flushPromises()
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/media-songs/song-one/text-tracks')
+  expect(wrapper.get('.lyrics-content').text()).toBe('下载的第一句\n下载的第二句')
+  expect(wrapper.find('.lyrics-empty').exists()).toBe(false)
+  expect(wrapper.find('.lyrics-card .section-caption').exists()).toBe(synced)
+})
+
+it('详情保留已整理和人工清空的歌词，不回填文件内容', async () => {
+  const row = song(); row.metadata!.variant = { lyrics: { text: '人工整理的歌词', timing: 'none' } }
+  wrapper = mount(SongDetailDrawer, { props: { song: row, visible: true }, global: { stubs: { teleport: true, transition: false } } }); await flushPromises()
+  expect(wrapper.get('.lyrics-content').text()).toBe('人工整理的歌词')
+  expect(vi.mocked(authRequest).mock.calls.some(([path]) => path.endsWith('/text-tracks'))).toBe(false)
+  const cleared = song('cleared'); cleared.metadata!.variant = { lyrics: null }
+  await wrapper.setProps({ song: cleared }); await flushPromises()
+  expect(wrapper.find('.lyrics-content').exists()).toBe(false)
+  expect(wrapper.get('.lyrics-empty').text()).toBe('暂无可显示的歌词')
+})
+
+it('已整理的歌词附件读取失败时保留错误，不使用其他版本歌词', async () => {
+  const row = song(); row.metadata!.variant = { lyricsAsset: { assetId: 'saved-lyrics' } }
+  const request = vi.mocked(authRequest).getMockImplementation()!
+  vi.mocked(authRequest).mockImplementation(async (...args) => {
+    if (args[0].endsWith('/lyrics')) throw new Error('offline')
+    return request(...args)
+  })
+  wrapper = mount(SongDetailDrawer, { props: { song: row, visible: true }, global: { stubs: { teleport: true, transition: false } } }); await flushPromises()
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/metadata/entities/song-one/lyrics')
+  expect(wrapper.find('.lyrics-content').exists()).toBe(false)
+  expect(wrapper.get('.lyrics-empty').text()).toBe('本机歌词资源暂时无法读取')
+  expect(vi.mocked(authRequest).mock.calls.some(([path]) => path.endsWith('/text-tracks'))).toBe(false)
+})
+
+it('切歌或关闭后迟到的文件歌词和错误不会覆盖当前内容', async () => {
+  let finishOld!: (value: unknown) => void, rejectClosed!: (reason: Error) => void
+  const request = vi.mocked(authRequest).getMockImplementation()!
+  vi.mocked(authRequest).mockImplementation(async (...args) => {
+    if (args[0] === '/api/v1/media-songs/old/text-tracks') return new Promise(resolve => { finishOld = resolve })
+    if (args[0] === '/api/v1/media-songs/new/text-tracks') return { songId: 'new', items: [{ id: 'lrc', format: 'text', text: '当前歌曲歌词' }], warnings: [] }
+    if (args[0] === '/api/v1/media-songs/closed/text-tracks') return new Promise((_, reject) => { rejectClosed = reject })
+    return request(...args)
+  })
+  wrapper = mount(SongDetailDrawer, { props: { song: song('old'), visible: true }, global: { stubs: { teleport: true, transition: false } } }); await flushPromises()
+  await wrapper.setProps({ song: song('new') }); await flushPromises()
+  finishOld({ songId: 'old', items: [{ id: 'lrc', format: 'text', text: '上一首歌词' }], warnings: [] }); await flushPromises()
+  expect(wrapper.get('.lyrics-content').text()).toBe('当前歌曲歌词')
+  await wrapper.setProps({ song: song('closed') }); await flushPromises()
+  await wrapper.setProps({ visible: false }); await flushPromises()
+  rejectClosed(new Error('offline')); await flushPromises()
+  await wrapper.setProps({ song: song('new'), visible: true }); await flushPromises()
+  expect(wrapper.get('.lyrics-content').text()).toBe('当前歌曲歌词')
+  expect(wrapper.text()).not.toContain('本机歌词资源暂时无法读取')
+})
+
+it('歌词读取失败有明确状态，仍可显示已有内嵌歌词', async () => {
+  const request = vi.mocked(authRequest).getMockImplementation()!
+  vi.mocked(authRequest).mockImplementation(async (...args) => {
+    if (args[0].endsWith('/text-tracks')) throw new Error('offline')
+    return request(...args)
+  })
+  vi.mocked(embeddedMetadata.detail).mockResolvedValueOnce({ state: 'PENDING' })
+  wrapper = mount(SongDetailDrawer, { props: { song: song(), visible: true }, global: { stubs: { teleport: true, transition: false } } }); await flushPromises()
+  expect(wrapper.get('.lyrics-empty').text()).toBe('本机歌词资源暂时无法读取')
+  await wrapper.setProps({ song: song('with-embedded') }); await flushPromises()
+  expect(wrapper.get('.lyrics-content').text()).toContain('第一句歌词')
 })

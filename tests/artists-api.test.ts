@@ -3,6 +3,10 @@ import { authRequest } from '../src/admin/core/auth/api'
 import { artists } from '../src/admin/modules/artists/api/artists'
 vi.mock('../src/admin/core/auth/api',()=>({authRequest:vi.fn(),ApiError:class extends Error{}}))
 beforeEach(()=>vi.mocked(authRequest).mockReset())
+it('歌手最新更新排序与筛选和分页一起提交',async()=>{
+  await artists.list('歌手',1,20,'FEMALE',null,'MISSING','UPDATED_DESC')
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/artists?q=%E6%AD%8C%E6%89%8B&page=1&size=20&type=FEMALE&artwork=MISSING&sort=UPDATED_DESC')
+})
 it('歌手类型与封面状态在分页前由服务端筛选',async()=>{
   await artists.list('周 / jay',2,20,'MALE',30,'MISSING')
   expect(authRequest).toHaveBeenCalledWith('/api/v1/artists?q=%E5%91%A8%20%2F%20jay&page=2&size=20&type=MALE&countLessThan=30&artwork=MISSING')
