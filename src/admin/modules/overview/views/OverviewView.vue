@@ -44,21 +44,21 @@ function ok(key: keyof AdminOverview) {
 }
 const fmt = (n: number) => n.toLocaleString('zh-CN')
 
-type Todo = { key: string; level: 'danger' | 'warn' | 'info'; title: string; detail: string; action: string; to: string }
+type Todo = { key: string; level: 'danger' | 'warn' | 'info'; title: string; detail?: string; action: string; to: string }
 const todos = computed<Todo[]>(() => {
   const list: Todo[] = []
   const d = ov.value
-  if (auth.account?.defaultPassword) list.push({ key: 'password', level: 'danger', title: '仍在使用默认密码', detail: '任何知道默认密码的人都能登录管理中心。', action: '修改密码', to: '/system/parameters' })
+  if (auth.account?.defaultPassword) list.push({ key: 'password', level: 'danger', title: '仍在使用默认密码', action: '修改密码', to: '/system/parameters' })
   const src = ok('sources') ? d!.sources! : null
-  if (src && src.total === 0) list.push({ key: 'no-source', level: 'info', title: '还没有添加来源', detail: '添加本地目录或 WebDAV 并扫描后，歌曲才会出现在曲库中。', action: '添加来源', to: '/library/media?add=LOCAL' })
+  if (src && src.total === 0) list.push({ key: 'no-source', level: 'info', title: '还没有添加来源', action: '添加来源', to: '/library/media?add=LOCAL' })
   if (src && src.failed.length > 0) list.push({ key: 'scan', level: 'warn', title: `${src.failed.length} 个媒体库最近扫描失败`, detail: src.failed.map(item => item.name).join('、'), action: '查看媒体库', to: '/library/media' })
   const lib = ok('library') ? d!.library! : null
-  if (lib && lib.reviewSongs > 0) list.push({ key: 'review', level: 'info', title: `${fmt(lib.reviewSongs)} 首文件名识别不完整`, detail: '查看原始文件名识别结果；已确认的歌曲资料可正常搜索，无需重复核对。', action: '查看识别结果', to: '/library/songs?status=REVIEW' })
+  if (lib && lib.reviewSongs > 0) list.push({ key: 'review', level: 'info', title: `${fmt(lib.reviewSongs)} 首文件名识别不完整`, action: '查看识别结果', to: '/library/songs?status=REVIEW' })
   const rev = ok('review') ? d!.review! : null
-  if (rev?.metadataBatch && rev.metadataBatch.review > 0) list.push({ key: 'metadata', level: 'info', title: `${fmt(rev.metadataBatch.review)} 首平台匹配待审核`, detail: '核对歌名、歌手与封面后确认应用，未确认前不会改动曲库。', action: '去审核', to: `/library/songs/metadata?batch=${encodeURIComponent(rev.metadataBatch.id)}&status=REVIEW` })
-  if (rev && rev.classification.reviewItems > 0) list.push({ key: 'classification', level: 'info', title: `${fmt(rev.classification.reviewItems)} 首分类建议待确认`, detail: '查看 AI 给出的分类与标签，确认后才会写入歌曲。', action: '去确认', to: rev.classification.latestTaskId ? `/library/classification?task=${rev.classification.latestTaskId}` : '/library/classification' })
-  if (rev && rev.missingFeedbackPending > 0) list.push({ key: 'missing', level: 'info', title: `${fmt(rev.missingFeedbackPending)} 条缺歌心愿待处理`, detail: '亲友在点歌页留下的缺歌反馈，可据此补充曲库。', action: '查看心愿', to: '/library/missing-feedback' })
-  if (auth.account && !auth.account.mfaEnabled) list.push({ key: 'mfa', level: 'info', title: '未开启二次验证', detail: '开启后登录需额外输入验证器中的动态码。', action: '去开启', to: '/system/parameters' })
+  if (rev?.metadataBatch && rev.metadataBatch.review > 0) list.push({ key: 'metadata', level: 'info', title: `${fmt(rev.metadataBatch.review)} 首平台匹配待审核`, action: '去审核', to: `/library/songs/metadata?batch=${encodeURIComponent(rev.metadataBatch.id)}&status=REVIEW` })
+  if (rev && rev.classification.reviewItems > 0) list.push({ key: 'classification', level: 'info', title: `${fmt(rev.classification.reviewItems)} 首分类建议待确认`, action: '去确认', to: rev.classification.latestTaskId ? `/library/classification?task=${rev.classification.latestTaskId}` : '/library/classification' })
+  if (rev && rev.missingFeedbackPending > 0) list.push({ key: 'missing', level: 'info', title: `${fmt(rev.missingFeedbackPending)} 条缺歌心愿待处理`, action: '查看心愿', to: '/library/missing-feedback' })
+  if (auth.account && !auth.account.mfaEnabled) list.push({ key: 'mfa', level: 'info', title: '未开启二次验证', action: '去开启', to: '/system/parameters' })
   return list
 })
 const todoLoading = computed(() => data.state === 'loading')
@@ -95,7 +95,7 @@ function songLink(id: string) {
 <template>
   <section class="overview-page">
     <header class="overview-heading">
-      <div><h1>曲库概览</h1><p>歌曲、待办与客厅，一处打理。</p></div>
+      <h1>曲库概览</h1>
       <ElButton class="overview-refresh" text :icon="RefreshRight" :loading="todoLoading" aria-label="刷新曲库概览" @click="refresh">刷新</ElButton>
     </header>
     <ElAlert v-if="data.state === 'error'" class="overview-error" type="warning" :closable="false" show-icon :title="data.value ? '曲库概览更新失败，正在显示上次读取的结果' : '曲库概览暂时无法读取'">
@@ -117,8 +117,8 @@ function songLink(id: string) {
       <div class="overview-summary">
         <p class="library-summary">
           <strong v-if="library">{{ fmt(library.formalSongs) }} 首歌曲</strong>
-          <span v-else-if="todoLoading" role="status">正在打开你的家庭曲库…</span>
-          <span v-else>歌曲数量读取失败，请稍后重试。</span>
+          <span v-else-if="todoLoading" role="status">正在读取曲库…</span>
+          <span v-else>歌曲数量读取失败</span>
         </p>
         <p v-if="library" class="library-details">{{ fmt(library.totalSongs) }} 个文件，{{ fmt(library.formalVariants) }} 个媒体版本</p>
         <RouterLink v-if="ok('sources')" class="source-summary" to="/library/media">{{ fmt(ov!.sources!.total) }} 个媒体来源<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink>
@@ -129,14 +129,14 @@ function songLink(id: string) {
       <div class="overview-main">
         <section v-if="primaryTodo || todoLoading || todoErrors" class="review-strip sv-glass" aria-labelledby="review-heading">
           <span class="review-mark" aria-hidden="true"><ElIcon><DocumentChecked /></ElIcon></span>
-          <div class="review-copy"><h2 id="review-heading">{{ reviewHeading }}</h2><p>{{ primaryTodo?.detail ?? (todoLoading ? '正在检查需要你确认的事情。' : '部分状态读取失败，可以重新读取后再查看。') }}</p></div>
+          <div class="review-copy"><h2 id="review-heading">{{ reviewHeading }}</h2><p v-if="primaryTodo?.detail">{{ primaryTodo.detail }}</p></div>
           <RouterLink v-if="primaryTodo" class="outline-link todo-action" :to="primaryTodo.to">{{ primaryTodo.action }}</RouterLink>
           <ElButton v-else-if="!todoLoading" @click="refresh">重新读取</ElButton>
         </section>
 
         <section v-if="secondaryTodos.length || (todoErrors && !todoLoading)" class="home-todos sv-glass" aria-labelledby="overview-todo-title">
           <div class="home-section-heading"><h2 id="overview-todo-title">待办事项</h2><span class="sv-count-pill">{{ secondaryTodos.length }}</span></div>
-          <ul v-if="secondaryTodos.length" class="todo-list"><li v-for="todo in secondaryTodos" :key="todo.key" class="todo-item"><span class="sv-status-dot" :class="todo.level" aria-hidden="true" /><div class="todo-copy"><strong>{{ todo.title }}</strong><p>{{ todo.detail }}</p></div><RouterLink :to="todo.to" class="todo-action">{{ todo.action }}<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink></li></ul>
+          <ul v-if="secondaryTodos.length" class="todo-list"><li v-for="todo in secondaryTodos" :key="todo.key" class="todo-item"><span class="sv-status-dot" :class="todo.level" aria-hidden="true" /><div class="todo-copy"><strong>{{ todo.title }}</strong><p v-if="todo.detail">{{ todo.detail }}</p></div><RouterLink :to="todo.to" class="todo-action">{{ todo.action }}<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink></li></ul>
           <p v-if="todoErrors && !todoLoading" class="todo-note" role="alert">有 {{ todoErrors }} 项状态读取失败，待办可能不完整。<ElButton link type="primary" @click="refresh">重新读取</ElButton></p>
         </section>
 
@@ -149,7 +149,7 @@ function songLink(id: string) {
               <SongCover :song="song" /><strong :title="songTitle(song)">{{ songTitle(song) }}</strong><span>{{ songArtists(song).join('、') || '歌手待补充' }}</span>
             </RouterLink>
           </div>
-          <EmptyState v-else title="从第一首喜欢的歌开始" description="连接本地文件夹或 WebDAV，扫描后歌曲就会出现在这里。" :icon="Headset"><template #action><RouterLink class="solid-link" to="/library/media?add=LOCAL">连接歌曲来源</RouterLink></template></EmptyState>
+          <EmptyState v-else title="暂无歌曲" :icon="Headset"><template #action><RouterLink class="solid-link" to="/library/media?add=LOCAL">连接歌曲来源</RouterLink></template></EmptyState>
         </section>
 
         <section v-if="homePlaylists?.length" class="playlist-section sv-glass" aria-labelledby="collection-title">
@@ -164,7 +164,7 @@ function songLink(id: string) {
           <div class="home-tasks" aria-label="进行中的后台任务" :aria-busy="tasks.state === 'loading'">
             <p v-if="tasks.state === 'loading' && !tasks.value" class="support-note" role="status">正在读取任务…</p>
             <p v-else-if="tasks.state === 'error'" class="support-note">暂时无法读取任务 <ElButton link @click="refreshTasks">重试</ElButton></p>
-            <p v-else-if="tasks.value?.length === 0" class="support-note">当前没有进行中的任务。</p>
+            <p v-else-if="tasks.value?.length === 0" class="support-note">暂无运行任务</p>
             <RouterLink v-for="task in tasks.value" :key="task.id" :to="'/system/tasks/' + encodeURIComponent(task.id)" class="home-task"><span class="sv-status-dot busy" aria-hidden="true" /><div><strong>{{ task.name }}</strong><small>{{ statusNames[task.status] || task.status }}，{{ progressText(task) }}</small></div><ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink>
           </div>
         </section>
@@ -177,7 +177,7 @@ function songLink(id: string) {
 
         <section class="family-invitation sv-glass" aria-labelledby="family-title">
           <ElIcon class="family-icon" aria-hidden="true"><Cellphone /></ElIcon>
-          <h2 id="family-title">准备好，客厅开唱。</h2><p>整理好的歌曲，和亲友一起分享。</p>
+          <h2 id="family-title">客厅</h2>
           <div class="family-actions"><a class="text-link" href="/party/" target="_blank" rel="noopener">打开亲友点歌<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></a><RouterLink class="text-link" to="/system/tv-settings">客厅设置</RouterLink></div>
         </section>
       </aside>
@@ -189,7 +189,6 @@ function songLink(id: string) {
 .overview-page { min-width: 0; }
 .overview-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .overview-heading h1 { font-size: 28px; font-weight: 600; }
-.overview-heading p { margin-top: 4px; color: var(--sv-text-secondary); font-size: 14px; }
 .overview-error { margin-bottom: 20px; }
 .overview-error :deep(.el-alert__description) { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .home-feature { padding: 24px; margin-bottom: 24px; }

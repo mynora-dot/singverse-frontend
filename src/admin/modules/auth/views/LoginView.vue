@@ -121,7 +121,6 @@ function returnToLogin(resetUsername?: string) {
   <PasswordRecoveryView v-if="recovering" ref="recoveryForm" :username="username" @back="returnToLogin()" @reset="returnToLogin" />
   <section v-else class="login-card" aria-labelledby="login-title">
     <h1 id="login-title">{{ stage ? '二次验证' : '登录管理中心' }}</h1>
-    <p id="login-description" class="login-description">{{ stage ? '输入验证器动态码，或使用一枚恢复码。' : '使用管理员账号管理家庭曲库。' }}</p>
     <div v-if="error" class="login-error" role="alert"><Warning aria-hidden="true" /><p>{{ error }}</p></div>
     <p v-if="notice" class="login-notice" role="status">{{ notice }}</p>
     <form class="login-form" :aria-busy="busy" @submit.prevent="submit">
@@ -133,18 +132,17 @@ function returnToLogin(resetUsername?: string) {
         <div class="login-field">
           <label for="login-password">密码</label>
           <div class="login-password-wrap">
-            <input id="login-password" v-model="password" name="password" :type="passwordVisible ? 'text' : 'password'" :autocomplete="rememberPassword ? 'current-password' : 'off'" maxlength="256" placeholder="请输入密码" :disabled="busy" required>
+            <input id="login-password" v-model="password" name="password" :type="passwordVisible ? 'text' : 'password'" :autocomplete="rememberPassword ? 'current-password' : 'off'" maxlength="256" :disabled="busy" required>
             <button class="login-password-toggle" type="button" :aria-label="passwordVisible ? '隐藏密码' : '显示密码'" :aria-pressed="passwordVisible" aria-controls="login-password" :disabled="busy" @click="passwordVisible = !passwordVisible">{{ passwordVisible ? '隐藏' : '显示' }}</button>
           </div>
         </div>
         <div class="login-options">
           <div class="login-preferences">
             <label><input v-model="rememberPassword" type="checkbox" name="rememberPassword" :disabled="busy"><span>记住密码</span></label>
-            <label><input v-model="autoLogin" type="checkbox" name="autoLogin" :disabled="busy"><span>自动登录</span></label>
+            <label><input v-model="autoLogin" type="checkbox" name="autoLogin" :disabled="busy"><span>自动登录（30 天）</span></label>
           </div>
           <button class="login-inline-button" type="button" :disabled="busy" @click="showRecovery">忘记密码？</button>
         </div>
-        <p v-if="rememberPassword || autoLogin" class="login-preference-hint"><span v-if="rememberPassword">登录后，请在浏览器提示中确认保存密码。</span><span v-if="autoLogin">30 天内自动登录，退出登录后失效。</span></p>
       </template>
       <div v-else class="login-field">
         <label for="login-code">动态码 / 恢复码</label>

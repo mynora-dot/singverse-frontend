@@ -6,13 +6,13 @@ import type { RulePreview } from '../types'
 
 const props = defineProps<{ preview: RulePreview | null; stale: boolean; detailsOnly?: boolean; profileName?: string }>()
 const statuses: Record<string, string> = { DISABLED: '已停用', NO_MATCH: '未匹配', PARTIAL: '部分捕获', AMBIGUOUS: '存在歧义', MATCHED: '完整匹配' }
-const status = computed(() => !props.preview ? '试解析后，核对歌名和歌手' : props.stale ? '结果已过期，请重新试解析' : props.preview.selectedRule ? '已提取歌名和歌手，请核对' : '未提取到完整的歌名和歌手')
+const status = computed(() => !props.preview ? '尚未试解析' : props.stale ? '结果已过期，请重新试解析' : props.preview.selectedRule ? '已提取歌名和歌手' : '未提取到完整的歌名和歌手')
 const selectedIndex = computed(() => props.preview?.attempts.findIndex(a => a.id === props.preview?.selectedRule?.id) ?? -1)
 </script>
 
 <template>
   <div v-if="!detailsOnly" class="filename-result" :class="{ stale, failed: preview && !preview.selectedRule }" aria-live="polite">
-    <div class="result-summary"><p class="result-status"><ElIcon v-if="preview"><Clock v-if="stale" /><CircleCheck v-else-if="preview.selectedRule" /><Warning v-else /></ElIcon>{{ status }}</p><p v-if="preview?.selectedRule" class="result-meta">{{ stale ? '上次命中' : '命中' }}{{ selectedIndex >= 0 ? `第 ${selectedIndex + 1} 项` : '格式' }}：{{ preview.selectedRule.name }}</p><p v-else-if="preview" class="result-meta">仅尝试当前方案中的启用格式，不使用其他格式兜底。</p><p v-if="stale && preview" class="result-meta">上次文件名：{{ preview.result.originalFilename }}</p></div>
+    <div class="result-summary"><p class="result-status"><ElIcon v-if="preview"><Clock v-if="stale" /><CircleCheck v-else-if="preview.selectedRule" /><Warning v-else /></ElIcon>{{ status }}</p><p v-if="preview?.selectedRule" class="result-meta">{{ stale ? '上次命中' : '命中' }}{{ selectedIndex >= 0 ? `第 ${selectedIndex + 1} 项` : '格式' }}：{{ preview.selectedRule.name }}</p><p v-if="stale && preview" class="result-meta">上次文件名：{{ preview.result.originalFilename }}</p></div>
     <div class="result-field"><span>{{ stale ? '上次歌名' : '歌名' }}</span><strong data-testid="parsed-title">{{ preview?.result.title || (preview ? '未确定' : '—') }}</strong></div>
     <div class="result-field"><span>{{ stale ? '上次歌手' : '歌手' }}</span><strong data-testid="parsed-artists">{{ preview?.result.artists.join('、') || (preview ? '未确定' : '—') }}</strong></div>
     <div v-if="$slots.actions" class="result-actions"><slot name="actions" /></div>
@@ -25,7 +25,7 @@ const selectedIndex = computed(() => props.preview?.attempts.findIndex(a => a.id
     <p v-if="!preview.attempts.length" class="diagnostic-context">方案中没有可尝试的格式。</p>
     <details class="raw-data"><summary>查看完整解析数据</summary><pre>{{ JSON.stringify(preview, null, 2) }}</pre></details>
   </div>
-  <p v-else class="diagnostic-context">试解析后可查看逐项匹配记录。</p>
+  <p v-else class="diagnostic-context">尚无匹配记录</p>
 </template>
 
 <style scoped>

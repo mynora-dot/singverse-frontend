@@ -35,8 +35,7 @@ async function refresh(deep = false) {
       <img v-if="!compact && detail.result?.cover" :src="`/api/v1/media-songs/${encodeURIComponent(songId!)}/embedded-metadata/cover`" alt="文件内嵌封面" loading="lazy">
       <component :is="compact ? 'div' : 'details'" v-if="detail.result?.technical"><summary v-if="!compact">音视频技术信息</summary><dl><dt>文件格式</dt><dd>{{ technical.container || '未取得' }}</dd><dt>时长</dt><dd>{{ duration }}</dd><template v-for="(stream, index) in technical.streams" :key="index"><dt>{{ stream.codec_type === 'audio' ? '音轨' : stream.codec_type === 'video' ? '画面' : '媒体流' }} {{ index + 1 }}</dt><dd>{{ stream.codec_name || '未知编码' }}<span v-if="stream.width"> · {{ stream.width }} × {{ stream.height }}</span><span v-if="stream.channels"> · {{ stream.channels }} 声道</span><span v-if="stream.sample_rate"> · {{ stream.sample_rate }} Hz</span></dd></template></dl></component>
       <details v-if="!compact && detail.result?.lyrics"><summary>内嵌歌词</summary><p>{{ detail.result.lyrics.timing === 'milliseconds' || detail.result.lyrics.timing === 'lrc' ? '同步歌词' : detail.result.lyrics.timing === 'mpeg-frames' ? '按音频帧同步' : '文本歌词' }}</p><pre>{{ detail.result.lyrics.text }}</pre></details>
-      <p v-if="detail.result?.fields && Object.values(detail.result.fields).includes('UNKNOWN')">部分信息尚未取得，可选择“深入读取文件信息”扩大读取范围；普通重扫不会重复读取。</p>
-      <p>从媒体文件中读取歌名、歌手、封面等资料并更新曲库，不修改原文件；不搜索音乐平台。</p><div class="actions"><ElButton :disabled="busy" @click="refresh()">重新读取文件信息</ElButton><ElButton :disabled="busy || detail.state === 'RUNNING'" @click="refresh(true)">深入读取文件信息</ElButton><ElButton :disabled="busy" @click="load">刷新状态</ElButton></div>
+      <div class="actions"><ElButton :disabled="busy" @click="refresh()">重新读取文件信息</ElButton><ElButton :disabled="busy || detail.state === 'RUNNING'" @click="refresh(true)">深入读取文件信息</ElButton><ElButton :disabled="busy" @click="load">刷新状态</ElButton></div>
     </template>
   </section>
 </template>

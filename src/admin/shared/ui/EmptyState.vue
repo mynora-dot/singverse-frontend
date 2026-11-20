@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
 import { ElIcon } from 'element-plus'
-/** 空态引导：唱片纹插画 + 标题 + 说明 + 下一步动作插槽。空曲库/无来源/无节点共用。 */
-defineProps<{ title: string; description?: string; icon?: Component }>()
+/** 空态保留对象状态和可执行的下一步。 */
+defineProps<{ title: string; icon?: Component }>()
 </script>
 
 <template>
   <div class="empty-state">
     <div class="empty-disc" aria-hidden="true"><span class="empty-disc-label"><ElIcon v-if="icon" :size="26"><component :is="icon" /></ElIcon></span></div>
     <h3 class="empty-title">{{ title }}</h3>
-    <p v-if="description || $slots.description" class="empty-description"><slot name="description">{{ description }}</slot></p>
     <div v-if="$slots.action" class="empty-action"><slot name="action" /></div>
   </div>
 </template>
@@ -49,14 +48,6 @@ defineProps<{ title: string; description?: string; icon?: Component }>()
 .empty-title {
   font: 600 17px/1.5 var(--sv-font-sans);
   color: var(--sv-text-primary);
-}
-
-.empty-description {
-  margin-top: 8px;
-  max-width: 460px;
-  font-size: 13px;
-  line-height: 1.8;
-  color: var(--sv-text-secondary);
 }
 
 .empty-action {

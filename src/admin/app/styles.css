@@ -145,7 +145,8 @@ pre {
 
 .sv-page-header-copy {
   display: flex;
-  flex: 1 0 auto;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -158,46 +159,6 @@ pre {
   overflow-wrap: anywhere;
 }
 
-.page-description {
-  margin: 0;
-  color: var(--sv-text-secondary);
-  font-size: 13px;
-  line-height: 1.8;
-}
-
-.el-popper.sv-page-help-popover {
-  max-width: calc(100vw - 32px);
-  padding: 16px;
-  overflow-wrap: anywhere;
-}
-
-.el-popper.sv-page-help-popover .task-guide {
-  grid-template-columns: 1fr;
-  margin: 12px 0 0;
-  padding: 0;
-  border: 0;
-}
-
-.el-popper.sv-page-help-popover .task-guide li {
-  padding: 8px 0;
-  gap: 8px;
-  border: 0;
-}
-
-.el-popper.sv-page-help-popover .guide-number {
-  min-width: 20px;
-  font-size: 14px;
-}
-
-.sv-page-header-help.el-button {
-  flex: none;
-  width: 40px;
-  min-width: 40px;
-  padding: 0;
-  margin: 0;
-  color: var(--sv-text-secondary);
-}
-
 .sv-page-header-actions {
   display: flex;
   flex-wrap: wrap;
@@ -208,13 +169,6 @@ pre {
 
 .sv-page-header-actions .el-button+.el-button {
   margin: 0;
-}
-
-.eyebrow {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0;
-  color: var(--sv-text-tertiary);
 }
 
 .muted,
@@ -454,7 +408,5 @@ pre {
 @media(max-width:650px) {
   .page-heading { min-height: 44px; gap: 8px; }
   .sv-page-header-actions { margin-left: auto; }
-  .sv-page-header-actions .el-button,
-  .sv-page-header-help.el-button { min-height: 44px; }
-  .sv-page-header-help.el-button { width: 44px; min-width: 44px; }
+  .sv-page-header-actions .el-button { min-height: 44px; }
 }

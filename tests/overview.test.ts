@@ -202,7 +202,7 @@ it('空曲库给出连接来源的引导，而不是伪造收藏', async () => {
     await flushPromises()
     expect(wrapper.find('.shelf-song').exists()).toBe(false)
     expect(wrapper.find('[aria-label="正在读取最近入库"]').exists()).toBe(false)
-    expect(wrapper.get('.empty-state').text()).toContain('从第一首喜欢的歌开始')
+    expect(wrapper.get('.empty-state').text()).toContain('暂无歌曲')
     expect(wrapper.get('.review-strip').text()).toContain('还没有添加来源')
     expect(wrapper.get('.library-summary').text()).toContain('0')
   } finally { wrapper.unmount() }
@@ -285,7 +285,7 @@ it('加载期间保留真实入口，不把未知状态显示成零或已整理�
   serve({ '/api/v1/admin/overview': () => new Promise<Response>(() => {}), '/api/v1/background-tasks': emptyTasks })
   const wrapper = mount(OverviewView, { global: { plugins: [router] } })
   try {
-    expect(wrapper.get('.library-summary').text()).toContain('正在打开')
+    expect(wrapper.get('.library-summary').text()).toContain('正在读取')
     expect(wrapper.get('.review-strip').text()).toContain('正在读取')
     expect(wrapper.text()).not.toContain('0 首歌曲')
     expect(wrapper.find('.shelf-song').exists()).toBe(false)

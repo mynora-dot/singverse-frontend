@@ -34,7 +34,6 @@ const phases = computed(() => [
       <span v-if="isScan(task)" class="progress-scope"><Headset aria-hidden="true" />{{ progressText(task) }}</span>
     </div>
     <template v-if="scanPipeline">
-      <p class="progress-description">{{ processing ? '扫描与音轨处理分别记录，下面显示当前所处阶段。' : '批次正在等待后续音轨处理，可在下方查看已登记的任务。' }}</p>
       <ol class="task-phase-track" aria-label="批次处理阶段">
         <li v-for="phase in phases" :key="phase.label" :class="'phase-' + phase.state" :aria-current="phase.state === 'current' ? 'step' : undefined">
           <span class="phase-marker"><component :is="phase.icon" aria-hidden="true" /></span>
@@ -44,7 +43,7 @@ const phases = computed(() => [
       <div class="task-waiting-note">
         <InfoFilled aria-hidden="true" />
         <div><strong>{{ pending ? pending + ' 首等待后续阶段判断或创建' : registered ? '后续任务已登记' : '尚未创建子任务' }}</strong>
-          <p>已发现的歌曲数量不等于子任务数量。{{ task.waitingReason || (registered ? '具体处理状态见下方任务明细。' : '后续任务创建后，将在下方显示具体任务。') }}</p>
+          <p v-if="task.waitingReason">{{ task.waitingReason }}</p>
         </div>
       </div>
     </template>
@@ -53,7 +52,7 @@ const phases = computed(() => [
       <ElProgress v-if="task.progress.percent !== null" :percentage="Math.floor(task.progress.percent)" :status="progressStatus(task.status)" :stroke-width="6" />
       <p v-if="task.waitingReason" class="progress-description">{{ task.waitingReason }}</p>
     </div>
-    <p v-if="frameProgress(task.execution)" class="progress-description">{{ frameProgress(task.execution) }}；此为当前阶段进度。</p>
+    <p v-if="frameProgress(task.execution)" class="progress-description">{{ frameProgress(task.execution) }}</p>
     <p v-if="isScan(task)" class="task-scan-record">扫描自身：{{ statusNames[task.operation.status] || task.operation.businessStatus || '未记录' }} · {{ stageName(task.operation.stage) }} · {{ scanProgress }}<template v-if="task.operation.finishedAt"> · 完成于 {{ date(task.operation.finishedAt) }}</template></p>
   </div>
 </template>

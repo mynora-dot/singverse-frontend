@@ -20,10 +20,10 @@ async function button(label: string) {
   expect(target, label).toBeDefined(); await target!.trigger('click'); await flushPromises()
 }
 
-it('shows shared scope and real thumbnail endpoint, including missing-song fallback', async () => {
+it('shows the collection and real thumbnail endpoint, including missing-song fallback', async () => {
   vi.mocked(favoritesApi.list).mockResolvedValue(result([song, { ...song, id: 'missing', available: false }]))
   await start()
-  expect(wrapper!.text()).toContain('与此 NAS 的手机、电视共用一份收藏')
+  expect(wrapper!.get('h1').text()).toBe('收藏管理'); expect(wrapper!.text()).toContain('2 首收藏')
   expect(wrapper!.get('img').attributes('src')).toBe('/api/v1/metadata/songs/one/cover?variant=thumbnail')
   expect(wrapper!.findAll('.song-cover-placeholder')).toHaveLength(1)
   expect(wrapper!.text()).toContain('暂不可用')

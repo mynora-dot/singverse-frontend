@@ -76,7 +76,7 @@
 .sv-page-header-copy { flex: 1 1 auto; }
 .sv-page-header-copy > :not(h1) { flex-shrink: 0; }
 .sv-page-header-actions { max-width: 100%; }
-.page-description, .panel-description, .muted { overflow-wrap: anywhere; }
+.panel-description, .muted { overflow-wrap: anywhere; }
 
 @media (max-width: 768px) {
   :root { --sv-glass-blur: 8px; --sv-glass-chrome-blur: 12px; }

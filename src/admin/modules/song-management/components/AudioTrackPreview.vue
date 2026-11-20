@@ -89,7 +89,6 @@ onBeforeUnmount(stop)
     <p v-if="loading" role="status">正在准备音轨…</p>
     <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
     <audio v-show="selected && !loading" ref="player" controls preload="none" :aria-label="'试听音轨 ' + (streams.findIndex(stream => stream.id === selected) + 1)" @playing="reportPlaying" @pause="activity?.transition('PAUSED')" @waiting="activity?.transition('BUFFERING')" @seeking="activity?.transition('BUFFERING')" @seeked="seeked" @ended="ended" @error="selected && failed('音轨解码失败，请重新试听')" />
-    <p>切换音轨会从当前时间继续试听，不会更改原唱标记。</p>
   </section>
 </template>
 

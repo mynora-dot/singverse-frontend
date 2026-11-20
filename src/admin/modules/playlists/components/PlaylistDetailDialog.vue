@@ -9,7 +9,7 @@ const emit = defineEmits<{ close: []; edit: [] }>()
 <template>
   <ElDialog :model-value="!!playlist" :title="playlist?.name || '歌单详情'" width="760px" class="playlist-detail-dialog" @close="emit('close')" destroy-on-close>
     <template v-if="playlist">
-      <p class="playlist-description">{{ playlist.description || '暂无歌单简介' }}</p>
+      <p v-if="playlist.description" class="playlist-description">{{ playlist.description }}</p>
       <p class="playlist-count">{{ playlist.count }} 首可用歌曲<span v-if="playlist.missingCount"> · {{ playlist.missingCount }} 首歌曲已移除</span></p>
       <ol v-if="playlist.songs.length" class="playlist-detail-songs" aria-label="歌单歌曲">
         <li v-for="song in playlist.songs" :key="song.id">

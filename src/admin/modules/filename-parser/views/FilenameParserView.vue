@@ -116,7 +116,7 @@ onMounted(() => { window.addEventListener('beforeunload', beforeUnload); void lo
 <template>
   <section class="rules-page management-page">
     <template v-if="!embedded">
-      <PageHeader title="自定义规则" description="仅在常见格式无法识别时编写模板或正则">
+      <PageHeader title="自定义规则">
         <template #meta><span v-if="workspace" class="rule-count" :aria-label="`规则库共 ${workspace.definitions.length} 条规则`">{{ workspace.definitions.length }}条</span></template>
         <template #actions><RouterLink class="library-link rules-back-link" aria-label="返回文件名识别" title="返回文件名识别" :to="{ path: '/library/media/recognition', query: route.query }"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m12 5-7 7 7 7M5 12h15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg><span>返回识别</span></RouterLink><ElButton v-if="workspace" type="primary" :icon="Plus" :disabled="busy || loading || workspace.definitions.length >= 1000" @click="edit()">新增规则</ElButton></template>
       </PageHeader>
@@ -125,24 +125,20 @@ onMounted(() => { window.addEventListener('beforeunload', beforeUnload); void lo
     <ElButton v-if="error || conflict" :disabled="loading" @click="load">加载最新规则库，保留编辑内容</ElButton>
     <p v-if="loading" role="status">正在读取规则库…</p>
     <ElCard v-if="workspace" shadow="never" class="rules-card">
-      <div v-if="embedded" class="toolbar"><div><h2>规则库 <span class="count-badge">{{ workspace.definitions.length }}</span></h2><p class="panel-description">自定义的模板和正则在这里维护，方案按顺序引用它们；内置格式不用来这一页启用。</p></div><ElButton type="primary" :icon="Plus" :disabled="busy || loading || workspace.definitions.length >= 1000" @click="edit()">新增规则</ElButton></div>
-      <p v-if="!embedded" class="panel-description rules-context">自定义的模板和正则在这里维护，方案按顺序引用它们；内置格式不用来这一页启用。</p>
-      <ElTable :data="workspace.definitions" row-key="id" empty-text="暂无规则，可新增模板或正则。">
+      <div v-if="embedded" class="toolbar"><div><h2>规则库 <span class="count-badge">{{ workspace.definitions.length }}</span></h2></div><ElButton type="primary" :icon="Plus" :disabled="busy || loading || workspace.definitions.length >= 1000" @click="edit()">新增规则</ElButton></div>
+      <ElTable :data="workspace.definitions" row-key="id" empty-text="暂无规则">
         <ElTableColumn label="规则名称" min-width="210"><template #default="{ row }"><strong class="rule-name">{{ row.name }}</strong><ElTag size="small" :type="row.type === 'BUILTIN' ? 'info' : 'success'" effect="plain">{{ row.type === 'BUILTIN' ? '内置规则' : row.type === 'REGEX' ? '高级正则' : '字段模板' }}</ElTag></template></ElTableColumn>
         <ElTableColumn label="匹配表达式" min-width="260"><template #default="{ row }"><div class="expression-cell"><code>{{ expressionFor(row as RuleDefinition, workspace) }}</code></div></template></ElTableColumn>
         <ElTableColumn label="引用方案" min-width="170"><template #default="{ row }"><span class="reference-count">{{ row.referencedBy.length }} 个方案</span><div v-for="profile in row.referencedBy" :key="profile.id"><ElButton v-if="embedded" text @click="emit('profile', profile.id)">{{ profile.name }}</ElButton><RouterLink v-else class="profile-reference" :to="{ path: '/library/media/recognition', query: { profile: profile.id } }">{{ profile.name }} ↗</RouterLink></div></template></ElTableColumn>
         <ElTableColumn label="操作" width="180" fixed="right"><template #default="{ row }"><ElButton link type="primary" size="small" :disabled="busy || loading" :aria-label="`复制 ${row.name}`" @click="edit(row as RuleDefinition, true)">复制</ElButton><ElButton v-if="row.type !== 'BUILTIN'" link type="primary" size="small" :disabled="busy || loading" :aria-label="`编辑 ${row.name}`" @click="edit(row as RuleDefinition)">编辑</ElButton><ElButton v-if="row.type !== 'BUILTIN'" link type="danger" size="small" :disabled="busy || loading" :aria-label="`删除 ${row.name}`" @click="remove(row as RuleDefinition)">删除</ElButton></template></ElTableColumn>
       </ElTable>
-      <p class="feature-note">匹配对象为标准化后去掉扩展名的完整名称，仍保留标签。规则仅指定字段含义，不核实歌手身份。</p>
     </ElCard>
     <ElDialog v-model="editing" title="编辑解析规则" width="min(720px, 94vw)" :append-to-body="embedded" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" :before-close="closeEditor">
       <ElForm label-position="top" @submit.prevent="save"><fieldset :disabled="busy || loading" class="editor-fields">
         <ElFormItem label="规则名称"><ElInput v-model="editor.name" maxlength="100" aria-label="规则名称" :disabled="busy || loading" /></ElFormItem>
         <ElFormItem label="规则类型"><select v-model="editor.type" class="native-field" aria-label="规则类型"><option value="TEMPLATE">字段模板</option><option value="REGEX">高级正则（RE2）</option></select></ElFormItem>
         <div v-if="editor.type === 'TEMPLATE'" class="field-buttons"><ElButton v-for="field in fields" :key="field" size="small" :disabled="busy || loading" @click="insertField(field)">{{ '{' + field + '}' }}</ElButton></div>
-        <ElFormItem label="表达式"><textarea ref="expressionInput" v-model="editor.expression" rows="5" maxlength="2048" class="native-field" aria-label="规则表达式" spellcheck="false" /></ElFormItem>
-        <p v-if="editor.type === 'TEMPLATE'" class="muted">必须有 artist、title，字段不能重复或相邻。例如 {title}-{artist}；模板多解不会任意选择。</p>
-        <p v-else class="muted">例如 (?P&lt;title&gt;[^-]+)-(?P&lt;artist&gt;[^-]+)。必须有 artist、title 命名组，可选 code、language、version、quality、extra。不支持回溯引用和前后查找断言。</p>
+        <ElFormItem label="表达式（必含 artist、title）"><textarea ref="expressionInput" v-model="editor.expression" rows="5" maxlength="2048" class="native-field" aria-label="规则表达式" :placeholder="editor.type === 'TEMPLATE' ? '{title}-{artist}' : '(?P&lt;title&gt;[^-]+)-(?P&lt;artist&gt;[^-]+)'" spellcheck="false" /></ElFormItem>
         <ElAlert v-if="affected.length" :title="`保存会影响 ${affected.length} 个引用方案：${affected.map(p => p.name).join('、')}`" type="warning" :closable="false" />
         <p v-if="editorError" class="inline-error" role="alert">{{ editorError }}</p>
         <div class="dialog-actions">
@@ -188,8 +184,8 @@ code {
 @media(max-width:768px) {
   .rules-back-link { min-height: 44px; }
 }
-.rules-card{min-width:0}.rules-card .toolbar{align-items:center;margin:0 0 16px;padding:0 0 12px;border-bottom:1px solid var(--sv-border-subtle)}.rules-card .toolbar h2{font-size:15px}.rules-card .panel-description{font-size:12px;margin:4px 0 0}.rules-card :deep(.el-card__body){padding:0;min-width:0}.rules-card :deep(.el-table){max-width:100%;font-size:14px}.rules-card .feature-note{font-size:12px;margin-top:16px}.rule-name{font-size:14px}.rules-back-link{padding:0 8px}.rules-card .toolbar>div{min-width:0}.rules-card .toolbar>.el-button{flex-shrink:0}@media(max-width:768px){.rules-card .toolbar{align-items:flex-start;flex-wrap:wrap}.rules-page .el-button,.field-buttons :deep(.el-button),.rules-card :deep(.el-table .el-button){min-height:44px}.rules-card .toolbar>.el-button{margin-left:0}.rules-card :deep(.el-table__inner-wrapper){overflow-x:auto}.rules-card :deep(.el-table .cell){font-size:14px}}
-.rule-count{font-size:12px;font-weight:400;color:var(--sv-text-secondary);white-space:nowrap}.rules-back-link{gap:6px;white-space:nowrap}.rules-back-link svg{width:16px;height:16px;flex-shrink:0}.rules-card .rules-context{margin:0 0 12px;line-height:1.7}@media(max-width:768px){.rules-back-link{width:44px;min-width:44px;justify-content:center;padding:0}.rules-back-link span{display:none}}
+.rules-card{min-width:0}.rules-card .toolbar{align-items:center;margin:0 0 16px;padding:0 0 12px;border-bottom:1px solid var(--sv-border-subtle)}.rules-card .toolbar h2{font-size:15px}.rules-card :deep(.el-card__body){padding:0;min-width:0}.rules-card :deep(.el-table){max-width:100%;font-size:14px}.rule-name{font-size:14px}.rules-back-link{padding:0 8px}.rules-card .toolbar>div{min-width:0}.rules-card .toolbar>.el-button{flex-shrink:0}@media(max-width:768px){.rules-card .toolbar{align-items:flex-start;flex-wrap:wrap}.rules-page .el-button,.field-buttons :deep(.el-button),.rules-card :deep(.el-table .el-button){min-height:44px}.rules-card .toolbar>.el-button{margin-left:0}.rules-card :deep(.el-table__inner-wrapper){overflow-x:auto}.rules-card :deep(.el-table .cell){font-size:14px}}
+.rule-count{font-size:12px;font-weight:400;color:var(--sv-text-secondary);white-space:nowrap}.rules-back-link{gap:6px;white-space:nowrap}.rules-back-link svg{width:16px;height:16px;flex-shrink:0}@media(max-width:768px){.rules-back-link{width:44px;min-width:44px;justify-content:center;padding:0}.rules-back-link span{display:none}}
 /* 窄屏让整张规则表横向滚动，操作列随内容移动，避免遮住规则名称。 */
 @media(max-width:768px){
   .rules-card :deep(.el-table__header),

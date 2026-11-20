@@ -55,7 +55,6 @@ onMounted(load)
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />
     <p v-if="loading">正在读取当前分类…</p>
     <template v-else>
-      <p class="panel-description">勾选想调整的分类内容，再选择标签。其他分类保持原样；保存空标签将清除该项分类。</p>
       <div v-for="(name, dim) in dimensionNames" :key="dim" class="edit-dimension">
         <div class="dimension-heading"><ElCheckbox :model-value="selected.includes(dim)" @change="v => toggleList(selected, dim, !!v)" :disabled="busy">修改{{ name }}</ElCheckbox><ElCheckbox :model-value="locked.includes(dim)" @change="v => toggleList(locked, dim, !!v)" :disabled="busy || !selected.includes(dim)" title="锁定后，AI 自动保存和建议确认都不能覆盖这项分类">锁定</ElCheckbox></div>
         <p v-if="states.length === 1" class="panel-description">当前：{{ names(states[0]?.dimensions[dim]?.tagIds ?? []) }} · {{ originNames[states[0]?.dimensions[dim]?.origin ?? ''] ?? '尚未分类' }} {{ states[0]?.dimensions[dim]?.locked ? '· 已锁定' : '' }}</p>

@@ -2,11 +2,11 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import { ElAlert, ElButton, ElEmpty, ElInput, ElOption, ElPagination, ElProgress, ElSelect, ElSkeleton, ElTag } from 'element-plus'
-import { ArrowLeft, ArrowRight, Clock, Document, FolderOpened, Headset, InfoFilled, RefreshRight, Search } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Clock, Document, FolderOpened, Headset, RefreshRight, Search } from '@element-plus/icons-vue'
 import PageHeader from '../../shared/ui/PageHeader.vue'
 import TaskProgressOverview from './TaskProgressOverview.vue'
 import { backgroundTasks, type BackgroundTask, type ChildPage, type ItemPage, type TaskPage } from './api'
-import { activeTask, childTaskCount, compactTaskName, countNames, date, failureGuidance, failureText, frameProgress, isScan, itemStatusNames, progressStatus, progressText, skipReasons, stageName, statistics, statusNames, taskFailure, taskHighlights, tone, typeNames, unsuccessful } from './presentation'
+import { activeTask, compactTaskName, countNames, date, failureGuidance, failureText, frameProgress, isScan, itemStatusNames, progressStatus, progressText, skipReasons, stageName, statistics, statusNames, taskFailure, taskHighlights, tone, typeNames, unsuccessful } from './presentation'
 
 const route = useRoute(), router = useRouter()
 const taskId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
@@ -106,8 +106,7 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer); docum
 
 <template>
   <div class="task-center">
-    <PageHeader v-if="!taskId" title="后台任务" description="每次操作一个批次，运行中的批次优先展示；历史保留 30 天。">
-      <template #meta><p class="task-page-description">查看每次操作的当前阶段与处理结果。</p></template>
+    <PageHeader v-if="!taskId" title="后台任务">
       <template #actions><ElButton :icon="RefreshRight" :loading="loading" @click="refresh">刷新</ElButton></template>
     </PageHeader>
     <ElButton v-else class="task-back" text :icon="ArrowLeft" @click="back">{{ parentBatch ? '返回批次' : '返回任务列表' }}</ElButton>
@@ -154,7 +153,6 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer); docum
       </ElEmpty>
       <div v-if="result" class="task-list-footer"><span>共 {{ result.totalElements.toLocaleString() }} 个批次</span><span v-if="observed">最近读取：{{ date(observed) }}<template v-if="error"> · 读取失败，等待重试</template></span></div>
       <ElPagination v-if="result && result.totalElements > 20" :current-page="filter.page + 1" :page-size="20" :total="result.totalElements" layout="total, prev, pager, next" @current-change="change({ page: $event === 1 ? undefined : String($event - 1) })" />
-      <aside v-if="result?.items.some(isScan)" class="task-list-explanation"><InfoFilled aria-hidden="true" /><div><strong>扫描完成，批次为什么仍在排队？</strong><p>扫描和音轨处理是两个阶段。已发现歌曲后，还需等待后续任务；打开详情可查看当前处理到了哪一步。</p></div></aside>
     </template>
 
     <template v-else-if="task">
@@ -172,7 +170,7 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer); docum
           <details class="task-extra"><summary>编号、处理范围与时间</summary><dl class="task-metadata"><div><dt>任务编号</dt><dd class="task-number">{{ task.id }}</dd></div><div><dt>业务编号</dt><dd class="task-number">{{ task.businessId || '未记录' }}</dd></div><div><dt>任务类型</dt><dd>{{ typeNames[task.type] || task.type }}</dd></div><div><dt>处理范围</dt><dd>{{ task.subjectName || '全部或选定范围' }}</dd></div><div><dt>创建时间</dt><dd>{{ date(task.createdAt) }}</dd></div><div><dt>开始时间</dt><dd>{{ date(task.startedAt) }}</dd></div><div><dt>结束时间</dt><dd>{{ date(task.finishedAt) }}</dd></div><div><dt>最近变化</dt><dd>{{ date(task.updatedAt) }}</dd></div></dl></details>
           <p v-if="task.timeIncomplete" class="task-muted">这条历史任务的部分时间未记录，无法还原准确耗时。</p>
         </section>
-        <aside v-if="task.isBatch" class="sv-glass task-panel task-count-summary" aria-label="子任务统计"><h2>子任务统计</h2><dl><div v-for="(label, key) in countNames" :key="key" :class="{ 'task-danger': key === 'failed' && task.childrenCounts[key], 'task-warning': (key === 'review' || key === 'uncertain') && task.childrenCounts[key] }"><dt>{{ label }} </dt> <dd>{{ task.childrenCounts[key] || 0 }}</dd></div></dl><p class="task-count-note">子任务状态与扫描结果分别统计。</p></aside>
+        <aside v-if="task.isBatch" class="sv-glass task-panel task-count-summary" aria-label="子任务统计"><h2>子任务统计</h2><dl><div v-for="(label, key) in countNames" :key="key" :class="{ 'task-danger': key === 'failed' && task.childrenCounts[key], 'task-warning': (key === 'review' || key === 'uncertain') && task.childrenCounts[key] }"><dt>{{ label }} </dt> <dd>{{ task.childrenCounts[key] || 0 }}</dd></div></dl></aside>
         <section v-if="task.detailMode === 'ITEMS'" class="sv-glass task-panel" aria-label="结果明细">
           <div class="task-detail-heading"><h2>任务明细</h2><ElSelect :model-value="value('itemStatus')" aria-label="明细状态" placeholder="全部结果" @change="change({ itemStatus: $event || undefined, itemPage: undefined })"><ElOption label="全部结果" value="" /><ElOption v-for="(count, status) in items?.counts" :key="status" :label="(itemStatusNames[status] || status) + '（' + count + '）'" :value="status" /></ElSelect></div>
           <div v-if="items?.items.length" class="task-table-wrap"><table class="task-table task-data-table"><thead><tr><th scope="col">歌曲 / 条目</th><th scope="col">状态</th><th scope="col">说明</th></tr></thead><tbody><tr v-for="item in items.items" :key="item.id"><td data-label="歌曲 / 条目">{{ item.title || item.songId || item.id }}</td><td data-label="状态">{{ ['PROBING', 'PROCESSING'].includes(item.status) && item.execution?.jobState === 'QUEUED' ? '排队中' : itemStatusNames[item.status] || item.status }}</td><td data-label="说明">{{ failureText(item.message || '') || (item.execution?.stage ? stageName(item.execution.stage) : '—') }}<small v-if="frameProgress(item.execution)">{{ frameProgress(item.execution) }}</small></td></tr></tbody></table></div>
@@ -189,7 +187,7 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer); docum
             <td data-label="状态"><ElTag :type="tone(child.status)" size="small">{{ statusNames[child.status] || child.status }}</ElTag><small v-if="child.execution.resultState === 'UNKNOWN'">识别不确定</small></td>
             <td data-label="当前阶段与进度"><span>{{ stageName(child.stage) }}</span><small>{{ progressText(child) }}</small><small v-if="frameProgress(child.execution)">{{ frameProgress(child.execution) }}</small></td><td data-label="说明">{{ failureText(child.error || child.execution?.reason || '') || '—' }}</td>
           </tr></tbody></table></div>
-          <div v-else class="task-entries-empty"><Document aria-hidden="true" /><div><strong>{{ value('itemStatus') || value('itemType') ? '暂无符合条件的任务' : '尚无子任务记录' }}</strong><p>{{ value('itemStatus') || value('itemType') ? '试试其他类型或状态。' : childTaskCount(task) ? '当前没有可展示的具体任务明细，请稍后刷新。' : activeTask(task.status) ? '等待扫描登记处理范围或创建后续任务，创建后将在这里显示。' : '本批次未创建后续任务；扫描不记录逐文件日志。' }}</p></div></div>
+          <div v-else class="task-entries-empty"><Document aria-hidden="true" /><div><strong>{{ value('itemStatus') || value('itemType') ? '暂无符合条件的任务' : '尚无子任务记录' }}</strong></div></div>
           <ElPagination v-if="children && children.totalElements > 20" :current-page="pageNumber('itemPage') + 1" :page-size="20" :total="children.totalElements" layout="total, prev, pager, next" @current-change="change({ itemPage: $event === 1 ? undefined : String($event - 1) })" />
         </section>
         <section v-if="detailStats.length" class="sv-glass task-panel" aria-label="处理结果">

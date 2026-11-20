@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import TaskGuide from '../../../shared/ui/TaskGuide.vue'
+import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElDialog, ElIcon, ElMessage, ElMessageBox, ElPagination } from 'element-plus'
@@ -50,7 +50,6 @@ const extraFilter = computed({ get: () => primaryStats.value.some(stat => stat.s
 const settingsSummary = computed(() => config.value.enabled ? config.value.providers.map(provider => providerNames[provider]).join('、') || '尚未选择平台' : '平台查询未启用')
 const intervalSummary = computed(() => `${config.value.minIntervalSeconds ?? metadataDefaults.minIntervalSeconds}～${config.value.maxIntervalSeconds ?? metadataDefaults.maxIntervalSeconds} 秒`)
 const emptyTitle = computed(() => appliedKeyword.value ? '未找到歌曲' : filter.value === 'REVIEW' ? '当前没有待审核歌曲' : filter.value === 'FAILED' ? '没有匹配失败的歌曲' : '当前状态下没有歌曲')
-const emptyDescription = computed(() => appliedKeyword.value ? '试试原始歌名或歌手，或清除搜索条件。' : filter.value === 'REVIEW' ? '可以查看全部歌曲，回看已应用的资料与处理结果。' : '切换状态，继续查看这批歌曲。')
 let active = true, generation = 0, loadGeneration = 0, timer: ReturnType<typeof setTimeout> | undefined
 function schedule() {
   if (timer) clearTimeout(timer)
@@ -143,24 +142,23 @@ onBeforeUnmount(() => { active = false; generation++; loadGeneration++; clearTim
 
 <template>
   <section class="metadata-page management-page">
-    <header class="metadata-heading">
-      <div><h1>歌曲信息</h1><p>匹配资料与逐曲审核，在这里完成。</p></div>
-      <ElButton type="primary" :icon="VideoPlay" :disabled="!canStart" :title="startReason" @click="openStart">开始匹配</ElButton>
-    </header>
+    <PageHeader title="歌曲信息">
+      <template #actions><ElButton type="primary" :icon="VideoPlay" :disabled="!canStart" :title="startReason" @click="openStart">开始匹配</ElButton></template>
+    </PageHeader>
     <ElAlert v-if="error && !startOpen" :title="error" type="error" :closable="false" show-icon />
     <ElAlert v-if="progressError" :title="progressError" type="error" :closable="false" show-icon><ElButton text :disabled="busy" @click="batch ? refreshBatch() : load()">重新读取进度</ElButton></ElAlert>
     <div class="source-toolbar">
       <div v-if="selectionPreview" class="source-scope"><span>下一次匹配范围</span><strong>曲库所选 {{ selectedIds.length }} 首歌曲</strong><ElButton text :disabled="busy" @click="chooseSources">改为选择来源</ElButton></div><label v-else class="source-scope"><span>下一次匹配范围</span><select v-model="sourceId" aria-label="匹配歌曲来源" title="用于下一次匹配，不改变当前批次" :disabled="sourcesLoading || busy"><option value="">全部媒体来源</option><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></label>
       <ElButton class="platform-entry" text :icon="Setting" :title="`${settingsSummary}，间隔 ${intervalSummary}`" @click="openPlatforms">{{ saved ? config.enabled ? `已启用 ${config.providers.length} 个平台` : '平台未启用' : '音乐平台设置' }}<ElIcon><ArrowRight /></ElIcon></ElButton>
       <span v-if="saved" class="global-apply">全局自动写入 <strong :class="{ enabled: config.autoApply }">{{ config.autoApply ? '已开启' : '已关闭' }}</strong></span>
-      <span v-if="selectedIds.length" class="selection-context">已从曲库选择 {{ selectedIds.length }} 首</span>
+
     </div>
     <p v-if="sourcesError" class="inline-notice" role="alert">媒体来源读取失败：{{ sourcesError }} <ElButton text @click="loadSources">重试</ElButton></p>
     <p v-if="startReason && !loading" class="inline-notice">{{ startReason }} <ElButton v-if="!saved" text @click="load">重新读取配置</ElButton></p>
     <p v-if="loading" role="status" class="loading-note">正在读取配置与进度…</p>
 
     <section v-if="selectionPreview && !loading" class="selection-preview" aria-label="本次选择">
-      <div><h2>已选择 {{ selectedIds.length }} 首歌曲，尚未开始本次匹配</h2><p>点击“开始匹配”后，只处理本次选择的歌曲。下方历史批次的完成结果不属于本次选择。</p></div>
+      <div><h2>已选择 {{ selectedIds.length }} 首歌曲，尚未开始本次匹配</h2></div>
       <ElButton v-if="batch" text :aria-expanded="showPreviousBatch" @click="showPreviousBatch = !showPreviousBatch">{{ showPreviousBatch ? '收起历史批次' : '查看上一次匹配结果' }}</ElButton>
       <RouterLink to="/library/songs">返回曲库重新选择</RouterLink>
     </section>
@@ -196,16 +194,16 @@ onBeforeUnmount(() => { active = false; generation++; loadGeneration++; clearTim
       </div>
       <p v-if="batch.legacySkipped" class="status-notice">此历史批次有 {{ batch.legacySkipped }} 首跳过项仅保存汇总，计入整体进度；没有原始歌曲明细可供搜索和展示。</p>
       <p v-if="retryReason" class="inline-notice">重新匹配 / 重试不可用：{{ retryReason }}</p>
-      <BatchSongTable :batch="batch" :busy="busy || loading" :retry-disabled-reason="retryReason" :empty-title="emptyTitle" :empty-description="emptyDescription" @review="openReview" @retry="retry" @manual="manual" @reason="reason" @reset="resetFilters" />
+      <BatchSongTable :batch="batch" :busy="busy || loading" :retry-disabled-reason="retryReason" :empty-title="emptyTitle" @review="openReview" @retry="retry" @manual="manual" @reason="reason" @reset="resetFilters" />
       <div class="list-footer"><span>共 {{ batch.total }} 首歌曲<span v-if="filter || appliedKeyword">，当前筛选 {{ batch.totalElements }} 首</span></span><ElPagination v-if="batch.totalElements > 20" v-model:current-page="page" :total="batch.totalElements" :page-size="20" layout="prev, pager, next" :disabled="busy || loading" @current-change="refreshBatch" /><span v-else>显示 {{ batch.items.length }} 首</span></div>
-      <p class="list-note">候选可逐字段确认，未确认的歌曲资料保持原样。<RouterLink to="/library/songs">返回全部歌曲</RouterLink></p>
-      <details class="batch-explanation"><summary>批次进度与匹配说明</summary><div class="batch-detail-copy"><p>处理完成包含待审核，不代表已全部写入。已处理 = 待审核 + 已应用 + 失败 + 已跳过。</p><p>当前待处理 {{ batch.pending }} 首，处理中 {{ batch.processing }} 首，已跳过 {{ batch.skippedExisting }} 首。本批次自动写入{{ batch.autoApply ? '开启，仍受当前全局开关及阈值限制' : '关闭' }}。</p><p>仅有唯一高相似度候选时自动预览并勾选缺失资料；多个接近候选需主动选择，已有资料需逐项勾选覆盖。重新匹配只重新查询候选；自动写入开启的批次仅在最高候选达到有效阈值且无相近候选时写入，同分或相近候选需人工确认。进度保存在后台，服务重启后暂停。</p><p v-if="lastRefresh">最近读取：{{ new Date(lastRefresh).toLocaleTimeString() }}{{ batch.status === 'RUNNING' && !reviewItem ? '，每 2 秒自动刷新' : '' }}</p></div></details>
+      <div class="list-note"><RouterLink to="/library/songs">返回全部歌曲</RouterLink></div>
+      <details class="batch-explanation"><summary>批次详情</summary><dl class="batch-details"><div><dt>待处理</dt><dd>{{ batch.pending }}</dd></div><div><dt>处理中</dt><dd>{{ batch.processing }}</dd></div><div><dt>已跳过</dt><dd>{{ batch.skippedExisting }}</dd></div><div v-if="lastRefresh"><dt>最近读取</dt><dd>{{ new Date(lastRefresh).toLocaleTimeString() }}</dd></div></dl></details>
     </section>
-    <section v-else-if="!selectionPreview && !loading && !progressError" class="metadata-empty"><ElIcon><Search /></ElIcon><h2>从整理第一首歌开始</h2><p>选择歌曲来源，开始匹配。歌曲资料和待审核结果会一起显示在这里。</p><ElButton type="primary" :disabled="!canStart" @click="openStart">开始匹配</ElButton><TaskGuide label="歌曲信息整理流程" :steps="[{ title: '选择歌曲', description: '整理整个来源，或从曲库选择歌曲。' }, { title: '匹配候选', description: '进度保存在后台，可以离开后再回来。' }, { title: '核对后确认', description: '比较资料与封面，再选择要更新的字段。' }]" /><RouterLink to="/library/songs">返回全部歌曲</RouterLink></section>
+    <section v-else-if="!selectionPreview && !loading && !progressError" class="metadata-empty"><ElIcon><Search /></ElIcon><h2>暂无匹配批次</h2><ElButton type="primary" :disabled="!canStart" @click="openStart">开始匹配</ElButton><RouterLink to="/library/songs">返回全部歌曲</RouterLink></section>
 
     <ElDialog v-model="startOpen" title="开始匹配歌曲资料" width="min(480px, calc(100vw - 32px))" :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy" class="metadata-start-dialog">
       <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon />
-      <div class="start-scope-options" role="radiogroup" aria-label="匹配范围"><label><input v-model="startScope" type="radio" value="source" :disabled="busy" /><span><strong>{{ sourceId ? selectedSourceName : '全部媒体来源' }}</strong><small>已有有效确认结果会自动跳过。</small></span></label><label v-if="selectedIds.length && !sourceId"><input v-model="startScope" type="radio" value="selected" :disabled="busy" /><span><strong>从曲库选择的 {{ selectedIds.length }} 首歌曲</strong><small>仅匹配本次选择的歌曲。</small></span></label></div>
+      <div class="start-scope-options" role="radiogroup" aria-label="匹配范围"><label><input v-model="startScope" type="radio" value="source" :disabled="busy" /><span><strong>{{ sourceId ? selectedSourceName : '全部媒体来源' }}</strong><small>已有有效确认结果会自动跳过。</small></span></label><label v-if="selectedIds.length && !sourceId"><input v-model="startScope" type="radio" value="selected" :disabled="busy" /><span><strong>从曲库选择的 {{ selectedIds.length }} 首歌曲</strong></span></label></div>
       <p class="start-platforms">查询平台：{{ settingsSummary }}</p><p class="start-write-rule">{{ config.autoApply ? '全局自动写入已开启。最高候选达到有效阈值且无相近候选时才自动写入；同分、相近候选及其他结果等待人工确认。' : '自动写入已关闭。匹配完成后，候选均等待人工审核。' }}</p><p class="start-privacy">查询间隔 {{ intervalSummary }}。歌名与歌手将发送至启用的平台。匹配不会修改媒体文件。</p>
       <template #footer><ElButton :disabled="busy" @click="startOpen = false">取消</ElButton><ElButton type="primary" :loading="busy" :disabled="startScope === 'source' ? !canStartScope : !canStart || !selectedIds.length" @click="start">确认开始匹配</ElButton></template>
     </ElDialog>

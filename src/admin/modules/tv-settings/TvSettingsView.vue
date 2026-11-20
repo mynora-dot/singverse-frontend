@@ -75,34 +75,34 @@ onMounted(load)
 
 <template>
   <section class="tv-settings">
-    <PageHeader title="电视首页" description="为客厅里的 SingVerse 配置专属首页。所有登录此 NAS 的电视共用此设置。">
+    <PageHeader title="电视首页">
       <template #actions><ElButton :disabled="busy" @click="load">重新加载</ElButton><ElButton type="primary" :loading="busy" :disabled="!settings || !dirty" @click="save">保存设置</ElButton></template>
     </PageHeader>
     <div v-if="error" role="alert" class="tv-error">{{ error }}</div>
     <template v-if="settings">
       <section class="sv-panel sv-content-section tv-preview-panel">
-        <div class="tv-section-title"><div><h2>首页预览</h2><p>即时预览当前草稿，保存后同步至电视</p></div><span>电视主视觉 · 居中裁切</span></div>
+        <div class="tv-section-title"><h2>首页预览</h2></div>
         <div class="tv-hero-preview" :style="activeBanner ? { backgroundImage: `linear-gradient(90deg, rgb(32 26 18 / 93%), rgb(32 26 18 / 75%)), url('${activeBanner.imagePath}?v=${activeBanner.version}')` } : {}">
-          <span class="tv-wordmark">SingVerse</span><small>你的私人音乐现场</small><h3>{{ settings.headline }}</h3><p>{{ settings.subtitle }}</p><span class="tv-fake-button">浏览曲库</span>
+          <span class="tv-wordmark">SingVerse</span><h3>{{ settings.headline }}</h3><p>{{ settings.subtitle }}</p><span class="tv-fake-button">浏览曲库</span>
           <div v-if="enabledBanners.length" class="tv-preview-pages" aria-label="预览封面选择"><button v-for="(banner, index) in enabledBanners" :key="banner.id" :class="{ active: index === selected % enabledBanners.length }" :aria-label="`预览${banner.label}`" @click="selected = index">{{ index + 1 }}</button></div>
-          <span v-else class="tv-preview-note">未启用自定义封面 · 电视使用曲库封面或统一占位</span>
+          <span v-else class="tv-preview-note">未启用自定义封面</span>
         </div>
       </section>
       <section class="sv-panel sv-content-section tv-form">
-        <div class="tv-section-title"><div><h2>首页个性化</h2><p>标题最多80字，说明最多160字；建议使用简短文案</p></div></div>
+        <div class="tv-section-title"><h2>首页内容</h2></div>
         <label><span>首页标题</span><ElInput v-model="settings.headline" :disabled="busy" maxlength="80" show-word-limit aria-label="首页标题" /></label>
         <label><span>首页说明</span><ElInput v-model="settings.subtitle" :disabled="busy" maxlength="160" show-word-limit aria-label="首页说明" /></label>
-        <div class="tv-option"><span>自动轮播<small>关闭后仍可用电视遥控器切换封面</small></span><ElSwitch v-model="settings.autoRotate" :disabled="busy" aria-label="自动轮播" /></div>
-        <div class="tv-option"><span>轮播间隔<small>停留在首页时生效，5至60秒</small></span><div><ElInputNumber v-model="settings.rotationSeconds" :min="5" :max="60" :disabled="busy || !settings.autoRotate" aria-label="轮播间隔" /> 秒</div></div>
+        <div class="tv-option"><span>自动轮播</span><ElSwitch v-model="settings.autoRotate" :disabled="busy" aria-label="自动轮播" /></div>
+        <div class="tv-option"><span>轮播间隔（5～60 秒）</span><div><ElInputNumber v-model="settings.rotationSeconds" :min="5" :max="60" :disabled="busy || !settings.autoRotate" aria-label="轮播间隔" /> 秒</div></div>
       </section>
       <section class="sv-panel sv-content-section tv-banners">
-        <div class="tv-section-title"><div><h2>首页封面 <span>{{ settings.banners.length }} / 8</span></h2><p>新部署内置8张音乐主题封面，可改名、排序、停用或移除；上传自己的图片前请先移除不需要的封面。建议16:9横图；JPEG / PNG，单张不超过2MB、4096像素。上传即保存并启用，排序和开关需点击保存。</p></div><ElButton :disabled="busy || dirty || settings.banners.length >= 8" @click="fileInput?.click()">选择多张封面</ElButton></div>
+        <div class="tv-section-title"><div><h2>首页封面 <span>{{ settings.banners.length }} / 8</span></h2><p>JPEG / PNG · ≤2MB · ≤4096px。上传即保存。</p></div><ElButton :disabled="busy || dirty || settings.banners.length >= 8" @click="fileInput?.click()">上传封面</ElButton></div>
         <input ref="fileInput" type="file" accept="image/jpeg,image/png" multiple hidden @change="upload">
         <p v-if="uploadProgress" role="status">{{ uploadProgress }}</p>
-        <p v-if="!settings.banners.length" class="tv-empty">还没有自定义封面，上传多张图片打造你的专属首页。</p>
+        <p v-if="!settings.banners.length" class="tv-empty">暂无封面</p>
         <div v-for="(banner, index) in settings.banners" :key="banner.id" class="tv-banner-row">
           <img :src="`${banner.imagePath}?v=${banner.version}`" :alt="banner.label">
-          <div class="tv-banner-label"><ElInput v-model="banner.label" maxlength="80" :disabled="busy" :aria-label="`封面${index + 1}名称`" /><span>第 {{ index + 1 }} 张</span></div>
+          <div class="tv-banner-label"><ElInput v-model="banner.label" maxlength="80" :disabled="busy" :aria-label="`封面${index + 1}名称`" /></div>
           <ElSwitch v-model="banner.enabled" :disabled="busy" :aria-label="`启用封面${index + 1}`" /><ElButton :disabled="busy || index === 0" :aria-label="`上移封面${index + 1}`" @click="move(index, -1)">上移</ElButton><ElButton :disabled="busy || index === settings.banners.length - 1" :aria-label="`下移封面${index + 1}`" @click="move(index, 1)">下移</ElButton><ElButton type="danger" plain :disabled="busy || dirty" @click="remove(index)">移除</ElButton>
         </div>
       </section>
@@ -153,8 +153,7 @@ onMounted(load)
   margin: 0
 }
 
-.tv-section-title p,
-.tv-section-title>span {
+.tv-section-title p{
   font-size: 13px;
   color: var(--el-text-color-secondary);
   margin: 8px 0 0
@@ -184,12 +183,6 @@ onMounted(load)
   font-weight: 600;
   display: block;
   margin-bottom: 28px
-}
-
-.tv-hero-preview>small {
-  font-size: 12px;
-  letter-spacing: 0;
-  color: rgb(255 253 247 / 80%)
 }
 
 .tv-hero-preview h3 {
@@ -269,13 +262,6 @@ onMounted(load)
   padding: 20px 0
 }
 
-.tv-option small {
-  display: block;
-  color: var(--el-text-color-secondary);
-  margin-top: 8px;
-  font-size: 12px
-}
-
 .tv-banner-row {
   display: flex;
   align-items: center;
@@ -297,13 +283,6 @@ onMounted(load)
   min-width: 100px;
   max-width: 440px;
   margin-right: auto
-}
-
-.tv-banner-label>span {
-  display: block;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  margin-top: 8px
 }
 
 .tv-empty {
@@ -357,10 +336,6 @@ onMounted(load)
     gap: 8px
   }
 
-  .tv-section-title>span {
-    display: none
-  }
-
   .tv-hero-preview {
     padding: 16px;
     border-radius: 8px;
@@ -371,11 +346,6 @@ onMounted(load)
   .tv-wordmark {
     font-size: 14px;
     margin-bottom: 12px
-  }
-
-  .tv-hero-preview>small {
-    font-size: 12px;
-    letter-spacing: 1px
   }
 
   .tv-hero-preview h3 {

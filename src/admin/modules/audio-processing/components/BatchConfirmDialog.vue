@@ -51,7 +51,7 @@ const skipped = computed(() => {
       <p v-else-if="batch.state === 'CANCELLED'" class="lead">已取消准备。</p>
       <p v-else class="lead">将为 <strong>{{ pending }}</strong> 首歌曲{{ recognizing ? '重新识别原唱与伴奏' : '生成独立伴奏' }}。</p>
       <div v-if="batch.state === 'PREVIEW'" class="preview-totals" :class="{ 'has-failed': batch.counts.FAILED }"><div><span>本次选择</span><strong>{{ batch.total }}<small>首</small></strong></div><div><span>可处理</span><strong>{{ pending }}<small>首</small></strong></div><div><span>跳过</span><strong>{{ batch.counts.SKIPPED || 0 }}<small>首</small></strong></div><div v-if="batch.counts.FAILED"><span>准备失败</span><strong>{{ batch.counts.FAILED }}<small>首</small></strong></div></div>
-      <p v-if="recognizing" class="muted">方式：{{ recognitionName(batch.kind) }}。{{ batch.kind === 'FAST' ? '按音轨标签和短片段人声判断，不生成新的伴奏文件。' : '分离多个片段的人声进行对比，耗时较长。' }}只有判断可靠时才自动保存标记，无法确定的保留待人工确认。</p>
+      <p v-if="recognizing" class="muted">识别方式：{{ recognitionName(batch.kind) }}</p>
       <p v-else class="muted">方案：{{ profileName(batch.separationProfile) }} · {{ batch.outputFormat === 'flac' ? 'FLAC' : 'AAC 192k' }}</p>
       <p v-if="!recognizing && batch.separationProfile === 'DSP_FAST'" class="muted">中心抵消也可能削弱鼓、贝斯和主奏，并留下混响。建议先对代表歌曲进行短片试听。</p>
       <ul v-if="batch.state === 'PREVIEW'" class="breakdown">
@@ -66,8 +66,7 @@ const skipped = computed(() => {
         <ul v-else><li v-for="item in items" :key="item.song_id"><span><strong>{{ item.title }}</strong><small>{{ itemReason(item) }}</small></span><span class="item-outcome" :class="{ 'is-pending': item.state === 'PENDING' }">{{ item.state === 'PENDING' ? '可处理' : itemStates[item.state] || item.state }}</span></li></ul>
         <ElPagination v-if="batch.total > 50" :current-page="itemPage + 1" :page-size="50" :pager-count="5" :total="batch.total" layout="prev, pager, next" @current-change="changePage($event - 1)" />
       </section>
-      <p v-if="recognizing" class="muted">任务在后台逐首处理，可关闭页面，稍后到“识别任务”查看结果或停止。已有确认标记会保留。</p>
-      <p v-else class="muted">使用设备：{{ batch.backend ? backendName(batch.backend) : '自动选择已通过试跑的设备' }}。生成在后台进行，可以随时在“生成任务”中查看或停止；已生成的伴奏会保留。</p>
+      <p v-if="!recognizing" class="muted">使用设备：{{ batch.backend ? backendName(batch.backend) : '自动选择' }}</p>
       <p v-if="batch.state === 'PREVIEW' && !pending" class="muted">{{ recognizing ? '所选歌曲中没有需要自动识别的双音轨或待读取歌曲。' : '所选歌曲都不需要生成。' }}</p>
     </template>
     <template #footer>

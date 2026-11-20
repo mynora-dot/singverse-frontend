@@ -65,7 +65,6 @@ async function submit() {
 <template>
   <section class="login-card" aria-labelledby="login-title">
     <h1 id="login-title">忘记密码</h1>
-    <p id="login-description" class="login-description">使用部署主机生成的一次性重置码，设置新的登录密码。</p>
     <details class="login-help login-recovery-guide">
       <summary>如何获取重置码</summary>
       <p>在部署主机的 Go 后端项目目录执行命令，按提示输入 RESET。重新启动服务后，在下方输入重置码；15 分钟内有效，仅能使用一次。</p>

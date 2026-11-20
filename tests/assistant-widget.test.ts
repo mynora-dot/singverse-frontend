@@ -29,7 +29,7 @@ it('默认关闭不显示入口，保存启用配置后即时出现宠物', asyn
 it('宠物展开真实对话组件，可通过 Escape 收起并恢复焦点', async () => {
   await widget({ ...feature, enabled: true })
   await wrapper.get('[aria-label="打开 AI 助手"]').trigger('click'); await flushPromises()
-  expect(wrapper.get('[role="dialog"]').text()).toContain('查询直接执行，写入由你确认')
+  expect(wrapper.get('[role="dialog"]').find('.conversation-pane').exists()).toBe(true)
   expect(wrapper.get('[role="dialog"]').text()).toContain('请配置助手模型')
   expect(document.activeElement).toBe(wrapper.get('[aria-label="收起 AI 助手"]').element)
   expect(wrapper.find('a[href="/system/ai/features/assistant"]').exists()).toBe(true)

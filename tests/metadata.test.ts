@@ -98,7 +98,7 @@ it('批次审核复用单曲编辑工作区及批次候选', async () => {
   await button('审核候选').trigger('click'); await flushPromises()
   expect(wrapper.findComponent(SingleSongScrapeDialog).props('presentation')).toBe('drawer')
   expect(wrapper.find('.drawer-candidate-select').exists()).toBe(true)
-  expect(wrapper.text()).toContain('当前歌曲 · 入库信息')
+  expect(wrapper.get('.file-context h3').text()).toBe('晴天')
   expect(wrapper.text()).toContain('选中候选与应用预览')
   expect(wrapper.text()).toContain('编辑歌曲资料')
   expect(wrapper.text()).toContain('选择封面')

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ElButton, ElCard, ElIcon, ElTag } from 'element-plus'
+import { ElButton, ElCard, ElIcon } from 'element-plus'
 import { Connection, RefreshRight } from '@element-plus/icons-vue'
 import { getServiceHealth } from '../api/health'
 import { RequestError } from '../../../shared/http/client'
@@ -13,12 +13,6 @@ const label = computed(
     ({ checking: '检查中', up: '运行正常', degraded: '状态异常', unavailable: '连接失败' })[
       state.value
     ],
-)
-const tagType = computed(
-  () =>
-    ({ checking: 'info', up: 'success', degraded: 'warning', unavailable: 'danger' })[
-      state.value
-    ] as 'info' | 'success' | 'warning' | 'danger',
 )
 const checkedTime = computed(
   () => checkedAt.value?.toLocaleTimeString('zh-CN', { hour12: false }) || '尚未完成',
@@ -51,7 +45,7 @@ onMounted(refresh)
     <div class="section-heading">
       <div class="section-title">
         <ElIcon><Connection /></ElIcon>
-        <h2>服务连接</h2>
+        <h2>主服务连接</h2>
       </div>
       <ElButton :icon="RefreshRight" :loading="state === 'checking'" @click="refresh"
         >重新检查</ElButton
@@ -62,14 +56,12 @@ onMounted(refresh)
       <div class="health-copy">
         <div class="health-title">
           <h3>{{ label }}</h3>
-          <ElTag :type="tagType" size="small" effect="light">主服务</ElTag>
         </div>
-        <p>{{ message }}</p>
+        <p v-if="state === 'degraded' || state === 'unavailable'">{{ message }}</p>
       </div>
     </div>
     <div class="health-footer">
-      <span>最近检查 {{ checkedTime }}</span
-      ><span>仅反映服务健康，不代表播放或转码已就绪</span>
+      <span>最近检查 {{ checkedTime }}</span>
     </div>
   </ElCard>
 </template>

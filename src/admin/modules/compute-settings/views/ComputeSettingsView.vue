@@ -209,14 +209,13 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
 
 <template>
   <section class="compute-settings">
-    <PageHeader title="计算服务" description="按功能准备模型与设备。硬件信息来自当前连接的计算节点；Mac、NVIDIA、Intel、AMD 的视频和伴奏能力分别检测与验证。"><template #meta><p class="overview-description">播放与伴奏，各自查看准备情况。</p></template></PageHeader>
+    <PageHeader title="计算服务" />
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton text @click="load">重新读取</ElButton></ElAlert>
     <ElSkeleton v-if="loading && !settings" :rows="5" animated />
     <template v-if="settings">
       <section class="connection-card sv-glass" :class="{ ready: connected, inactive: settings.mode === 'DISABLED' }" aria-label="当前计算服务">
         <div class="connection-copy">
           <div class="connection-title"><span class="sv-status-dot" :class="connected ? 'ok' : checking ? '' : 'warn'" aria-hidden="true" /><h2 aria-live="polite">{{ headline }}</h2><span v-if="connected && !checking" class="connection-time">{{ currentCheck?.elapsedMs }} ms</span></div>
-          <p v-if="connected && !checking" class="connection-note">连接正常；功能可用性分别确认。</p>
           <p v-if="!connected && !checking && effectiveEndpoint && settings.mode !== 'DISABLED'" class="connection-error" role="status">{{ currentError || currentCheck?.message || '请检查服务是否已启动。' }}</p>
         </div>
         <div class="connection-actions"><ElButton ref="connectionAction" v-show="!editing" :type="connected ? 'default' : 'primary'" :icon="connected ? undefined : ArrowRight" :disabled="checking" @click="openEditor()">{{ nextAction }}</ElButton><ElButton v-if="settings.mode !== 'DISABLED'" class="connection-recheck" aria-label="重新检查连接" text :icon="RefreshRight" :loading="checking" :disabled="loading || busy" @click="checkCurrent">重新检查</ElButton><span v-if="saved" role="status" class="saved-note"><Check />配置已保存</span></div>
@@ -230,22 +229,20 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
             <div class="enable-node"><span>启用计算服务</span><ElSwitch v-model="enabled" aria-label="启用计算服务" :disabled="busy" /></div>
           </div>
           <section v-if="enabled" class="node-discovery" aria-label="局域网计算节点">
-            <div class="discovery-heading"><div><h3>从局域网连接</h3><p>由服务节点扫描局域网，选用支持配对的节点即可连接，无需手动填写密钥。</p></div></div>
+            <div class="discovery-heading"><div><h3>局域网节点</h3></div></div>
             <details class="discovery-range">
               <summary>指定扫描范围</summary>
-              <p>留空时扫描服务节点所在网段的 18090 / 8090 端口。可填写其他局域网网段或自定义端口。</p>
-              <label><span>IPv4 网段（可选）</span><ElInput v-model="scanRange.network" aria-label="扫描网段" placeholder="例如 192.168.1.0/24" maxlength="32" :disabled="busy || scanning" @keydown.enter.prevent="scan" /></label>
-              <label><span>端口（可选）</span><ElInput v-model="scanRange.port" aria-label="扫描端口" inputmode="numeric" placeholder="例如 18090" maxlength="5" :disabled="busy || scanning" @keydown.enter.prevent="scan" /></label>
-              <small>仅支持局域网 IPv4 网段 /24～/32，端口范围 1～65535。</small>
+              <label><span>IPv4 网段（/24～/32）</span><ElInput v-model="scanRange.network" aria-label="扫描网段" placeholder="留空使用当前网段" maxlength="32" :disabled="busy || scanning" @keydown.enter.prevent="scan" /></label>
+              <label><span>端口（1～65535）</span><ElInput v-model="scanRange.port" aria-label="扫描端口" inputmode="numeric" placeholder="默认 18090 / 8090" maxlength="5" :disabled="busy || scanning" @keydown.enter.prevent="scan" /></label>
             </details>
             <div class="discovery-actions"><ElButton :loading="scanning" :disabled="busy" @click="scan">扫描局域网内计算节点</ElButton><ElButton v-if="scanning" text @click="cancelScan">取消扫描</ElButton></div>
-            <p v-if="scanning" class="discovery-status" role="status">正在扫描，请稍候…扫描不会更改当前连接。</p>
+            <p v-if="scanning" class="discovery-status" role="status">正在扫描…</p>
             <ElAlert v-if="scanError" class="editor-feedback" :title="scanError" type="error" :closable="false" show-icon />
             <p v-if="scanMessage" class="discovery-status" role="status">{{ scanMessage }}</p>
-            <p v-if="scanCompleted && !discovered.length" class="discovery-empty">未发现可连接的计算节点。请确认设备在局域网内，或指定网段与端口后重试，也可在下方手动连接。</p>
+            <p v-if="scanCompleted && !discovered.length" class="discovery-empty">未发现计算节点</p>
             <ul v-if="discovered.length" class="discovery-list" aria-label="扫描到的计算节点">
               <li v-for="node in discovered" :key="node.id">
-                <div><strong>{{ node.name || '计算节点' }}</strong><code>{{ node.endpoint }}</code><p v-if="node.message">{{ node.message }}</p><small v-if="node.pairingAvailable">选用后会验证并保存此连接</small></div>
+                <div><strong>{{ node.name || '计算节点' }}</strong><code>{{ node.endpoint }}</code><p v-if="node.message">{{ node.message }}</p></div>
                 <ElButton type="primary" plain :disabled="busy || scanning || !node.pairingAvailable || discoveryConflict" :aria-label="`连接${node.name || '计算节点'}（${node.endpoint}）`" @click="connectDiscovered(node)">连接此节点</ElButton>
               </li>
             </ul>
@@ -254,10 +251,10 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
           </section>
         <form id="compute-connection-form" @submit.prevent="save()">
           <div v-if="enabled" class="manual-settings">
+            <h3>手动连接</h3>
             <label class="node-field"><span>计算服务地址</span><ElInput v-model="draft.endpoint" aria-label="计算服务地址" placeholder="例如 http://192.168.1.20:18090" maxlength="512" :disabled="busy" /></label>
             <label class="node-field"><span>连接密钥 <ElTag v-if="canKeepToken || hasDeploymentToken" size="small" effect="plain">已配置</ElTag></span><ElInput v-model="draft.token" aria-label="计算节点认证凭据" type="password" autocomplete="new-password" :placeholder="hasDeploymentToken ? '已使用部署密钥，留空保留' : canKeepToken ? '留空保留已保存密钥' : '填写计算服务的连接密钥'" maxlength="256" show-password :disabled="busy || draft.clearToken" /><small v-if="!hasDeploymentToken && !canKeepToken && endpointChanged && effectiveEndpoint" class="credential-warning">服务地址已改变，需重新填写密钥。</small></label>
             <ElButton class="credential-help" link type="primary" @click="helpVisible = true">如何获取连接信息？</ElButton>
-            <p class="setup-help">原始曲库由业务服务管理，计算节点通过任务授权读取，无需挂载歌曲目录或配置路径映射。回源地址由业务服务随任务提供。</p>
             <label v-if="canKeepToken && !usesDeployment" class="node-clear-token"><input v-model="draft.clearToken" type="checkbox" :disabled="busy" @change="draft.token = ''">清除已保存密钥，暂停使用此连接</label>
           </div>
           <p v-else class="disabled-note">保存后停用计算服务，已有歌曲和生成成果保留。</p>
@@ -278,10 +275,9 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
 
 <style scoped>
 .compute-settings :deep(.sv-page-header-copy){display:block;min-width:0}.compute-settings :deep(.sv-page-header h1){font-size:22px;line-height:1.5}.compute-settings :deep(.sv-page-header){align-items:flex-start;flex-wrap:nowrap;margin-bottom:18px}.compute-settings :deep(.sv-page-header-actions){flex:none}
-@media(max-width:720px){.compute-settings :deep(.sv-page-header h1){font-size:22px}.compute-settings :deep(.sv-page-header){gap:8px}.compute-settings :deep(.sv-page-header-actions){width:auto;margin:0}.compute-settings .connection-card{flex-direction:row;align-items:center}.compute-settings .connection-actions{flex-wrap:nowrap;gap:4px}.connection-actions :deep(.el-button){font-size:12px;padding:0 10px}.compute-settings .connection-time{display:none}.connection-recheck :deep(span){display:none}.connection-recheck{min-width:44px;padding:0!important}.compute-settings .connection-note{font-size:12px}.compute-settings .saved-note{display:none}}
+@media(max-width:720px){.compute-settings :deep(.sv-page-header h1){font-size:22px}.compute-settings :deep(.sv-page-header){gap:8px}.compute-settings :deep(.sv-page-header-actions){width:auto;margin:0}.compute-settings .connection-card{flex-direction:row;align-items:center}.compute-settings .connection-actions{flex-wrap:nowrap;gap:4px}.connection-actions :deep(.el-button){font-size:12px;padding:0 10px}.compute-settings .connection-time{display:none}.connection-recheck :deep(span){display:none}.connection-recheck{min-width:44px;padding:0!important}.compute-settings .saved-note{display:none}}
 
 .compute-settings { max-width: 1280px; margin-inline: auto; }
-.overview-description{margin:7px 0 0;color:var(--sv-text-secondary);font-size:14px;line-height:1.7}.connection-note{margin:3px 0 0;color:var(--sv-text-secondary);font-size:12px;line-height:1.7}
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 
@@ -313,11 +309,9 @@ onBeforeUnmount(() => { active = false; currentGeneration++; draftGeneration++; 
 input[type=radio], input[type=checkbox] { accent-color: var(--sv-accent-primary); flex-shrink: 0; }
 .manual-settings { max-width: 640px; }
 .node-discovery { padding: 20px; margin: 8px 0 28px; border: 1px solid var(--sv-border-subtle); border-radius: 8px; background: var(--sv-surface-2); }
-.discovery-heading h3 { margin: 0; font-size: 14px; }
-.discovery-heading p, .discovery-range p, .discovery-status, .discovery-empty { font-size: 12px; color: var(--sv-text-secondary); line-height: 1.8; margin: 8px 0; }
+.discovery-heading h3 { margin: 0; font-size: 14px; } .discovery-status, .discovery-empty { font-size: 12px; color: var(--sv-text-secondary); line-height: 1.8; margin: 8px 0; }
 .discovery-range { margin: 16px 0; }
 .discovery-range label { display: grid; gap: 8px; margin-top: 12px; font-size: 12px; }
-.discovery-range > small { display: block; margin-top: 12px; color: var(--sv-text-secondary); font-size: 12px; line-height: 1.7; }
 .discovery-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .discovery-actions .el-button { margin: 0; }
 .discovery-list { list-style: none; padding: 0; margin: 16px 0 0; }
@@ -325,7 +319,7 @@ input[type=radio], input[type=checkbox] { accent-color: var(--sv-accent-primary)
 .discovery-list li > div { min-width: 0; flex: 1; }
 .discovery-list strong { display: block; font-size: 13px; }
 .discovery-list code { display: block; overflow-wrap: anywhere; font: 12px/1.7 var(--sv-font-mono); color: var(--sv-text-secondary); margin-top: 4px; }
-.discovery-list p, .discovery-list small { display: block; font-size: 12px; line-height: 1.7; color: var(--sv-text-secondary); margin: 4px 0 0; }
+.discovery-list p{ display: block; font-size: 12px; line-height: 1.7; color: var(--sv-text-secondary); margin: 4px 0 0; }
 .discovery-list .el-button { flex: none; font-size: 12px; }
 .node-field { display: grid; gap: 12px; font-size: 14px; margin: 28px 0; }
 .node-field :deep(.el-input__wrapper) { min-height: 40px; }
@@ -363,9 +357,10 @@ summary span { color: var(--sv-text-secondary); margin-left: 8px; font-size: 12p
   .node-mapping .el-button { grid-column: 2; grid-row: 1/3; align-self: center; }
 }
 
-@media(max-width:768px) {
-  .overview-description{font-size:16px}.connection-note{font-size:12px}.connection-card{gap:10px}.connection-actions{justify-content:flex-start}.connection-title h2{font-size:14px}
+@media(max-width:768px) {.connection-card{gap:10px}.connection-actions{justify-content:flex-start}.connection-title h2{font-size:14px}
   .node-clear-token, .compute-settings :deep(.el-button), .compute-settings :deep(.el-input__wrapper), .compute-settings :deep(.el-input__inner), .compute-settings :deep(.el-switch), .compute-settings summary, .task-settings :deep(.el-tabs__item) { min-height:44px; }
   .compute-settings summary { align-content:center; }
 }
+
+.manual-settings>h3{font-size:16px;font-weight:600;margin:0 0 20px}
 </style>

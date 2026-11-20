@@ -37,7 +37,7 @@ afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks();
 it('六个平台直接可见并展示服务端状态，自动应用保持关闭', async () => {
   await page()
   for (const provider of platforms) expect((wrapper!.get(`input[value="${provider}"]`).element as HTMLInputElement).checked).toBe(true)
-  expect(wrapper!.get('[aria-label="高相似度时自动应用"]').attributes('aria-checked')).toBe('false')
+  expect(wrapper!.get('[aria-label="唯一高相似度候选自动应用"]').attributes('aria-checked')).toBe('false')
   expect(wrapper!.text()).toContain('已开启 6 个平台')
   expect(button('保存设置').attributes('disabled')).toBeDefined()
   expect(metadata.saveSettings).not.toHaveBeenCalled()
@@ -48,7 +48,7 @@ it('旧响应省略请求间隔时使用 1～2 秒，80% 阈值可直接编辑�
   expect((wrapper!.get('input[aria-label="自动应用阈值百分比"]').element as HTMLInputElement).value).toBe('80')
   expect((wrapper!.get('input[aria-label="批量最小间隔秒"]').element as HTMLInputElement).value).toBe('1')
   expect((wrapper!.get('input[aria-label="批量最大间隔秒"]').element as HTMLInputElement).value).toBe('2')
-  expect(wrapper!.text()).toContain('默认 1～2 秒')
+  expect(wrapper!.find('.platform-note').exists()).toBe(false)
   expect(button('保存设置').attributes('disabled')).toBeDefined()
   await wrapper!.get('input[aria-label="自动应用阈值百分比"]').setValue('90')
   await save()

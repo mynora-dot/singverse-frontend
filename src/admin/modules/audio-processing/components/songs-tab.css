@@ -368,10 +368,7 @@
 .bar-spacer {
   flex:1
 }
-.muted,.index-status,.empty-hint {
-  font-size:13px;
-  color:var(--sv-text-secondary)
-}
+.muted,.index-status,
 .index-status {
   margin:12px 24px
 }
@@ -388,9 +385,7 @@
 .songs-tab :deep(.el-skeleton) {
   padding:24px
 }
-.empty-hint {
-  margin:0 0 16px
-}
+
 .drawer-song-meta {
   display:flex;
   flex-wrap:wrap;
@@ -622,10 +617,7 @@
   .drawer-song-meta {
     font-size:14px
   }
-  .empty-hint {
-    padding-inline:16px;
-    font-size:16px
-  }
+
 }
 .title-search {
   position:relative;

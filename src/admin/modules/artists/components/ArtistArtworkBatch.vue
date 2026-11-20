@@ -31,12 +31,12 @@ onBeforeUnmount(() => { active = false; generation++; if (timer) clearTimeout(ti
 <template>
   <section v-if="batch || error" class="artwork-batch" aria-label="封面获取进度">
     <div v-if="batch" class="batch-summary">
-      <span class="batch-icon" aria-hidden="true">↗</span><div class="batch-copy"><strong>{{ batch.status === 'RUNNING' ? '正在为歌手收集封面' : '最近一次封面获取' }}</strong><p>{{ artworkPlatforms[batch.provider] }} · 已处理 {{ batch.completed }} / {{ batch.total }} 位<span v-if="batch.status === 'RUNNING'"> · 离开页面后继续</span></p></div>
+      <span class="batch-icon" aria-hidden="true">↗</span><div class="batch-copy"><strong>{{ batch.status === 'RUNNING' ? '正在为歌手收集封面' : '最近一次封面获取' }}</strong><p>{{ artworkPlatforms[batch.provider] }} · 已处理 {{ batch.completed }} / {{ batch.total }} 位</p></div>
       <div class="batch-counts"><span><b>{{ batch.counts.APPLIED || 0 }}</b> 已获取</span><span><b>{{ batch.counts.REVIEW || 0 }}</b> 待确认</span><span><b>{{ batch.counts.FAILED || 0 }}</b> 失败</span></div>
       <ElButton text @click="expanded=!expanded" :aria-expanded="expanded">{{ expanded ? '收起结果' : '查看结果' }}</ElButton>
     </div>
     <progress v-if="batch?.status === 'RUNNING'" :value="batch.completed" :max="batch.total" :aria-label="`封面获取进度 ${percentage}%`" />
-    <div v-if="batch && expanded" class="batch-results"><p class="batch-note">{{ batch.counts.NO_MATCH || 0 }} 位未找到匹配 · {{ batch.counts.SKIPPED || 0 }} 位保留原有设置。候选图片需在歌手详情中明确确认。</p><ul><li v-for="item in batch.items" :key="item.id"><button @click="emit('artist',item.artistId)">{{ item.name }}</button><span class="item-state" :class="item.status.toLowerCase()">{{ artworkItemStates[item.status] || item.status }}</span><small>{{ item.message }}</small></li></ul><ElPagination v-if="batch.totalElements > 20" :current-page="page" :page-size="20" :total="batch.totalElements" layout="prev, pager, next" @current-change="v=>{page=v;load()}" /></div>
+    <div v-if="batch && expanded" class="batch-results"><p class="batch-note">{{ batch.counts.NO_MATCH || 0 }} 位未找到匹配 · {{ batch.counts.SKIPPED || 0 }} 位保留原有设置</p><ul><li v-for="item in batch.items" :key="item.id"><button @click="emit('artist',item.artistId)">{{ item.name }}</button><span class="item-state" :class="item.status.toLowerCase()">{{ artworkItemStates[item.status] || item.status }}</span><small>{{ item.message }}</small></li></ul><ElPagination v-if="batch.totalElements > 20" :current-page="page" :page-size="20" :total="batch.totalElements" layout="prev, pager, next" @current-change="v=>{page=v;load()}" /></div>
     <div v-if="error" class="batch-error" role="alert"><span>{{ error }}</span><ElButton :loading="loading" text @click="load()">重试读取进度</ElButton></div>
   </section>
 </template>

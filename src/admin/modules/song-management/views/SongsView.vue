@@ -176,7 +176,7 @@ onBeforeUnmount(() => { active = false; generation++ })
 
 <template>
   <section class="songs-page" :class="{ 'is-selecting': selectionMode }">
-    <PageHeader title="歌曲" description="浏览与整理本机曲库，试听检查歌曲和播放效果">
+    <PageHeader title="歌曲">
       <template #meta><span class="count-badge" aria-live="polite">{{ total }}</span></template>
       <template #actions>
         <div class="page-actions">
@@ -194,7 +194,7 @@ onBeforeUnmount(() => { active = false; generation++ })
     </PageHeader>
 
     <div v-if="returnBatch" class="return-batch-bar" role="status">
-      <span>正在处理批次中的单曲，核对后可返回批次继续。</span>
+
       <ElButton text type="primary" @click="router.push({ path: '/library/songs/metadata', query: { batch: returnBatch } })">返回批次</ElButton>
     </div>
 
@@ -226,17 +226,14 @@ onBeforeUnmount(() => { active = false; generation++ })
       <ElButton v-if="filtered || keyword.trim() || sourceId || tagIds.length" class="filter-reset" text @click="reset">重置筛选</ElButton>
     </section>
 
-    <ElAlert v-if="status === 'REVIEW'" type="info" :closable="false" class="filename-review-note" title="这里展示原始文件名识别不完整的歌曲，与歌曲资料审核分别记录。">
-      <p>已确认的歌名和歌手可正常用于搜索，无需重复核对。资料未确认的歌曲可点击“复核”；若要改善文件名识别，可调整来源的识别方案后重新扫描。</p>
-      <ElButton text type="primary" @click="router.push('/library/media')">查看来源与识别方案</ElButton>
-    </ElAlert>
+    <ElButton v-if="status === 'REVIEW'" text type="primary" @click="router.push('/library/media')">管理文件名识别方案</ElButton>
 
     <div class="songs-workspace sv-glass">
     <!-- 操作栏 -->
     <div class="songs-toolbar">
       <div class="toolbar-left">
         <span class="sr-only">{{ filtered ? '筛选结果' : '歌曲列表' }}</span>
-        <span v-if="loaded && items.length" class="page-range">第 {{ visibleRange }} 首</span><span v-if="view === 'list'" class="table-scroll-hint">更多列可横向滚动</span>
+        <span v-if="loaded && items.length" class="page-range">第 {{ visibleRange }} 首</span>
         <div v-if="loaded && items.length && !loading" id="song-page-summary" class="page-summary" :class="{ expanded: mobileSummaryOpen }" aria-label="当前页歌曲统计"><span>仅本页</span><span><b>{{ reviewCount }}</b> 文件名识别不完整</span><span v-if="metadataReviewCount"><b>{{ metadataReviewCount }}</b> 资料待复核</span><span><b>{{ matchedCount }}</b> 文件名完整</span><span v-if="reviewedCount"><b>{{ reviewedCount }}</b> 资料已确认</span><span v-if="tagsLoaded"><b>{{ unclassifiedCount }}</b> 未分类</span></div>
       </div>
       <div class="toolbar-right">
@@ -246,7 +243,7 @@ onBeforeUnmount(() => { active = false; generation++ })
         <label v-if="view === 'list'" class="density-control"><input v-model="compact" type="checkbox">紧凑显示</label>
         <ElPopover v-if="view === 'list'" placement="bottom-end" :width="245" trigger="click">
           <template #reference><ElButton class="column-settings-button">显示列</ElButton></template>
-          <div class="column-settings"><strong>自定义表格信息</strong><p>歌曲、歌手和操作始终显示</p><label v-for="column in songColumns" :key="column.id"><input v-model="columns" type="checkbox" :value="column.id">{{ column.label }}</label><ElButton text type="primary" @click="columns = [...defaultSongColumns]">恢复默认列</ElButton></div>
+          <div class="column-settings"><strong>显示列</strong><label v-for="column in songColumns" :key="column.id"><input v-model="columns" type="checkbox" :value="column.id">{{ column.label }}</label><ElButton text type="primary" @click="columns = [...defaultSongColumns]">恢复默认列</ElButton></div>
         </ElPopover>
         <ElButton
           v-if="!selectionMode"
@@ -269,7 +266,6 @@ onBeforeUnmount(() => { active = false; generation++ })
           <ElButton :disabled="!selectedIds.length" @click="classifySelected">AI 分类</ElButton>
           <ElButton @click="exitSelectionMode">取消</ElButton>
         </div>
-        <p class="batch-help">匹配歌曲资料：查询音乐平台，核对并补全资料；读取文件标签：从媒体文件中读取资料；深入读取：读取更多文件内容以查找标签，耗时更长。均只处理本页已选歌曲。</p>
       </div>
 
     <!-- 错误提示 -->
@@ -280,7 +276,7 @@ onBeforeUnmount(() => { active = false; generation++ })
     <!-- 空状态 -->
     <ElEmpty
       v-if="loaded && !total && !error && !loading"
-      :description="filtered ? '未找到符合条件的歌曲' : '还没有歌曲，先添加媒体来源并扫描'"
+      :description="filtered ? '未找到符合条件的歌曲' : '暂无歌曲'"
       class="songs-empty"
     >
       <ElButton v-if="filtered" @click="reset">清除筛选</ElButton>
@@ -373,8 +369,6 @@ onBeforeUnmount(() => { active = false; generation++ })
   min-width: 0;
 }
 .song-more-button { min-width: 40px; }
-.filename-review-note { margin-bottom: 16px; }
-.batch-help { flex-basis: 100%; margin: 0; font-size: 12px; line-height: 1.7; color: var(--sv-text-secondary); }
 .mobile-summary-action.el-button { display: none; }
 .song-more-actions { display: grid; gap: 4px; }
 .song-more-actions :deep(.el-button) { width: 100%; justify-content: flex-start; margin: 0; }
@@ -444,14 +438,9 @@ onBeforeUnmount(() => { active = false; generation++ })
   font-size: 17px
 }
 
-.page-range,
-.table-scroll-hint {
+.page-range{
   font-size: 12px;
   color: var(--sv-text-tertiary)
-}
-
-.table-scroll-hint {
-  display: none
 }
 
 .toolbar-right {
@@ -680,10 +669,6 @@ onBeforeUnmount(() => { active = false; generation++ })
   .toolbar-right {
     gap: 8px
   }
-
-  .table-scroll-hint {
-    display: inline
-  }
 }
 
 @media(max-width:900px) {
@@ -840,8 +825,7 @@ onBeforeUnmount(() => { active = false; generation++ })
   .toolbar-left { display: contents; }
   .toolbar-right { width: auto; gap: 6px; margin-left: auto; }
   .toolbar-right > .el-button { flex: none; min-width: 44px; min-height: 44px; padding-left: 8px; padding-right: 8px; }
-  .view-switch { padding: 2px; gap: 2px; }
-  .table-scroll-hint,.songs-refresh-button .refresh-label { display: none; }
+  .view-switch { padding: 2px; gap: 2px; }.songs-refresh-button .refresh-label { display: none; }
   .page-summary { display: none; order: 1; flex-basis: 100%; }
   .page-summary.expanded { display: flex; padding-top: 8px; }
 }

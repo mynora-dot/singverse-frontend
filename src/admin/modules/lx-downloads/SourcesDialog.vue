@@ -16,10 +16,9 @@ onBeforeUnmount(() => { alive = false; generation++ })
 </script>
 <template>
   <ElDialog :model-value="modelValue" title="管理音源" width="min(760px, calc(100vw - 24px))" :close-on-click-modal="false" :before-close="done => { if (!busy) done() }" @update:model-value="value => emit('update:modelValue', value)">
-    <p class="help">导入你自己的 LX 2.0 音源脚本。可以保存多份，同时启用一份；更换音源不会改变已经提交的任务。</p>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon role="alert" />
     <section aria-label="已保存音源" :aria-busy="loading">
-      <p v-if="loading">正在读取音源…</p><p v-else-if="!sources.length" class="help">还没有音源，先在下方导入。</p>
+      <p v-if="loading">正在读取音源…</p><p v-else-if="!sources.length" class="help">暂无音源</p>
       <article v-for="source in sources" :key="source.id" class="source">
         <div><strong>{{ source.name }}</strong> <ElTag v-if="source.active" type="success" size="small">使用中</ElTag><p class="help">{{ source.version }} · {{ source.environment }} 兼容模式</p><p class="help">{{ capabilityLabels(source) }}</p></div>
         <div class="actions"><ElButton v-if="!source.active" :loading="busy === source.id" :disabled="!!busy" @click="action(source, 'activate')">启用</ElButton><ElButton :disabled="!!busy" @click="action(source, 'test')">测试</ElButton><ElButton link type="danger" :disabled="!!busy" @click="action(source, 'remove')">移除</ElButton></div>
@@ -28,10 +27,10 @@ onBeforeUnmount(() => { alive = false; generation++ })
     <h3>添加音源</h3>
     <div class="actions"><ElButton :type="mode === 'file' ? 'primary' : 'default'" :disabled="!!busy" @click="mode = 'file'">上传 .js 文件</ElButton><ElButton :type="mode === 'url' ? 'primary' : 'default'" :disabled="!!busy" @click="mode = 'url'">HTTPS 链接</ElButton></div>
     <ElForm label-position="top" @submit.prevent="importing">
-      <ElFormItem v-if="mode === 'file'" label="音源文件"><input aria-label="音源文件" type="file" accept=".js" :disabled="!!busy" @change="file" /><span class="help">{{ filename || 'UTF-8 编码，最大 9 MB' }}</span></ElFormItem>
-      <ElFormItem v-else label="音源 HTTPS 地址"><ElInput v-model="url" placeholder="https://example.com/source.js" type="url" maxlength="4096" :disabled="!!busy" autocomplete="off" /><span class="help">仅接受公网 HTTPS 链接。地址和脚本加密保存，页面不回显导入地址。</span></ElFormItem>
+      <ElFormItem v-if="mode === 'file'" label="LX 2.0 音源文件（.js，UTF-8，≤9 MB）"><input aria-label="LX 2.0 音源文件（.js，UTF-8，≤9 MB）" type="file" accept=".js" :disabled="!!busy" @change="file" /><span class="help">{{ filename }}</span></ElFormItem>
+      <ElFormItem v-else label="音源公网 HTTPS 地址"><ElInput v-model="url" placeholder="https://example.com/source.js" type="url" maxlength="4096" :disabled="!!busy" autocomplete="off" /></ElFormItem>
       <ElFormItem label="名称（可选）"><ElInput v-model="name" maxlength="100" placeholder="留空使用脚本名称" :disabled="!!busy" /></ElFormItem>
-      <details><summary>兼容性设置</summary><label class="compatibility">运行模式 <select v-model="environment" :disabled="!!busy" aria-label="音源兼容模式"><option value="mobile">Mobile（默认）</option><option value="desktop">Desktop</option></select></label><p class="help">仅在脚本要求桌面环境时切换为 Desktop。</p></details>
+      <details><summary>兼容性设置</summary><label class="compatibility">运行模式 <select v-model="environment" :disabled="!!busy" aria-label="音源兼容模式"><option value="mobile">Mobile（默认）</option><option value="desktop">Desktop</option></select></label></details>
       <ElButton type="primary" :loading="busy === 'import'" :disabled="!!busy || (mode === 'file' ? !script : !url.trim())" native-type="submit">导入并启用</ElButton>
     </ElForm>
     <template #footer><ElButton :disabled="!!busy" @click="emit('update:modelValue', false)">完成</ElButton></template>

@@ -110,7 +110,7 @@ watch(() => props.proposal, async value => {
           <label :for="`${editorId}-name`">歌单名称</label>
           <ElInput :id="`${editorId}-name`" :model-value="form.name" maxlength="120" aria-label="歌单名称" placeholder="给歌单起个名字" :disabled="blocked" @update:model-value="updateForm({ name: $event })" />
           <label :for="`${editorId}-description`">简介</label>
-          <ElInput :id="`${editorId}-description`" :model-value="form.description" type="textarea" :rows="4" maxlength="1000" aria-label="歌单简介" placeholder="记录这张歌单的场景或心情" :disabled="blocked" resize="vertical" @update:model-value="updateForm({ description: $event })" />
+          <ElInput :id="`${editorId}-description`" :model-value="form.description" type="textarea" :rows="4" maxlength="1000" aria-label="歌单简介"  :disabled="blocked" resize="vertical" @update:model-value="updateForm({ description: $event })" />
         </div>
         <p class="sleeve-count"><ElIcon><Headset /></ElIcon>{{ form.songIds.length }} 首歌曲</p>
       </aside>
@@ -131,7 +131,7 @@ watch(() => props.proposal, async value => {
               <div class="song-actions"><button type="button" class="editor-icon" :disabled="index === 0 || blocked" :aria-label="`上移第${index + 1}首`" title="上移" @click="emit('move', index, -1)"><ElIcon><ArrowUp /></ElIcon></button><button type="button" class="editor-icon" :disabled="index === form.songIds.length - 1 || blocked" :aria-label="`下移第${index + 1}首`" title="下移" @click="emit('move', index, 1)"><ElIcon><ArrowDown /></ElIcon></button><button type="button" class="editor-icon remove-song" data-remove-song :disabled="blocked" :aria-label="`移除第${index + 1}首`" title="移除歌曲" @click="removeSong(index)"><ElIcon><Delete /></ElIcon></button></div>
             </li>
           </ol>
-          <div v-else class="editor-empty"><ElIcon><Headset /></ElIcon><h3>歌单里还没有歌曲</h3><p>选几首喜欢的歌，或让 AI 帮你选。</p><ElButton :icon="Plus" :disabled="blocked" @click="emit('open-picker')">选择歌曲</ElButton></div>
+          <div v-else class="editor-empty"><ElIcon><Headset /></ElIcon><h3>歌单里还没有歌曲</h3><ElButton :icon="Plus" :disabled="blocked" @click="emit('open-picker')">选择歌曲</ElButton></div>
           <div class="song-list-note"><span>最多可添加 500 首歌曲</span><span><ElIcon><Rank /></ElIcon>拖动曲目可调整顺序</span></div>
         </template>
 
@@ -145,7 +145,7 @@ watch(() => props.proposal, async value => {
             <div class="proposal-actions"><ElButton :disabled="blocked" @click="emit('dismiss-proposal')">放弃建议</ElButton><ElButton type="primary" :icon="Check" :disabled="blocked || !proposal.songIds.length" @click="applyProposal">使用建议替换歌单</ElButton></div>
           </div>
           <form v-else class="ai-composer" @submit.prevent="canGenerate && emit('generate')">
-            <div class="ai-intro"><h3>这次想唱什么？</h3><p>描述场景、歌手或氛围，只从当前 NAS 曲库中选歌。</p></div>
+            <div class="ai-intro"><h3>从曲库推荐歌曲</h3></div>
             <label :for="`${editorId}-prompt`">你的想法</label>
             <ElInput :id="`${editorId}-prompt`" ref="promptInput" :model-value="generation.prompt" type="textarea" :rows="4" maxlength="1000" placeholder="例如：适合朋友聚会的华语合唱，节奏轻快" :disabled="blocked" resize="vertical" @update:model-value="updateGeneration({ prompt: $event })" />
             <label :for="`${editorId}-keyword`">候选关键词 <span>可选</span></label>
@@ -153,7 +153,6 @@ watch(() => props.proposal, async value => {
             <div class="ai-config"><label :for="`${editorId}-model`">模型<select :id="`${editorId}-model`" :value="generation.modelServiceId" aria-label="歌单 AI 模型" :disabled="blocked || !models.length" @change="updateGeneration({ modelServiceId: ($event.target as HTMLSelectElement).value })"><option v-if="!models.length" value="">暂无可用模型</option><option v-for="model in models" :key="model.id" :value="model.id">{{ model.name }}</option></select></label><label :for="`${editorId}-limit`">最多推荐首数<input :id="`${editorId}-limit`" :value="generation.limit" type="number" min="1" max="50" step="1" inputmode="numeric" :aria-invalid="!validLimit" :aria-describedby="!validLimit ? `${editorId}-limit-error` : undefined" :disabled="blocked" @input="updateGeneration({ limit: Number(($event.target as HTMLInputElement).value) })"></label></div>
             <p v-if="!validLimit" :id="`${editorId}-limit-error`" class="field-error" role="alert">推荐首数请输入 1–50 之间的整数。</p>
             <p v-if="!models.length" class="ai-help no-model">尚无可用模型，请先到 AI 设置添加并启用。你仍可返回歌曲手动选歌。</p>
-            <p class="ai-help">每次从最多 500 首候选中选择。只发送歌曲标题、歌手和分类，不发送文件路径或音视频。</p>
             <div class="generate-action"><span role="status">{{ generating ? '正在从曲库挑选歌曲，请稍候…' : '先预览推荐结果，再由你决定是否使用。' }}</span><ElButton type="primary" native-type="submit" :icon="generating ? undefined : MagicStick" :loading="generating" :disabled="!canGenerate">生成歌单建议</ElButton></div>
           </form>
         </section>
@@ -271,7 +270,6 @@ watch(() => props.proposal, async value => {
 .ai-composer>label>span { color: var(--sv-text-secondary); font-size: 12px; }
 .ai-intro { margin-bottom: 20px; }
 .ai-intro h3 { font-size: 20px; font-weight: 600; }
-.ai-intro p { margin-top: 8px; font-size: 14px; line-height: 24px; color: var(--sv-text-secondary); }
 .ai-composer :deep(.el-textarea__inner) { padding: 12px; line-height: 24px; font-size: 14px; }
 .ai-config { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 16px; margin-top: 20px; }
 .ai-config label { display: grid; gap: 8px; min-width: 0; font-size: 14px; }

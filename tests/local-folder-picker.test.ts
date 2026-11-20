@@ -68,7 +68,7 @@ it('单击文件夹整行进入，使用当前文件夹确认，不再显示单�
   await row.trigger('click'); await flushPromises()
   expect(media.directories).toHaveBeenLastCalledWith('/media/中文歌曲', 0, '')
   expect(wrapper.get('.folder-chosen').text()).toContain('/media/中文歌曲')
-  expect(wrapper.text()).toContain('可以直接选择当前文件夹')
+  expect(button('使用当前文件夹').attributes('disabled')).toBeUndefined()
   expect(wrapper.emitted('select')).toBeUndefined()
   await button('使用当前文件夹').trigger('click')
   expect(wrapper.emitted('select')).toEqual([['/media/中文歌曲']])

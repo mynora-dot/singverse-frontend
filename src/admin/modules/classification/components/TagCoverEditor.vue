@@ -38,7 +38,7 @@ onBeforeUnmount(() => { active = false; controller.abort(); clear() })
 <template>
   <ElDialog :model-value="true" :title="`${tag.name} · 分类封面`" width="min(600px, calc(100vw - 32px))" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" @close="emit('close')">
     <div class="cover-preview"><img v-if="preview" :src="preview" :alt="`${tag.name}封面预览`" /><div v-else class="cover-placeholder"><span>{{ tag.name.slice(0,2) }}</span></div><div class="cover-caption"><small>分类封面预览</small><strong>{{ tag.name }}</strong></div></div>
-    <p class="cover-help">建议使用 16:9 横图，主体放在中间。支持 JPEG / PNG，最多 2MB、4096 × 4096 像素；电视会居中裁切。保存后自动压缩并移除图片附加信息。</p>
+    <p class="cover-help">JPEG / PNG · ≤ 2 MB · ≤ 4096 × 4096 px</p>
     <label class="cover-picker" :class="{ disabled: busy }"><input aria-label="选择分类封面图片" type="file" accept="image/jpeg,image/png" :disabled="busy" @change="choose" />{{ file ? '重新选择图片' : '选择封面图片' }}</label>
     <p v-if="file" class="cover-help">{{ file.name }} · {{ Math.ceil(file.size/1024) }} KB · 尚未保存</p>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon />

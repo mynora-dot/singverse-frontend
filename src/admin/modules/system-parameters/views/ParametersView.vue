@@ -54,14 +54,14 @@ async function closeRecovery() {
 </script>
 <template>
   <div class="parameters-page">
-    <PageHeader title="账号与安全" description="修改登录账号、密码，开启或管理二次验证。修改账号或密码后所有设备都需要重新登录。"><template #meta><ElTag :type="auth.account?.mfaEnabled ? 'success' : 'warning'" effect="light">{{ auth.account?.mfaEnabled ? '二次验证已开启' : '二次验证未开启' }}</ElTag></template></PageHeader>
+    <PageHeader title="账号与安全" />
     <ElAlert v-if="auth.account?.defaultPassword" title="当前仍在使用默认密码，请及时修改并开启二次验证。" type="warning" :closable="false" show-icon />
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon />
     <section class="security-list sv-glass" aria-label="账号安全设置">
-      <div class="security-row"><div><h2>登录账号 <span class="account-name">{{ auth.account?.username }}</span></h2><p>用于登录当前 NAS 的单管理员账号。</p></div><ElButton @click="start('username')">修改登录账号</ElButton></div>
-      <div class="security-row"><div><h2>登录密码 <ElTag :type="auth.account?.defaultPassword ? 'warning' : 'success'" effect="light">{{ auth.account?.defaultPassword ? '待修改' : '已设置' }}</ElTag></h2><p>15～128 个字符。修改账号或密码后，所有设备都需要重新登录。</p></div><ElButton @click="start('password')">修改密码</ElButton></div>
-      <div class="security-row"><div><h2>二次验证 <ElTag :type="auth.account?.mfaEnabled ? 'success' : 'info'" effect="light">{{ auth.account?.mfaEnabled ? '已开启' : '未开启' }}</ElTag></h2><p>使用认证器动态码（TOTP），登录时同时验证密码与动态码。</p></div><div class="button-row"><ElButton @click="start('setup')">{{ auth.account?.mfaEnabled ? '重新绑定认证器' : '开启二次验证' }}</ElButton><ElButton v-if="auth.account?.mfaEnabled" type="danger" plain @click="start('disable')">关闭二次验证</ElButton></div></div>
-      <div class="security-row"><div><h2>恢复码</h2><p>{{ auth.account?.mfaEnabled ? `剩余 ${auth.account.recoveryCodesRemaining} 枚。每枚只能使用一次，请离线妥善保管。` : '开启二次验证后生成，可在无法使用认证器时登录。' }}</p></div><ElButton v-if="auth.account?.mfaEnabled" @click="start('recovery')">重新生成恢复码</ElButton></div>
+      <div class="security-row"><div><h2>登录账号 <span class="account-name">{{ auth.account?.username }}</span></h2></div><ElButton @click="start('username')">修改登录账号</ElButton></div>
+      <div class="security-row"><div><h2>登录密码 <ElTag :type="auth.account?.defaultPassword ? 'warning' : 'success'" effect="light">{{ auth.account?.defaultPassword ? '待修改' : '已设置' }}</ElTag></h2></div><ElButton @click="start('password')">修改密码</ElButton></div>
+      <div class="security-row"><div><h2>二次验证 <ElTag :type="auth.account?.mfaEnabled ? 'success' : 'info'" effect="light">{{ auth.account?.mfaEnabled ? '已开启' : '未开启' }}</ElTag></h2></div><div class="button-row"><ElButton @click="start('setup')">{{ auth.account?.mfaEnabled ? '重新绑定认证器' : '开启二次验证' }}</ElButton><ElButton v-if="auth.account?.mfaEnabled" type="danger" plain @click="start('disable')">关闭二次验证</ElButton></div></div>
+      <div class="security-row"><div><h2>恢复码</h2><p>{{ auth.account?.mfaEnabled ? `剩余 ${auth.account.recoveryCodesRemaining} 枚` : '未生成' }}</p></div><ElButton v-if="auth.account?.mfaEnabled" @click="start('recovery')">重新生成恢复码</ElButton></div>
     </section>
     <ElDialog :model-value="!!operation" :title="operation === 'username' ? '修改登录账号' : operation === 'password' ? '修改密码' : '验证身份'" width="440px" @close="operation = ''; password = ''; code = ''; next = ''; confirmPassword = ''">
       <ElForm label-position="top" @submit.prevent="submit">
@@ -69,7 +69,7 @@ async function closeRecovery() {
         <ElFormItem v-if="auth.account?.mfaEnabled" label="动态码 / 恢复码"><ElInput v-model="code" autocomplete="one-time-code" maxlength="128" /></ElFormItem>
         <template v-if="operation === 'username'"><ElFormItem label="新登录账号"><ElInput v-model="next" autocomplete="username" maxlength="32" /></ElFormItem><p class="muted dialog-hint">3～32 个字母、数字、下划线、点或短横线，以字母、数字或下划线开头，区分大小写。修改后请用新账号重新登录。</p></template>
         <template v-if="operation === 'password'"><ElFormItem label="新密码（15～128 个字符）"><ElInput v-model="next" type="password" show-password autocomplete="new-password" /></ElFormItem><ElFormItem label="确认新密码"><ElInput v-model="confirmPassword" type="password" show-password autocomplete="new-password" /></ElFormItem></template>
-        <p v-if="operation === 'disable' || operation === 'recovery'" class="muted dialog-hint">此操作会使现有登录会话失效。</p>
+        <p v-if="operation !== 'setup'" class="muted dialog-hint">确认后所有设备需重新登录。</p>
         <ElAlert v-if="error" :title="error" type="error" :closable="false" />
         <div class="dialog-actions"><ElButton @click="operation = ''">取消</ElButton><ElButton type="primary" native-type="submit" :loading="busy" :disabled="!password">确认</ElButton></div>
       </ElForm>

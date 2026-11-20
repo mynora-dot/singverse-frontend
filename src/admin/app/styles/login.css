@@ -24,7 +24,6 @@
 .home-login-close svg { width: 22px; height: 22px; }
 .login-card { width: 100%; min-width: 0; }
 .login-card h1 { color: var(--sv-text-primary); font: 650 27px/1.4 var(--sv-font-sans); letter-spacing: -.025em; }
-.login-description { margin-top: 8px; color: var(--sv-text-secondary); font-size: 15px; line-height: 1.7; }
 .login-form { margin-top: 28px; }
 .login-field { margin-bottom: 20px; }
 .login-field label { display: block; margin-bottom: 8px; color: var(--sv-text-primary); font-size: 14px; font-weight: 550; }
@@ -43,7 +42,6 @@
 .login-inline-button { display: inline-flex; align-items: center; min-height: 36px; padding: 4px 0; border: 0; background: transparent; color: var(--sv-accent-muted); font: inherit; font-size: 14px; cursor: pointer; }
 .login-inline-button:hover { text-decoration: underline; }
 .login-inline-button:disabled { color: var(--sv-text-tertiary); cursor: not-allowed; }
-.login-preference-hint { display: grid; gap: 2px; margin: -6px 0 18px; color: var(--sv-text-tertiary); font-size: 12px; line-height: 1.7; }
 .login-notice { margin-top: 18px; padding: 12px 14px; border: 1px solid var(--sv-semantic-ok); border-radius: 8px; background: var(--sv-semantic-ok-soft); color: var(--sv-semantic-ok); font-size: 14px; line-height: 1.7; }
 .login-submit { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 52px; padding: 12px 20px; border: 1px solid transparent; border-radius: 8px; background: var(--sv-accent-primary); color: var(--sv-on-accent); font-size: 16px; font-weight: 600; line-height: 1.5; cursor: pointer; }
 .login-submit:hover:not(:disabled) { background: var(--sv-accent-muted); }
@@ -74,7 +72,7 @@
   .home-login-dialog .el-dialog__header { margin-bottom: 20px; }
   .home-login-dialog .el-dialog__body { overflow: visible; }
   .login-card h1 { font-size: 25px; }
-  .login-description, .login-field label, .login-text-button, .login-error { font-size: 16px; }
+  .login-field label, .login-text-button, .login-error { font-size: 16px; }
   .login-form { margin-top: 24px; }
 }
 @media(prefers-reduced-motion:reduce) { .login-spinner { animation: none; } }

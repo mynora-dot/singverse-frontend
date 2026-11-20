@@ -121,7 +121,6 @@ defineExpose({ stop, stopVersion: (id: string) => { if (loadedKey.value === id) 
 <template>
   <section class="current-preview" aria-label="试听当前伴奏">
     <div class="preview-heading"><h3>试听当前伴奏 <span class="current-tag">✓ 当前使用</span></h3><div class="track-switch" role="group" aria-label="切换试听音轨"><button type="button" :aria-pressed="track === 'original'" @click="selectTrack('original')">原唱</button><button type="button" :aria-pressed="track === 'backing'" @click="selectTrack('backing')">伴奏</button></div></div>
-    <p class="preview-hint">已生成独立伴奏，点歌时可在原唱和伴奏之间切换。</p>
     <div class="player-controls">
       <button type="button" class="play-toggle" :disabled="loading" :aria-label="loading ? '正在准备试听' : playing ? '暂停试听' : '播放试听'" @click="toggle"><span v-if="loading" class="loading-ring" /><ElIcon v-else :size="22"><VideoPause v-if="playing" /><VideoPlay v-else /></ElIcon></button>
       <div class="timeline"><label class="timeline-label"><ElIcon :size="16"><Microphone v-if="track === 'original'" /><Headset v-else /></ElIcon>{{ track === 'original' ? '原唱' : '当前伴奏' }}<span>播放进度</span></label><input type="range" min="0" :max="total || 1" step="0.1" :value="elapsed" :style="{ '--played': `${total ? Math.min(100, elapsed / total * 100) : 0}%` }" :disabled="!loadedKey || loading" aria-label="试听进度" @input="seek"></div>

@@ -222,7 +222,7 @@ it('未选包、空文件、非 ZIP 及超限资料包在新建来源前给出�
 it.each([true, false])('新建 WebDAV 不提供资料包也可保存，startScan=%s', async startScan => {
   await openWebDAV()
   expect(wrapper.find('input[type="file"]').exists()).toBe(false)
-  expect(wrapper.text()).toContain('无需资料包，可直接保存并扫描目录')
+  expect(button('直接扫描').attributes('aria-pressed')).toBe('true')
   await submit(startScan)
   expect(media.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'WEBDAV', location: source.location, startScan }), undefined)
   expect(shareImports.upload).not.toHaveBeenCalled()

@@ -30,7 +30,7 @@ it('当前伴奏不可删除，历史轻量版本保留试听、切换、下载�
   await open()
   expect(wrapper!.get('button[aria-label="当前伴奏不能删除"]').attributes('disabled')).toBeDefined()
   expect(remove().attributes('disabled')).toBeUndefined()
-  expect(wrapper!.get('.version-options').text()).toContain('先将其他整曲 AAC')
+  expect(wrapper!.get('.version-options').text()).toContain('设为当前伴奏')
   expect(wrapper!.findAll('.version audio')).toHaveLength(2)
   expect(wrapper!.findAll('.version a[download]')).toHaveLength(2)
 })

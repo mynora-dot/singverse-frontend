@@ -79,7 +79,7 @@ function focusMainContent() { document.getElementById('main-content')?.focus() }
   <div class="admin-shell" :class="{ 'record-room-shell': route.path === '/overview' }">
     <header class="app-masthead" :inert="navigationOpen || undefined">
       <div class="masthead-inner">
-        <RouterLink to="/overview" class="brand" aria-label="SingVerse 家庭音乐中心首页"><img class="brand-mark" src="/assets/brand/logo-mark.svg" width="34" height="34" alt=""><span><strong>SingVerse<span class="brand-dot">.</span></strong><small>家庭音乐资料室</small></span></RouterLink>
+        <RouterLink to="/overview" class="brand" aria-label="SingVerse 家庭音乐中心首页"><img class="brand-mark" src="/assets/brand/logo-mark.svg" width="34" height="34" alt=""><span><strong>SingVerse<span class="brand-dot">.</span></strong></span></RouterLink>
         <nav class="primary-navigation" aria-label="主导航">
           <RouterLink :to="overviewEntry.path" :aria-current="activePath === overviewEntry.path ? 'page' : undefined">{{ overviewEntry.label }}</RouterLink>
           <RouterLink v-for="group in primaryGroups" :key="group.id" :to="group.path" :aria-current="currentNavigation.group?.id === group.id ? 'page' : undefined">{{ group.label }}</RouterLink>
@@ -103,20 +103,20 @@ function focusMainContent() { document.getElementById('main-content')?.focus() }
       </div>
     </header>
     <div class="workspace" :inert="navigationOpen || undefined">
-      <div v-if="currentNavigation.group" ref="sectionNavigation" class="section-navigation"><nav :aria-label="currentNavigation.group.label + '分区'"><RouterLink v-for="entry in currentNavigation.group.children" :key="entry.path" :to="entry.path" class="section-link" :aria-current="activePath === entry.path ? 'page' : undefined">{{ entry.label }}<small v-if="'advanced' in entry && entry.advanced">高级</small></RouterLink></nav></div>
+      <div v-if="currentNavigation.group" ref="sectionNavigation" class="section-navigation"><nav :aria-label="currentNavigation.group.label + '分区'"><RouterLink v-for="entry in currentNavigation.group.children" :key="entry.path" :to="entry.path" class="section-link" :aria-current="activePath === entry.path ? 'page' : undefined">{{ entry.label }}</RouterLink></nav></div>
       <main id="main-content" tabindex="-1">
         <RouterView v-slot="{ Component }">
           <Transition name="sv-page" mode="out-in"><component :is="Component" /></Transition>
         </RouterView>
       </main>
-      <footer class="workspace-footer"><span>SingVerse · 你的家庭音乐资料室</span><a href="/party/" target="_blank" rel="noopener">打开亲友点歌页 <ElIcon><TopRight /></ElIcon></a></footer>
+      <footer class="workspace-footer"><span>SingVerse</span><a href="/party/" target="_blank" rel="noopener">打开亲友点歌页 <ElIcon><TopRight /></ElIcon></a></footer>
     </div>
     <Transition name="sv-nav" @before-leave="retireNavigation">
     <div v-if="navigationOpen" class="navigation-dialog" role="dialog" aria-modal="true" aria-label="全部功能" :inert="!navigationOpen || undefined" :aria-hidden="!navigationOpen || undefined" @keydown="trapNavigation">
       <nav id="admin-navigation" ref="navigationList" class="navigation-sheet" aria-label="全部导航">
         <div class="sheet-heading"><strong>全部功能</strong><button type="button" aria-label="关闭导航" @click="closeNavigation"><ElIcon><Close /></ElIcon></button></div>
         <RouterLink :to="overviewEntry.path" class="nav-item" @click="closeNavigation" :aria-current="activePath === overviewEntry.path ? 'page' : undefined"><ElIcon><component :is="overviewEntry.icon" /></ElIcon>{{ overviewEntry.label }}</RouterLink>
-        <section v-for="group in navigationGroups" :key="group.id" class="nav-group" :aria-labelledby="`nav-group-${group.id}`"><h2 :id="`nav-group-${group.id}`" class="nav-group-title">{{ group.label }}</h2><ul><li v-for="entry in group.children" :key="entry.path"><RouterLink :to="entry.path" class="nav-item" @click="closeNavigation" :aria-current="activePath === entry.path ? 'page' : undefined"><ElIcon><component :is="entry.icon" /></ElIcon>{{ entry.label }}<small v-if="'advanced' in entry && entry.advanced">高级</small></RouterLink></li></ul></section>
+        <section v-for="group in navigationGroups" :key="group.id" class="nav-group" :aria-labelledby="`nav-group-${group.id}`"><h2 :id="`nav-group-${group.id}`" class="nav-group-title">{{ group.label }}</h2><ul><li v-for="entry in group.children" :key="entry.path"><RouterLink :to="entry.path" class="nav-item" @click="closeNavigation" :aria-current="activePath === entry.path ? 'page' : undefined"><ElIcon><component :is="entry.icon" /></ElIcon>{{ entry.label }}</RouterLink></li></ul></section>
         <RouterLink to="/system/assistant" class="nav-item" @click="closeNavigation"><ElIcon><ChatDotRound /></ElIcon>管理助手</RouterLink>
         <ThemeSwitcher variant="sheet" />
         <RouterLink :to="taskEntry.path" class="nav-item" @click="closeNavigation" :aria-current="activePath === taskEntry.path ? 'page' : undefined"><ElIcon><Clock /></ElIcon>{{ taskEntry.label }}<span v-if="taskCount > 0" class="task-count" aria-hidden="true">{{ taskBadge }}</span></RouterLink><a class="nav-item" href="/party/" target="_blank" rel="noopener">亲友点歌页 <ElIcon><TopRight /></ElIcon></a>

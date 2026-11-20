@@ -12,7 +12,8 @@ afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks();
 it('唯一音频原唱无需探测，仍可显式生成独立伴奏且不编造流索引', async () => {
   vi.mocked(authRequest).mockResolvedValue({ state: 'CONFIRMED', origin: 'SOURCE', revision: 0, originalSelection: { kind: 'UNIQUE_AUDIO' }, jobs: [{ id: 'done', kind: 'FAST', state: 'SUCCEEDED', cleanupState: 'PENDING' }] })
   wrapper = mount(AudioRolesPanel, { props: { songId: 'single' } }); await flushPromises()
-  expect(wrapper.text()).toContain('唯一音频直接作为原唱')
+  expect(wrapper.text()).toContain('只有一条原唱音轨')
+  expect(wrapper.get('.roles-origin').text()).toContain('按文件确定')
   expect(wrapper.text()).not.toContain('还没有读取音轨')
   expect(wrapper.text()).toContain('临时采样文件待清理')
   expect(wrapper.findAll('button').some(button => button.text() === '读取音轨')).toBe(false)
@@ -47,7 +48,7 @@ it('轮询保留未保存的人工选择，纠正提交源 ID 和修订号', asy
 it('单音轨已生成伴奏时提供试听，未生成时可提交分离', async () => {
   vi.mocked(authRequest).mockResolvedValue({ state: 'CONFIRMED', revision: 0, originalId: 'stream:1', streams: [{ id: 'stream:1' }], backingResource: { jobId: 'job 1' }, jobs: [] })
   wrapper = mount(AudioRolesPanel, { props: { songId: 'song' } }); await flushPromises()
-  expect(wrapper.text()).toContain('已生成独立伴奏')
+  expect(wrapper.text()).toContain('试听当前伴奏')
   await wrapper.get('button[aria-label="播放试听"]').trigger('click'); await flushPromises()
   expect(wrapper.get('audio').attributes('src')).toBe('/api/v1/media-songs/song/accompaniment/job%201')
   wrapper.unmount()
@@ -60,13 +61,15 @@ it('单音轨已生成伴奏时提供试听，未生成时可提交分离', asyn
 it('AI 自动标记需要人工确认时可一键确认，人工标记无改动时不可重复保存', async () => {
   vi.mocked(authRequest).mockResolvedValue({ ...result, state: 'CONFIRMED', origin: 'AUTO', revision: 2, originalId: 'stream:1', backingId: 'stream:2', jobs: [{ id: 'a', kind: 'ANALYZE', state: 'SUCCEEDED' }] })
   wrapper = mount(AudioRolesPanel, { props: { songId: 'song' } }); await flushPromises()
-  expect(wrapper.text()).toContain('自动识别')
+  expect(wrapper.text()).toContain('确认自动标记')
+  expect(wrapper.get('.roles-origin').text()).toContain('自动识别')
   expect(wrapper.findAll('button').some(button => button.text() === '让 AI 识别')).toBe(false)
   const confirm = wrapper.findAll('button').find(button => button.text() === '确认自动标记')!
   expect(confirm.attributes('disabled')).toBeUndefined()
   wrapper.unmount()
   vi.mocked(authRequest).mockResolvedValue({ ...result, state: 'CONFIRMED', origin: 'MANUAL', revision: 3, originalId: 'stream:1', backingId: 'stream:2' })
   wrapper = mount(AudioRolesPanel, { props: { songId: 'song' } }); await flushPromises()
+  expect(wrapper.get('.roles-origin').text()).toContain('人工标记')
   expect(wrapper.findAll('button').find(button => button.text() === '保存标记')!.attributes('disabled')).toBeDefined()
 })
 it('关闭详情时，尚未完成的请求不能重新启动轮询', async () => {

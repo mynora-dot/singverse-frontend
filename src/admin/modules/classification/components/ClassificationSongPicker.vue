@@ -95,7 +95,6 @@ if (classificationPicker.value) { void loadSources(); void loadTags() }
 </script>
 <template>
   <ElDialog class="classification-song-picker" :model-value="true" :title="purpose==='playlist'?'选择歌单歌曲':'选择要分类的歌曲'" width="min(820px, calc(100vw - 32px))" :close-on-click-modal="false" @close="emit('close')" @opened="searchInput?.focus()">
-    <p v-if="purpose === 'playlist'" class="picker-description">搜索并勾选歌曲，换页保留选择。确认后可调整歌单顺序。</p>
     <div class="picker-controls" :class="{ 'classification-controls': classificationPicker }">
       <div v-if="classificationPicker" class="picker-scope-bar">
         <div class="picker-scope-options" role="group" aria-label="分类状态">
@@ -120,21 +119,13 @@ if (classificationPicker.value) { void loadSources(); void loadTags() }
     <div class="picker-toolbar"><label><input type="checkbox" aria-label="选择本页歌曲" :checked="allOnPage" :indeterminate="partialPage" :disabled="loading || !items.length" @change="togglePage(($event.target as HTMLInputElement).checked)">选择本页</label><span>已选 {{ selected.size }} 首</span><ElButton v-if="selected.size" text size="small" @click="selected = new Set()">清空已选</ElButton></div>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton text @click="load">重新加载</ElButton></ElAlert>
     <div v-if="loading" class="picker-empty" role="status">正在读取歌曲…</div>
-    <div v-else-if="!error && !items.length" class="picker-empty"><span class="empty-note" aria-hidden="true"><ElIcon><SongPlaceholderIcon /></ElIcon></span><h3>{{ unclassifiedEmpty ? '没有未分类的歌曲' : filtered ? '没有找到匹配的歌曲' : '曲库中还没有歌曲' }}</h3><p v-if="purpose === 'playlist'">{{ filtered ? '试试其他歌名、歌手或文件名。' : '先在媒体库添加来源并扫描，再来选择。' }}</p><ElButton v-if="unclassifiedEmpty" text @click="changeScope(false)">查看全部歌曲</ElButton><ElButton v-else-if="filtered" text @click="resetFilters">清除筛选</ElButton></div>
+    <div v-else-if="!error && !items.length" class="picker-empty"><span class="empty-note" aria-hidden="true"><ElIcon><SongPlaceholderIcon /></ElIcon></span><h3>{{ unclassifiedEmpty ? '没有未分类的歌曲' : filtered ? '没有找到匹配的歌曲' : '曲库中还没有歌曲' }}</h3><ElButton v-if="unclassifiedEmpty" text @click="changeScope(false)">查看全部歌曲</ElButton><ElButton v-else-if="filtered" text @click="resetFilters">清除筛选</ElButton></div>
     <div v-else-if="!error" class="picker-song-list"><label v-for="song in items" :key="song.id" class="picker-song" :class="{ selected: selected.has(song.id) }"><input type="checkbox" :aria-label="`选择歌曲：${songTitle(song)}`" :checked="selected.has(song.id)" :disabled="!selected.has(song.id) && selected.size >= limit" @change="toggle(song.id, ($event.target as HTMLInputElement).checked)"><SongCover class="picker-song-art" :song="song" /><span class="picker-song-name"><strong>{{ songTitle(song) }}</strong><small>{{ songArtists(song).join('、') || '未知歌手' }}</small></span><span class="picker-song-location"><strong>{{ song.sourceName }}</strong><small :title="song.relativePath">{{ song.relativePath }}</small></span></label></div>
     <div class="picker-pagination"><small v-if="!loading && !error">{{ items.length ? `第 ${rangeStart}–${rangeEnd} 首，共 ${total} 首` : `共 ${total} 首` }}</small><ElPagination :current-page="page + 1" :total="total" :page-size="20" :pager-count="5" :disabled="loading" layout="prev, pager, next" @current-change="changePage" /></div>
     <template #footer><div class="picker-footer"><span>已选择 <strong>{{ selected.size }}</strong> 首 <small>· 最多 {{ limit }} 首</small></span><div><ElButton @click="emit('close')">取消</ElButton><ElButton type="primary" :disabled="!selected.size && !props.selectedIds.length" @click="emit('selectedSongs',[...selected].map(id=>selectedModels.get(id)).filter((s):s is MediaSong=>!!s));emit('confirm', [...selected])">确认选择<span v-if="selected.size">（{{ selected.size }} 首）</span></ElButton></div></div></template>
   </ElDialog>
 </template>
 <style scoped>
-.picker-description {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--sv-text-secondary);
-  line-height: 1.8;
-  margin-bottom: 20px
-}
-
 .picker-search {
   flex-shrink: 0;
   display: flex;

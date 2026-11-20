@@ -56,13 +56,12 @@ async function uploadCover(event: Event) {
 </script>
 <template>
   <ElDialog :model-value="!!document" title="订正正式资料" width="min(900px, calc(100vw - 24px))" :close-on-click-modal="false" :show-close="!busy" @close="emit('close')">
-    <p>确认值会受到本机保护，包括与当前相同的值。明确清空后，自动整理和共享更新不会重新填回；恢复自动采用会重新选择已保存的来源。</p>
     <ElAlert v-if="error" type="error" :title="error" :closable="false" role="alert" />
     <div class="formal-fields">
       <div v-for="name in names" :key="name" class="formal-field">
         <label :for="'formal-' + name">{{ labels[name] }}<small>{{ formalStateLabel(document?.states[name]) }}</small></label>
         <ElInput v-if="name !== 'cover'" :id="'formal-' + name" v-model="values[name]" :aria-label="labels[name]" :type="name === 'lyrics' ? 'textarea' : 'text'" :rows="name === 'lyrics' ? 5 : undefined" :disabled="busy || choices[name] === 'CLEAR' || choices[name] === 'RESET'" @input="choices[name] = 'SET'" />
-        <span v-else><img v-if="values.cover && choices.cover !== 'CLEAR'" :src="'/api/v1/metadata/assets/' + values.cover" alt="当前正式封面或待采用原图" class="cover-preview" /><input type="file" accept="image/jpeg,image/png" aria-label="上传正式封面原图" :disabled="busy" @change="uploadCover" /><small>JPEG / PNG，32 MiB 以内；上传后确认采用。</small></span>
+        <span v-else><img v-if="values.cover && choices.cover !== 'CLEAR'" :src="'/api/v1/metadata/assets/' + values.cover" alt="当前正式封面或待采用原图" class="cover-preview" /><input type="file" accept="image/jpeg,image/png" aria-label="上传正式封面原图" :disabled="busy" @change="uploadCover" /><small>JPEG / PNG · ≤ 32 MiB</small></span>
         <select v-model="choices[name]" :aria-label="labels[name] + '保存方式'" :disabled="busy"><option value="KEEP">本次不修改</option><option value="SET" :disabled="name === 'cover' && !values.cover">确认此值并保护</option><option value="CLEAR">明确清空并保护</option><option value="RESET">恢复自动采用</option></select>
       </div>
     </div>

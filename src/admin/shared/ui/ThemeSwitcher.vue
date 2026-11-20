@@ -23,7 +23,6 @@ const toggleLabel = computed(() => nextTheme.value === 'dark' ? '切换到深色
         <span class="theme-check" aria-hidden="true"><ElIcon v-if="theme.id === currentTheme"><Check /></ElIcon></span>
       </button>
     </div>
-    <p class="theme-note">仅在本浏览器记住你的选择</p>
   </section>
 </template>
 
@@ -107,12 +106,6 @@ const toggleLabel = computed(() => nextTheme.value === 'dark' ? '切换到深色
   font-size: 14px;
   font-weight: 500;
   color: var(--sv-text-primary);
-}
-
-.theme-note {
-  margin-top: 8px;
-  font-size: 12px;
-  color: var(--sv-text-secondary);
 }
 
 @media(max-width:768px) {

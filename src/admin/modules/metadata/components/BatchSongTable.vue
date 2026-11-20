@@ -7,7 +7,7 @@ import { confidence, itemLabel } from '../batch-display'
 import { providerNames } from '../types'
 import type { MetadataBatch, MetadataItem } from '../types'
 
-const props = defineProps<{ batch: MetadataBatch; busy: boolean; retryDisabledReason: string; emptyTitle?: string; emptyDescription?: string }>()
+const props = defineProps<{ batch: MetadataBatch; busy: boolean; retryDisabledReason: string; emptyTitle?: string }>()
 const emit = defineEmits<{ review: [item: MetadataItem]; retry: [itemId: string]; manual: [item: MetadataItem]; reason: [item: MetadataItem]; reset: [] }>()
 function risk(item: MetadataItem) { return confidence(item, props.batch.threshold) }
 function applied(item: MetadataItem) { return ['AUTO_APPLIED', 'MANUAL_APPLIED'].includes(item.status) }
@@ -28,7 +28,6 @@ function applied(item: MetadataItem) { return ['AUTO_APPLIED', 'MANUAL_APPLIED']
               <small class="candidate-provider">{{ providerNames[item.candidates[0].track.provider] }}<template v-if="item.candidates[0].track.releaseDate"> · {{ item.candidates[0].track.releaseDate }}</template></small>
               <small v-if="item.status === 'REVIEW' && risk(item) !== 'HIGH'" class="risk-warning">{{ risk(item) === 'NONE' ? '未找到可信匹配，低分候选仅供核对' : '未达到高相似度阈值，请核对版本和歌手' }}</small>
               <small v-else-if="item.status === 'REVIEW' && item.candidates[1] && item.candidates[0].score - item.candidates[1].score < .08" class="item-note">多个接近候选，请核对版本</small>
-              <small v-else-if="applied(item)" class="item-note">已应用，具体字段可从单曲处理查看</small>
               <small v-if="item.error?.includes('部分平台失败')" class="risk-warning">{{ item.error }}</small>
             </template>
             <span v-else class="item-note">{{ item.status === 'PENDING' ? (batch.status === 'CANCELLED' ? '终止后不再处理' : '等待平台查询') : item.status === 'PROCESSING' ? '正在查询平台，请稍候' : item.status === 'SKIPPED_EXISTING' ? '保留已有确认结果' : item.status === 'FAILED' ? item.error || '匹配失败，请查看原因后重试' : '没有找到候选，可重新匹配或手工处理' }}</span>
@@ -44,7 +43,7 @@ function applied(item: MetadataItem) { return ['AUTO_APPLIED', 'MANUAL_APPLIED']
         </tr>
       </tbody>
     </table>
-    <div v-else class="batch-list-empty" role="status"><ElIcon><Search /></ElIcon><h2>{{ emptyTitle || '当前筛选没有歌曲' }}</h2><p>{{ emptyDescription || '请调整状态或搜索条件。' }}</p><ElButton :disabled="busy" @click="emit('reset')">查看全部歌曲</ElButton></div>
+    <div v-else class="batch-list-empty" role="status"><ElIcon><Search /></ElIcon><h2>{{ emptyTitle || '当前筛选没有歌曲' }}</h2><ElButton :disabled="busy" @click="emit('reset')">查看全部歌曲</ElButton></div>
   </div>
 </template>
 

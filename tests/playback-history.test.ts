@@ -92,11 +92,8 @@ it('排行和播放记录使用真实同源缩略图，缺图回落唱片占位'
   expect(wrapper!.get('.playback-entry img').attributes('src')).toBe('/api/v1/metadata/songs/song-1/cover?variant=thumbnail')
 })
 
-it('空搜索可一键恢复默认时间，计入规则直接展开，键盘切换视图保留筛选', async () => {
+it('空搜索可一键恢复默认时间，键盘切换视图保留筛选', async () => {
   await page()
-  expect(wrapper!.get('button[aria-controls="history-rules-detail"]').attributes('aria-expanded')).toBe('false')
-  await button('计入规则').trigger('click')
-  expect(wrapper!.get('#history-rules-detail').text()).toContain('后台试听不计入热门排行')
   vi.mocked(playbackHistory.popular).mockResolvedValueOnce(paged([]))
   await button('近 7 天').trigger('click'); await flushPromises()
   await button('清除条件').trigger('click'); await flushPromises()

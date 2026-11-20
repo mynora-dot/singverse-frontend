@@ -91,7 +91,7 @@ it('ZIP 导入使用当前来源、会话与 CSRF，并刷新状态', async () =
       headers: { 'Content-Type': 'application/zip', 'X-CSRF-Token': 'test-csrf' },
     }))
     expect(wrapper.text()).not.toContain('开始导入')
-    expect(wrapper.text()).toContain('上传已完成，可以关闭页面')
+    expect(wrapper.text()).toContain('正在解析资料包')
     expect(wrapper.text()).not.toContain('自动跳过')
   } finally { vi.unstubAllGlobals() }
 })
@@ -143,7 +143,7 @@ it('默认隐藏同步和分包细节，分享可直接提交给后台准备', a
   await openAdvanced()
   expect(wrapper.text()).toContain('等待处理 2 首')
   expect(wrapper.text()).toContain('1 首待重新生成')
-  expect(wrapper.text()).toContain('5000 首')
+  expect(wrapper.findAllComponents(ElButton).some(button => button.text() === '重新扫描歌曲')).toBe(true)
 })
 
 it('后台准备只显示可理解的进度，不暴露任务状态和分包细节', async () => {
@@ -151,7 +151,7 @@ it('后台准备只显示可理解的进度，不暴露任务状态和分包细�
   wrapper = mount(WebDavMetadataDialog, { props: { source }, global: { stubs: { teleport: true } } })
   await flushPromises()
   expect(wrapper.text()).toContain('正在准备')
-  expect(wrapper.text()).toContain('关闭窗口也会继续')
+  expect(wrapper.find('[role="progressbar"]').exists()).toBe(true)
   expect(wrapper.text()).not.toContain('WAITING')
   expect(wrapper.text()).not.toContain('分包')
 })

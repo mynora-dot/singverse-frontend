@@ -110,7 +110,6 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
 <template>
   <section class="share-import" aria-label="导入曲库资料">
     <h3>导入曲库资料</h3>
-    <p>导入 ZIP 资料包，保留本地修改。</p>
     <p class="root">媒体目录：{{ source.location }}</p>
     <label class="file-choice" :class="{ disabled: uploading || working }">选择资料包<input type="file" accept=".zip,application/zip" aria-label="选择资料包" :disabled="uploading || working" @change="choose"></label>
     <div v-if="uploading" role="status"><ElProgress :percentage="0" indeterminate /><p>正在上传 {{ pendingFile?.name }}，请保持页面打开。上传完成后可关闭页面，后台会继续处理。</p><ElButton @click="controller?.abort()">取消上传</ElButton></div>
@@ -122,8 +121,7 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
       <template v-if="job.state === 'PREVIEW'">
         <p>共 {{ job.totalCount }} 首 · 预计新增 {{ job.preview?.newSongs ?? 0 }} 首 · 为已有 {{ job.preview?.existingSongs ?? 0 }} 首合并资料</p>
         <ul class="samples"><li v-for="sample in job.samples" :key="sample.originalPath"><span>包内：{{ sample.originalPath }}</span><span>自己的地址：{{ sample.mediaURL }}</span><span v-if="sample.incoming">资料预览：{{ display(sample.incoming.title) }} / {{ display(sample.incoming.artists) }}<template v-if="sample.local">；本机现有：{{ display(sample.local.title) }} / {{ display(sample.local.artists) }}</template></span></li></ul>
-        <details><summary>内部目录改过名称？调整目录前缀</summary><p>只调整匹配的目录，其余路径保留。留空移除前缀时，会为所有路径添加目录。</p><label>移除包内前缀<ElInput v-model="remove" placeholder="如 原曲库/华语，不填表示保留" /></label><label>添加自己的目录前缀<ElInput v-model="add" placeholder="如 KTV/华语，不填表示不添加" /></label><ElButton :loading="busy" @click="map">更新路径预览</ElButton></details>
-        <p>确认后先保存资料，再核对目录和大小；核验通过后进入正常点歌范围。目录核对不代表已验证可播放。</p>
+        <details><summary>目录前缀</summary><label>移除包内前缀<ElInput v-model="remove" placeholder="如 原曲库/华语，不填表示保留" /></label><label>添加自己的目录前缀<ElInput v-model="add" placeholder="如 KTV/华语，不填表示不添加" /></label><ElButton :loading="busy" @click="map">更新路径预览</ElButton></details>
         <ElButton type="primary" :loading="busy" :disabled="mappingChanged" @click="action('apply')">确认导入资料</ElButton>
       </template>
       <template v-else>
@@ -133,7 +131,6 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
         <p v-if="job.pathOnlyCount">其中 {{ job.pathOnlyCount }} 条仅核对了路径，文件大小未知，尚未验证大小一致。</p>
         <p v-if="job.inputState === 'PENDING'">临时资料包待清理，后台会独立重试，不影响已保存资料，也不会重新导入或识别。<span v-if="job.inputCleanupError"> {{ job.inputCleanupError }}</span></p>
         <p v-else-if="job.inputState === 'RELEASED'">临时资料包已清理，核验记录与恢复检查点已保留。</p>
-        <p v-if="working">上传已完成，可以关闭页面。稍后从任务中心返回。</p>
         <ElButton v-if="job.preservedCount || job.missingCount || job.mismatchCount || job.unreachableCount" :loading="busy" @click="showDifferences()">查看差异与待处理项</ElButton>
         <ElButton v-if="['FAILED', 'CANCELLED'].includes(job.state) || job.state === 'SUCCEEDED' && (job.missingCount || job.mismatchCount || job.unreachableCount)" :loading="busy" @click="action('retry')">{{ job.phase === 'VERIFYING' ? '重试未通过的核验' : '继续处理' }}</ElButton>
       </template>

@@ -76,14 +76,13 @@ defineExpose({ refresh: () => busy.value ? Promise.resolve() : loadCurrent() })
 <template>
   <div class="batches-tab">
     <ElAlert v-if="error" :title="error" type="error" show-icon :closable="false" />
-    <p v-if="recognition" class="muted">查看重新识别的结果。无法确定的歌曲会显示“待人工确认”，可试听标记，也可改用深度识别。</p>
-    <ElEmpty v-if="!batches.length" :description="recognition ? '还没有批量识别任务' : '还没有生成过伴奏'"><p class="muted">{{ recognition ? '在“歌曲”中筛选识别未完成的歌曲，勾选后点击“识别已有音轨”。' : '在“歌曲”中勾选要处理的歌曲，再点“生成伴奏”。' }}</p><ElButton type="primary" @click="emit('songs')">去选择歌曲</ElButton></ElEmpty>
+    <ElEmpty v-if="!batches.length" :description="recognition ? '还没有批量识别任务' : '还没有生成过伴奏'"><ElButton type="primary" @click="emit('songs')">去选择歌曲</ElButton></ElEmpty>
     <ul v-else class="batch-list" :aria-label="recognition ? '识别任务' : '生成任务'">
       <li v-for="batch in batches" :key="batch.id" class="batch-row">
         <div class="batch-main">
           <div class="batch-title"><ElTag :type="batchTones[batch.state] || 'info'" effect="light" round size="small">{{ batchStates[batch.state] || batch.state }}</ElTag><h3>{{ headline(batch) }}</h3><span class="muted">{{ time(batch.createdAt) }}<template v-if="batch.backend"> · {{ backendName(batch.backend) }}</template></span></div>
           <ElProgress v-if="batch.state !== 'PREVIEW' && batch.total" :percentage="batchProgress(batch).percent" :stroke-width="6" :status="batch.state === 'COMPLETED' ? batch.counts.FAILED || batch.counts.REVIEW ? 'warning' : 'success' : undefined" :aria-label="`${headline(batch)} 处理进度`" />
-          <p class="muted">{{ batch.state === 'PREVIEW' ? '已选好歌曲，尚未开始。确认后才会处理。' : summary(batch) }}</p>
+          <p class="muted">{{ batch.state === 'PREVIEW' ? '待确认' : summary(batch) }}</p>
         </div>
         <div class="batch-actions">
           <ElButton v-if="batch.state === 'PREVIEW'" type="primary" size="small" :disabled="busy" @click="emit('preview', batch)">确认开始</ElButton>

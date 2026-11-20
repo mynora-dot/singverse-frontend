@@ -9,7 +9,7 @@ import type { FormalLyrics } from '../../metadata/types'
 import type { EmbeddedDetail } from '../../media-library/api/embeddedMetadata'
 import { songTitle, songArtists, songCoverUrl } from '../../metadata/utils'
 import type { Tag } from '../../classification/types'
-import { confirmedField, fileFormat, fileSize, platformDuration, displayTime, songTags, songReviewLabel, needsSongReview, sharedIdentity, languageLabels, versionLabels } from '../presentation'
+import { confirmedField, fileFormat, fileSize, platformDuration, displayTime, songTags, songReviewLabel, needsSongReview, languageLabels, versionLabels } from '../presentation'
 import type { MediaSong } from '../../media-library/types'
 import { authRequest } from '../../../core/auth/api'
 import { songRoles, type AudioRoles } from '../../audio-processing/api'
@@ -91,7 +91,7 @@ const origin = computed(() => {
 
 <template>
   <ElDrawer :model-value="visible" title="歌曲详情" size="min(680px, 100vw)" class="song-detail-drawer" :append-to-body="false" @update:model-value="value => { if (!value) emit('close') }">
-    <template v-if="song"><p v-if="song.mediaVerification" role="status">{{ mediaVerification(song.mediaVerification) }}；目录核对不代表已验证可播放。</p>
+    <template v-if="song"><p v-if="song.mediaVerification" role="status">{{ mediaVerification(song.mediaVerification) }}</p>
       <section class="song-hero" aria-label="歌曲概览">
         <div class="song-artwork">
           <img v-if="artwork && !coverFailed" :src="artwork" :alt="songTitle(song) + '的封面'" decoding="async" @error="coverFailed = true">
@@ -100,7 +100,7 @@ const origin = computed(() => {
         <div class="song-heading"><h2>{{ songTitle(song) }}</h2><p class="song-artists">{{ songArtists(song).join('、') || '未知歌手' }}</p><p v-if="album" class="song-album">{{ album }}</p><div class="song-quick-facts"><span>{{ fileFormat(song) }}</span><span v-if="duration" title="媒体实际时长">{{ duration }}</span><span v-if="platformDuration(song)" title="曲目参考时长，不作为播放时间轴">曲目参考 {{ platformDuration(song) }}</span><span :title="'媒体库：' + song.sourceName">{{ song.sourceName }}</span><span v-if="needsSongReview(song)" class="review-status">待核对</span></div></div>
         <div class="song-primary-actions"><ElButton type="primary" :icon="VideoPlay" @click="emit('play')">播放</ElButton><ElButton :icon="EditPen" @click="emit('edit')">{{ needsSongReview(song) ? '核对信息' : '编辑信息' }}</ElButton></div>
       </section>
-      <p v-if="song.metadata?.stale" class="song-notice" role="status">媒体属性需要重新核验，已保存的歌曲资料会保留。</p><p v-else-if="sharedIdentity(song)" class="song-notice">来自共享曲库，核对后可保存自己的订正。</p>
+      <p v-if="song.metadata?.stale" class="song-notice" role="status">媒体属性需要重新核验，已保存的歌曲资料会保留。</p>
       <dl v-if="facts.length" class="song-facts"><div v-for="fact in facts" :key="fact.label"><dt>{{ fact.label }}</dt><dd>{{ fact.value }}</dd></div></dl>
       <section class="classification-section audio-summary" aria-label="原唱与伴奏"><div class="section-heading"><h3>原唱与伴奏</h3><RouterLink :to="{ path: '/library/audio-processing', query: { song: song.id } }" @click="emit('close')">{{ audio.tone === 'warning' ? '去处理' : '管理音轨' }}</RouterLink></div><p v-if="rolesError" class="classification-empty">暂时无法读取音轨信息</p><p v-else class="audio-status"><ElTag :type="audio.tone" effect="light" round size="small">{{ audio.tag }}</ElTag><span>{{ audio.title }}</span></p></section>
       <section class="lyrics-card" aria-label="歌曲歌词"><div class="section-heading"><h3>歌词</h3><span v-if="lyrics && syncedLyrics" class="section-caption">同步歌词</span></div><div v-if="lyrics" class="lyrics-content" tabindex="0" aria-label="歌词内容"><p>{{ lyrics }}</p></div><p v-else class="lyrics-empty">{{ lyricsError ? '本机歌词资源暂时无法读取' : '暂无可显示的歌词' }}</p></section>

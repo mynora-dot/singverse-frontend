@@ -114,18 +114,11 @@
 .cache-list-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 64px; font-size: 13px; color: var(--sv-text-secondary); }
 .cache-list-footer :deep(.el-pagination) { min-width: 0; max-width: 100%; --el-pagination-button-width: 44px; --el-pagination-button-height: 44px; }
 .cache-list-footer :deep(.el-pagination button), .cache-list-footer :deep(.el-pager li) { min-width: 44px; min-height: 44px; }
-.cache-explanation { border-top: 1px solid var(--sv-border-subtle); color: var(--sv-text-secondary); }
-.cache-explanation summary { display: flex; align-items: center; min-height: 44px; cursor: pointer; font-size: 13px; }
-.cache-explanation summary::before { content: '+'; font-size: 16px; width: 22px; }
-.cache-explanation[open] summary::before { content: '−'; }
-.cache-explanation p { font-size: 14px; line-height: 1.8; margin: 0 0 12px; }
-.cache-explanation:not([open]) > p { display: none; }
 .cache-empty { border: 1px solid var(--sv-border-subtle); border-radius: 8px; background: var(--sv-surface-2); padding: 44px 20px; text-align: center; }
 .cache-empty > .el-icon { font-size: 28px; color: var(--sv-text-secondary); }
 .cache-empty h3 { font-size: 16px; margin: 14px 0 8px; }
 .cache-empty p { margin: 0 auto 16px; max-width: 440px; font-size: 14px; color: var(--sv-text-secondary); line-height: 1.8; }
 .cache-loading { min-height: 120px; display: grid; place-items: center; margin: 0; color: var(--sv-text-secondary); font-size: 14px; }
-.cache-pin-note { margin: 0 0 16px; color: var(--sv-text-secondary); line-height: 1.8; font-size: 14px; }
 .cache-pin-list { border: 1px solid var(--sv-border-subtle); border-radius: 8px; background: var(--sv-surface-2); padding: 0 16px; }
 .cache-pin-row { display: flex; align-items: center; gap: 12px; padding: 16px 0; }
 .cache-pin-row + .cache-pin-row { border-top: 1px solid var(--sv-border-subtle); }
@@ -210,8 +203,7 @@
   .cache-entry-details dl { grid-template-columns: 1fr; gap: 16px; }
   .cache-entry-details dd { font-size: 16px; }
   .cache-list-footer { flex-wrap: wrap; padding: 12px 0; font-size: 12px; gap: 8px; }
-  .cache-list-footer :deep(.el-pagination) { margin-left: auto; }
-  .cache-explanation p, .cache-pin-note, .cache-empty p, .cache-feedback { font-size: 16px; }
+  .cache-list-footer :deep(.el-pagination) { margin-left: auto; } .cache-empty p, .cache-feedback { font-size: 16px; }
   .cache-job-summary { align-items: flex-start; flex-wrap: wrap; }
   .cache-job-summary h2 { font-size: 16px; }
   .cache-job-summary p, .cache-job-details, .cache-job > .cache-error { font-size: 16px; }

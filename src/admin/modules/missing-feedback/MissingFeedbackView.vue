@@ -105,7 +105,7 @@ onBeforeUnmount(() => { active = false; generation++; detailGeneration++; songGe
 
 <template>
   <section class="missing-feedback-page">
-    <PageHeader title="缺歌心愿" description="集中登记想唱但曲库缺少的歌曲，跟进补齐结果。">
+    <PageHeader title="缺歌心愿">
       <template #actions><ElButton type="primary" :disabled="busy || opening" @click="create">登记缺歌</ElButton></template>
     </PageHeader>
     <form class="feedback-filters" @submit.prevent="search">
@@ -119,7 +119,6 @@ onBeforeUnmount(() => { active = false; generation++; detailGeneration++; songGe
     <p v-if="loading" class="feedback-empty" role="status">正在读取缺歌反馈…</p>
     <div v-else-if="!error && !items.length" class="feedback-empty">
       <h2>{{ appliedQuery || status !== 'ALL' ? '没有找到符合条件的反馈' : '还没有缺歌反馈' }}</h2>
-      <p>{{ appliedQuery || status !== 'ALL' ? '试试其他关键词或处理状态。' : '把想唱但曲库没有的歌曲记下来，补齐后关联对应歌曲。' }}</p>
       <ElButton v-if="!appliedQuery && status === 'ALL'" @click="create">登记第一首缺歌</ElButton>
     </div>
     <div v-else-if="!error" class="feedback-list">
@@ -148,7 +147,7 @@ onBeforeUnmount(() => { active = false; generation++; detailGeneration++; songGe
         <div class="feedback-original"><h2>{{ current.title }}</h2><p>{{ current.artist || '歌手未填写' }}<span v-if="current.versionLabel"> · {{ current.versionLabel }}</span></p><p v-if="current.description" class="feedback-preserve">{{ current.description }}</p><small>{{ current.submittedBy || '管理员' }} · {{ current.source === 'PARTY' ? '亲友点歌' : '后台登记' }} · {{ date(current.createdAt) }}</small></div>
         <form class="feedback-form" @submit.prevent="save">
           <label>处理状态<select v-model="handling.status" aria-label="设置缺歌处理状态" :disabled="busy || opening"><option v-for="(name, key) in statusNames" :key="key" :value="key">{{ name }}</option></select></label>
-          <div v-if="handling.status === 'RESOLVED'" class="feedback-associated"><label>关联曲库歌曲 <span class="feedback-required">必选</span></label><div v-if="handling.resolvedSongId"><strong>{{ handling.songTitle }}</strong><p>{{ handling.songArtists.join(' / ') || '未知歌手' }}</p><p v-if="!handling.songAvailable" class="feedback-warning">这首歌已下架，请重新关联可用歌曲。</p></div><p v-else class="feedback-note">补齐后选择曲库中的具体版本，才能标记完成。</p><ElButton :disabled="busy || opening" @click="openPicker">{{ handling.resolvedSongId ? '重新关联歌曲' : '选择已补齐的歌曲' }}</ElButton></div>
+          <div v-if="handling.status === 'RESOLVED'" class="feedback-associated"><label>关联曲库歌曲 <span class="feedback-required">必选</span></label><div v-if="handling.resolvedSongId"><strong>{{ handling.songTitle }}</strong><p>{{ handling.songArtists.join(' / ') || '未知歌手' }}</p><p v-if="!handling.songAvailable" class="feedback-warning">这首歌已下架，请重新关联可用歌曲。</p></div><ElButton :disabled="busy || opening" @click="openPicker">{{ handling.resolvedSongId ? '重新关联歌曲' : '选择已补齐的歌曲' }}</ElButton></div>
           <label>处理备注<ElInput v-model="handling.handlingNote" type="textarea" :rows="4" aria-label="缺歌处理备注" maxlength="2000" :disabled="busy || opening" placeholder="记录查找进度、补齐版本或关闭原因" /></label>
           <p class="feedback-note">最近更新：{{ date(current.updatedAt) }}<span v-if="current.resolvedAt"> · 补齐时间：{{ date(current.resolvedAt) }}</span></p>
         </form>
@@ -160,7 +159,7 @@ onBeforeUnmount(() => { active = false; generation++; detailGeneration++; songGe
       <form class="feedback-filters" @submit.prevent="searchSongs"><ElInput v-model="songQuery" aria-label="搜索关联歌曲" placeholder="搜索曲库歌名、歌手或文件名" clearable @clear="searchSongs" /><ElButton native-type="submit" :loading="songLoading">搜索歌曲</ElButton></form>
       <ElAlert v-if="songError" :title="songError" type="error" :closable="false"><ElButton text @click="loadSongs()">重新读取歌曲</ElButton></ElAlert>
       <p v-if="songLoading" class="feedback-empty" role="status">正在读取曲库…</p>
-      <p v-else-if="!songError && !songItems.length" class="feedback-empty">没有找到歌曲，先将歌曲加入媒体库并扫描，或换个关键词。</p>
+      <p v-else-if="!songError && !songItems.length" class="feedback-empty">没有匹配歌曲</p>
       <div v-else-if="!songError" class="feedback-picker-list"><article v-for="song in songItems" :key="song.id" class="feedback-picker-row"><div><strong>{{ songTitle(song) }}</strong><p>{{ songArtists(song).join(' / ') || '未知歌手' }}</p><small>{{ song.sourceName }} · {{ song.relativePath }}</small></div><ElButton :aria-label="`关联歌曲：${songTitle(song)}`" @click="choose(song)">关联此歌</ElButton></article></div>
       <ElPagination v-if="songTotal && !songError" :current-page="songPage + 1" :total="songTotal" :page-size="20" :disabled="songLoading" layout="prev, pager, next" @current-change="value => { songPage = value - 1; loadSongs() }" />
       <template #footer><ElButton @click="pickerOpen = false; songGeneration++">取消选择</ElButton></template>

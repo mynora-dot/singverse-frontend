@@ -50,7 +50,7 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
   <div class="node-tab" :class="{ 'models-only': modelsOnly }">
     <section v-if="!modelsOnly" class="overview" :class="readiness.ready ? 'is-ready' : 'is-pending'" aria-label="准备情况">
       <span class="sv-status-dot" :class="readiness.ready ? 'ok' : 'warn'" aria-hidden="true" />
-      <div class="overview-copy"><h2>{{ readiness.title }}</h2><p>{{ readiness.ready ? '已经可以在“歌曲”中为单音轨歌曲生成独立伴奏。' : readiness.hint }}</p></div>
+      <div class="overview-copy"><h2>{{ readiness.title }}</h2><p v-if="!readiness.ready">{{ readiness.hint }}</p></div>
       <div class="overview-actions"><ElButton :loading="busy" @click="recheck">重新检测</ElButton></div>
     </section>
     <ElAlert v-if="error" :title="error" type="error" show-icon :closable="false" role="alert" />
@@ -58,12 +58,11 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
     <ol v-if="node" class="steps">
       <li class="step">
         <header><h3>{{ modelsOnly ? '模型文件' : '准备模型' }}</h3><ElTag v-if="!modelsOnly" :type="readiness.modelInstalled ? 'success' : 'warning'" effect="light" size="small">{{ readiness.modelInstalled ? '已安装' : '未安装' }}</ElTag></header>
-        <p class="muted">仅列出当前节点适用的模型，安装后需验证设备。</p>
         <p v-if="modelBusy || node.operation.state === 'FAILED'" class="operation" role="status">{{ operationStates[node.operation.state] || node.operation.state }} · 已处理 {{ (node.operation.bytes / 1024 ** 2).toFixed(1) }} MiB<ElButton v-if="modelBusy" link type="primary" :disabled="busy" @click="run(() => call('cancel'))">取消</ElButton></p>
         <p v-if="node.operation.error" class="inline-error">{{ node.operation.error }}</p>
         <div v-for="model in catalog" :key="model.id" class="model-row" :data-model="model.id">
           <div class="model-copy">
-            <strong>{{ modelNames[model.id]?.name || model.id }}</strong><span v-if="model.id === 'panns-cnn6'" class="muted">扫描时识别人声，无需选择设备。{{ node.fastClassifier?.ready ? '已就绪' : '' }}</span>
+            <strong>{{ modelNames[model.id]?.name || model.id }}</strong>
 
             <span v-if="!model.writable" class="muted">模型目录未配置、不可写或为只读预置目录，无法在网页下载或导入；请在节点配置独立的可写模型卷。</span>
           </div>
@@ -85,7 +84,6 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
 
       <li v-if="!modelsOnly" class="step">
         <header><h3>处理设备</h3><ElTag :type="readiness.backendSelected ? 'success' : 'warning'" effect="light" size="small">{{ readiness.backendSelected ? `正在使用 ${backendName(node.selected)}` : '尚未通过试跑' }}</ElTag></header>
-        <p class="muted">优先自动使用已通过试跑的加速设备。首次使用或更换模型后，请先试跑。</p>
         <label class="fallback-toggle"><input type="checkbox" :checked="node.cpuFallback !== false" :disabled="busy || modelBusy" @change="setFallback($event)"> 加速不可用时自动降级到 CPU</label>
         <p class="muted">{{ node.cpuFallback !== false ? '允许自动使用 CPU，处理可能较慢；关闭后，加速不可用的任务会失败。' : '已关闭 CPU 降级，加速不可用时停止处理。' }}此设置也用于视频转码。</p>
         <details class="resource-details"><summary>内存与存储</summary><p class="muted">{{ node.environment.processor || node.environment.system }} · {{ node.environment.architecture }}</p><p class="muted">可用内存 {{ bytes(node.memoryAvailableBytes) }} · 工作目录剩余 {{ bytes(node.diskFreeBytes) }}</p></details>
@@ -102,7 +100,6 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
     </ol>
     <section v-if="node?.separation && !modelsOnly" class="step" aria-label="极速与轻量伴奏">
       <header><h3>极速与轻量伴奏</h3></header>
-      <p class="muted">极速消音只需 FFmpeg。轻量 AI 安装模型后，先验证 CPU，再验证检测到的加速设备。</p>
       <p v-if="node.separation.operation?.state === 'TESTING' || node.separation.operation?.state === 'WAITING'" role="status" class="muted">轻量模型正在等待或进行试跑…</p>
       <p v-if="node.separation.operation?.error" class="inline-error">{{ node.separation.operation.error }}</p>
       <div v-for="backend in node.separation.backends.filter(isRelevantBackend)" :key="backend.id" class="backend-row">
@@ -111,7 +108,7 @@ function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' :
         <ElButton v-if="['UNVERIFIED', 'FAILED', 'AVAILABLE'].includes(backend.state)" size="small" :disabled="busy || modelBusy || ['TESTING','WAITING'].includes(node.separation.operation?.state || '')" @click="run(() => call('test', { backend: backend.id, separationProfile: 'AI_CLEAN' }))">试跑轻量模型</ElButton>
       </div>
     </section>
-    <section v-if="!node" class="empty"><p>{{ nodeError || '正在读取计算节点…' }}</p><p class="muted">请先在“计算节点设置”中连接节点，即可准备模型。</p></section>
+    <section v-if="!node" class="empty"><p>{{ nodeError || '正在读取计算节点…' }}</p></section>
 
   </div>
 </template>

@@ -56,7 +56,7 @@ it('上传完成后台解析，预览自己的地址后显式确认，不自动�
   vi.mocked(shareImports.get).mockResolvedValue(job('VERIFYING'))
   await button('确认导入资料').trigger('click'); await flushPromises()
   expect(shareImports.action).toHaveBeenCalledWith('mine', 'job', 'apply')
-  expect(wrapper.text()).toContain('上传已完成，可以关闭页面')
+  expect(wrapper.text()).toContain('资料已保存，正在核对媒体路径')
   expect(wrapper.emitted('updated')).toHaveLength(1)
 })
 it('目录映射修改后必须刷新预览再确认，并保留根目录', async () => {

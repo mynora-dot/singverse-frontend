@@ -45,7 +45,7 @@ it('目录和音源缺失时禁用找歌，配置入口保持可用', async () =
   expect(button('搜索').attributes('disabled')).toBeDefined()
   expect(button('设置下载目录').attributes('disabled')).toBeUndefined()
   expect(button('导入并启用音源').attributes('disabled')).toBeUndefined()
-  expect(wrapper!.text()).toContain('已有下载记录仍可查看')
+  expect(wrapper!.get('#tab-records').attributes('aria-disabled')).not.toBe('true')
   expect(lx.search).not.toHaveBeenCalled()
 })
 it('目录失效显示检查挂载提示，选择新目录显示原位置并保留写入错误', async () => {
@@ -301,7 +301,7 @@ it('只展示音源支持的平台，汽水可搜索、查看封面并选择声�
 it('导入页支持独立链接，并跟随路由切换工作区', async () => {
   await router.replace('/library/downloads?tab=preview'); await page()
   expect(wrapper!.get('#tab-preview').attributes('aria-selected')).toBe('true')
-  expect(wrapper!.text()).toContain('汽水支持公开歌单')
+  expect(wrapper!.find('input[aria-label="歌单或专辑分享链接"]').exists()).toBe(true)
   await router.replace('/library/downloads?tab=records'); await flushPromises()
   expect(wrapper!.get('#tab-records').attributes('aria-selected')).toBe('true')
   await router.replace('/library/downloads'); await flushPromises()

@@ -203,7 +203,7 @@ describe('歌曲管理集中展示扫描数据及详情', () => {
     await router.replace('/library/songs?status=REVIEW'); await flushPromises()
     expect(wrapper.get('.page-summary').text()).toContain('1 文件名识别不完整')
     expect(wrapper.get('.page-summary').text()).toContain('1 资料已确认')
-    expect(wrapper.get('.filename-review-note').text()).toContain('无需重复核对')
+    expect(wrapper.findAll('button').some(button => button.text() === '管理文件名识别方案')).toBe(true)
     expect(wrapper.get('.song-card').text()).toContain('原文件名识别不完整 · 资料已确认')
     expect(wrapper.get('.song-card-actions button').text()).toBe('编辑')
   })

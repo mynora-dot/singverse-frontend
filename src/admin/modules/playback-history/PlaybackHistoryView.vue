@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElButton, ElDrawer, ElInput, ElPagination } from 'element-plus'
-import { ArrowDown, InfoFilled, Refresh, Search } from '@element-plus/icons-vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import PageHeader from '../../shared/ui/PageHeader.vue'
 import SongCover from '../song-management/components/SongCover.vue'
 import PlaybackEntryList from './PlaybackEntryList.vue'
@@ -13,7 +13,7 @@ type View = 'popular' | 'records'
 const periods: { value: Period; label: string }[] = [{ value: '7d', label: '近 7 天' }, { value: '30d', label: '近 30 天' }, { value: 'all', label: '全部时间' }]
 const tab = ref<View>('popular'), period = ref<Period>('30d'), query = ref(''), appliedQuery = ref(''), page = ref(1)
 const popular = ref<PopularSong[]>([]), records = ref<PlaybackEntry[]>([]), total = ref(0), summary = ref<PlaybackSummary | null>(null)
-const loading = ref(false), error = ref(''), rulesOpen = ref(false), coverRevision = ref(0)
+const loading = ref(false), error = ref(''), coverRevision = ref(0)
 const drawerOpen = ref(false), selectedSong = ref<SongIdentity | null>(null)
 const detail = ref<Page<PlaybackEntry> | null>(null), detailPage = ref(1), detailLoading = ref(false), detailError = ref('')
 let active = true, epoch = 0, detailEpoch = 0
@@ -89,18 +89,14 @@ onBeforeUnmount(() => { active = false; epoch++; detailEpoch++ })
         </div>
         <p class="history-result-count" role="status" aria-live="polite">{{ loading ? '正在读取…' : error ? '读取失败' : `共 ${total.toLocaleString('zh-CN')} ${tab === 'popular' ? '首歌曲' : '条记录'}` }}</p>
       </div>
-      <div class="history-rules">
-        <div class="history-rules-line"><InfoFilled aria-hidden="true" /><p>实际播放满 30 秒计入排行，短歌播完也计入。</p><button type="button" :aria-expanded="rulesOpen" aria-controls="history-rules-detail" @click="rulesOpen = !rulesOpen">计入规则<ArrowDown aria-hidden="true" :class="{ expanded: rulesOpen }" /></button></div>
-        <p v-if="rulesOpen" id="history-rules-detail">每次累计实际播放满 30 秒，计为 1 次有效播放；不足 30 秒的歌曲实际自然播完也计入。暂停和拖动进度不增加实际播放时长，后台试听不计入热门排行。</p>
-      </div>
       <div id="history-result-panel" role="tabpanel" :aria-labelledby="tab === 'popular' ? 'history-popular-tab' : 'history-records-tab'" :aria-busy="loading">
         <p v-if="loading" class="history-empty" role="status">正在读取播放记录…</p>
         <div v-else-if="error" class="history-error" role="alert"><p>{{ error }}</p><ElButton @click="load">重试</ElButton></div>
         <template v-else>
-          <div v-if="!total" class="history-empty"><h2>{{ appliedQuery ? '没有找到匹配的播放记录' : tab === 'popular' ? '暂无热门歌曲' : '暂无播放记录' }}</h2><p>{{ appliedQuery ? '试试其他歌名、歌手或统计时间。' : tab === 'popular' ? '这段时间还没有有效播放，切换到播放记录可查看每次播放。' : '播放歌曲后，这里会显示每次播放的设备、时长和结果。' }}</p><ElButton v-if="appliedQuery || period !== '30d'" @click="resetFilters">清除条件</ElButton><ElButton v-else-if="tab === 'popular'" @click="changeTab('records')">查看播放记录</ElButton></div>
+          <div v-if="!total" class="history-empty"><h2>{{ appliedQuery ? '没有找到匹配的播放记录' : tab === 'popular' ? '暂无热门歌曲' : '暂无播放记录' }}</h2><ElButton v-if="appliedQuery || period !== '30d'" @click="resetFilters">清除条件</ElButton><ElButton v-else-if="tab === 'popular'" @click="changeTab('records')">查看播放记录</ElButton></div>
           <table v-else-if="tab === 'popular'" class="popular-table" aria-label="热门排行">
             <colgroup><col class="rank-column"><col class="song-column"><col class="context-column"><col class="effective-column"><col class="count-column"><col class="latest-column"><col class="action-column"></colgroup>
-            <thead><tr><th scope="col">排名</th><th scope="col">歌曲 / 歌手</th><th scope="col">版本 / 来源</th><th scope="col">有效播放</th><th scope="col">全部 / 自然播完</th><th scope="col">最近播放</th><th scope="col">操作</th></tr></thead>
+            <thead><tr><th scope="col">排名</th><th scope="col">歌曲 / 歌手</th><th scope="col">版本 / 来源</th><th scope="col" aria-sort="descending">有效播放<span aria-hidden="true"> ↓</span></th><th scope="col">全部 / 自然播完</th><th scope="col">最近播放</th><th scope="col">操作</th></tr></thead>
             <tbody>
               <tr v-for="(song, index) in popular" :key="song.songId" class="popular-row">
                 <td class="popular-rank" :class="{ 'top-rank': page === 1 && index < 3 }">{{ (page - 1) * 20 + index + 1 }}</td>
@@ -116,11 +112,11 @@ onBeforeUnmount(() => { active = false; epoch++; detailEpoch++ })
           <PlaybackEntryList v-else :key="coverRevision" :items="records" show-history @history="openHistory" />
         </template>
       </div>
-      <div v-if="total && !error && !loading" class="history-results-footer"><p>{{ tab === 'popular' ? '按有效播放次数排序，次数相同时最近播放的在前' : '按开始时间从近到远排列，每次播放单独记录' }}</p><div v-if="total > 20" class="history-pagination"><span class="history-page-indicator">第 {{ page }} / {{ Math.ceil(total / 20) }} 页</span><ElPagination :current-page="page" :total="total" :page-size="20" :pager-count="5" layout="prev, pager, next" @current-change="v => { page = v; load() }" /></div></div>
+      <div v-if="total > 20 && !error && !loading" class="history-results-footer"><div class="history-pagination"><span class="history-page-indicator">第 {{ page }} / {{ Math.ceil(total / 20) }} 页</span><ElPagination :current-page="page" :total="total" :page-size="20" :pager-count="5" layout="prev, pager, next" @current-change="v => { page = v; load() }" /></div></div>
     </section>
     <ElDrawer v-model="drawerOpen" class="history-drawer" title="全部播放历史" size="min(720px, 100vw)" @close="closeHistory">
       <div v-if="selectedSong" class="history-detail-song"><SongCover :key="selectedSong.songId" :song-id="selectedSong.songId" :title="selectedSong.title" /><div><h2>{{ selectedSong.title || '未命名歌曲' }}</h2><p>{{ selectedSong.artists.join(' / ') || '未知歌手' }}</p><small>{{ versionLabel(selectedSong.versionLabel) }}<template v-if="selectedSong.sourceName"> · {{ selectedSong.sourceName }}</template></small></div></div>
-      <p class="history-detail-intro"><span>全部时间，不受搜索和时间筛选影响。</span><span v-if="detail && !detailLoading" class="history-detail-total">共 {{ detail.totalElements }} 条</span></p>
+      <p class="history-detail-intro"><span>全部时间</span><span v-if="detail && !detailLoading" class="history-detail-total">共 {{ detail.totalElements }} 条</span></p>
       <p v-if="detailLoading" class="history-empty" role="status">正在读取单曲历史…</p>
       <div v-else-if="detailError" class="history-error" role="alert"><p>{{ detailError }}</p><ElButton @click="loadDetail">重试</ElButton></div>
       <template v-else-if="detail"><PlaybackEntryList v-if="detail.items.length" :items="detail.items" single-song /><p v-else class="history-empty">这首歌曲暂无播放记录。</p><div v-if="detail.totalElements > 20" class="history-pagination history-detail-pagination"><span class="history-page-indicator">第 {{ detailPage }} / {{ Math.ceil(detail.totalElements / 20) }} 页</span><ElPagination :current-page="detailPage" :total="detail.totalElements" :page-size="20" :pager-count="5" layout="prev, pager, next" @current-change="v => { detailPage = v; loadDetail() }" /></div></template>
@@ -153,13 +149,7 @@ onBeforeUnmount(() => { active = false; epoch++; detailEpoch++ })
 .history-tabs button { min-height: 52px; padding: 0; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--sv-text-secondary); font: inherit; font-size: 14px; cursor: pointer; }
 .history-tabs button[aria-selected=true] { border-bottom-color: var(--sv-accent-primary); color: var(--sv-accent-primary); font-weight: 600; }
 .history-result-count { margin: 0; font-size: 12px; color: var(--sv-text-secondary); white-space: nowrap; }
-.history-rules { padding: 0 20px; border-bottom: 1px solid var(--sv-border-subtle); }
-.history-rules-line { display: flex; align-items: center; gap: 8px; min-height: 44px; }
-.history-rules-line > svg { flex-shrink: 0; width: 14px; height: 14px; color: var(--sv-text-tertiary); }
-.history-rules p { margin: 0; font-size: 14px; line-height: 1.7; color: var(--sv-text-secondary); }
-.history-rules-line button { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; gap: 6px; margin-left: auto; min-height: 44px; padding: 0 4px 0 12px; border: 0; background: transparent; color: var(--sv-accent-primary); font: inherit; font-size: 14px; cursor: pointer; }
-.history-rules-line button svg { width: 12px; height: 12px; transition: transform .15s; }.history-rules-line button svg.expanded { transform: rotate(180deg); }
-#history-rules-detail { padding: 0 0 16px 22px; }
+
 .popular-table { width: 100%; border-collapse: collapse; table-layout: fixed; text-align: left; }
 .rank-column { width: 60px; }.song-column { width: auto; }.context-column { width: 17%; }.effective-column { width: 11%; }.count-column { width: 15%; }.latest-column { width: 15%; }.action-column { width: 112px; }
 .popular-table th { padding: 10px 12px; background: var(--sv-surface-1); font-size: 12px; font-weight: 400; color: var(--sv-text-secondary); }.popular-table th:first-child { padding-left: 20px; }
@@ -172,10 +162,10 @@ onBeforeUnmount(() => { active = false; epoch++; detailEpoch++ })
 .popular-effective strong { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }.popular-latest { font-variant-numeric: tabular-nums; }
 .popular-action .el-button { min-width: 88px; padding: 0 8px; margin: 0; }.mobile-label { display: none; }
 .history-results-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--sv-border-subtle); }
-.history-results-footer p { margin: 0; color: var(--sv-text-secondary); font-size: 12px; line-height: 1.7; }
+
 .history-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }.history-page-indicator { color: var(--sv-text-secondary); font-size: 12px; }
 .history-pagination :deep(.el-pagination) { --el-pagination-button-height: 44px; --el-pagination-button-width: 44px; }.history-pagination :deep(.el-pager li) { min-width: 44px; height: 44px; }
-.history-empty { padding: 48px 20px; text-align: center; color: var(--sv-text-secondary); font-size: 14px; line-height: 1.8; margin: 0; }.history-empty h2 { margin: 0 0 8px; color: var(--sv-text-primary); font-size: 18px; font-weight: 600; }.history-empty p { margin: 0 0 20px; }
+.history-empty { padding: 48px 20px; text-align: center; color: var(--sv-text-secondary); font-size: 14px; line-height: 1.8; margin: 0; }.history-empty h2 { margin: 0 0 8px; color: var(--sv-text-primary); font-size: 18px; font-weight: 600; }
 .history-error { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 24px 20px; background: var(--sv-semantic-danger-soft); color: var(--sv-semantic-danger); font-size: 14px; }.history-error p { flex: 1; margin: 0; line-height: 1.7; }
 .history-detail-song { display: flex; align-items: center; gap: 16px; padding-bottom: 20px; }.history-detail-song > div { min-width: 0; overflow-wrap: anywhere; }.history-detail-song :deep(.song-cover) { width: 64px; height: 64px; }
 .history-detail-song h2 { margin: 0; font-size: 20px; line-height: 1.5; font-weight: 600; }.history-detail-song p { margin: 4px 0; color: var(--sv-text-secondary); font-size: 14px; }.history-detail-song small { color: var(--sv-text-secondary); font-size: 12px; }
@@ -194,7 +184,6 @@ button:focus-visible { outline: 2px solid var(--sv-accent-primary); outline-offs
   .history-search { flex-basis: 100%; max-width: none; }.history-search :deep(.el-input__inner) { font-size: 16px; }.history-periods { flex: 1; }.history-periods button { flex: 1; min-width: 0; padding: 8px; }
   .history-stats { padding: 16px; gap: 16px 12px; }.history-stats > div { gap: 6px; }.history-stats > div:nth-child(odd) { padding-right: 12px; }.history-stats dt { font-size: 12px; }.history-stats dd { font-size: 20px; }.history-stats .history-time-stat { font-size: 14px; }
   .history-results-top { padding: 0 16px; gap: 8px; }.history-tabs { gap: 20px; }.history-tabs button { font-size: 16px; }.history-result-count { font-size: 12px; }
-  .history-rules { padding-inline: 16px; }.history-rules-line { min-height: 72px; padding-block: 8px; }.history-rules-line > svg { align-self: start; margin-top: 6px; }.history-rules-line p { flex: 1; min-width: 0; }.history-rules-line button { margin: 0; padding: 0; }#history-rules-detail { padding-left: 22px; }
   .popular-row { grid-template-columns: 32px minmax(0, 1fr) 88px; gap: 4px 8px; padding: 16px 16px 12px; }.popular-table .popular-rank { align-self: start; margin-top: 12px; font-size: 14px; text-align: right; }.popular-identity { grid-column: 2 / -1; }.popular-table .popular-context { grid-column: 2 / -1; grid-row: 2; display: flex; flex-wrap: wrap; gap: 0 8px; font-size: 12px; }.popular-table .popular-context small { margin: 0; }
   .popular-effective { grid-column: 2; grid-row: 3; }.popular-effective .mobile-label { display: inline; }.popular-count { grid-column: 2 / -1; grid-row: 4; }.popular-table .popular-count, .popular-table .popular-count small { font-size: 14px; }.popular-action { grid-column: 3; grid-row: 3; }.popular-table .popular-latest { grid-column: 2 / -1; grid-row: 5; font-size: 14px; }
   .history-results-footer { padding: 16px; }.history-pagination { justify-content: space-between; width: 100%; }.history-pagination :deep(.el-pager) { display: none; }.history-pagination :deep(.el-pagination) { gap: 8px; }.history-empty { padding: 40px 16px; }
@@ -206,5 +195,4 @@ button:focus-visible { outline: 2px solid var(--sv-accent-primary); outline-offs
   .history-stats dt { white-space: nowrap; }
   .history-stats .history-time-stat { white-space: normal; }
 }
-@media (prefers-reduced-motion: reduce) { .history-rules-line button svg { transition: none; } }
 </style>

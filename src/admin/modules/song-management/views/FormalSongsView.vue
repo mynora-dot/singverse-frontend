@@ -102,7 +102,7 @@ onBeforeUnmount(() => { active = false; generation++; detailGeneration++; varian
 
 <template>
   <section class="formal-library">
-    <PageHeader title="歌曲与版本" description="歌曲资料保存在本机。每次演绎与剪辑单独管理版本，同一版本可以关联多个编码文件。">
+    <PageHeader title="歌曲与版本">
       <template #meta><span class="formal-count" aria-live="polite">{{ total }} 首</span></template>
       <template #actions><ElButton @click="openFilesLens">按文件管理与筛选</ElButton><ElButton type="primary" @click="router.push('/library/media')">添加或导入歌曲</ElButton></template>
     </PageHeader>

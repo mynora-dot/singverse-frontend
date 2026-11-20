@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ArrowDown, ArrowUp, CircleCheck, CollectionTag, Delete, Headset, InfoFilled, RefreshRight, Search } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowUp, CircleCheck, CollectionTag, Delete, Headset, RefreshRight, Search } from '@element-plus/icons-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
-import { ElIcon, ElButton, ElCheckbox, ElDialog, ElMessageBox, ElPagination, ElPopover } from 'element-plus'
+import { ElIcon, ElButton, ElCheckbox, ElDialog, ElMessageBox, ElPagination } from 'element-plus'
 import { ApiError } from '../../core/auth/api'
 import PageHeader from '../../shared/ui/PageHeader.vue'
 import SongCover from '../song-management/components/SongCover.vue'
@@ -25,12 +25,11 @@ let pollTimer: ReturnType<typeof setTimeout> | undefined
 const jobKey = 'singverse.cache.cleanup'
 let currentJobId = ''
 const policies = [
-  { value: 'HYBRID', label: '混合评分（推荐）', description: '综合真实播放热度、最近播放和近 7 天频次；高水位触发回收，低水位为目标。' },
-  { value: 'MANUAL', label: '手动清理', description: '不自动回收；容量不足时停止新增缓存，已有缓存仍可使用。' },
+  { value: 'HYBRID', label: '混合评分' },
+  { value: 'MANUAL', label: '手动清理' },
 ]
 const policyValue = (value: string) => value === 'MANUAL' ? 'MANUAL' : 'HYBRID'
 const policyLabel = (value: string) => policies.find(p => p.value === value)?.label ?? (['LRU', 'LFU', 'TTL'].includes(value) ? '混合评分（旧策略已迁移）' : '未知策略，请重新读取设置')
-const selectedPolicy = computed(() => policies.find(p => p.value === draft.policy) ?? policies[0]!)
 const maxBytes = computed(() => Math.round(Number(draft.capacityGiB) * gib))
 const dirty = computed(() => !!settings.value && (maxBytes.value !== settings.value.maxBytes || draft.policy !== policyValue(settings.value.policy) || Number(draft.high) !== (settings.value.highWatermarkPercent ?? 90) || Number(draft.low) !== (settings.value.lowWatermarkPercent ?? 75)))
 const validation = computed(() => !Number.isSafeInteger(maxBytes.value) || maxBytes.value < 64 * 1024 ** 2 || maxBytes.value > 1024 ** 5
@@ -237,7 +236,7 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
 
 <template>
   <section class="song-cache-page">
-    <PageHeader title="存储与缓存" description="查看缓存容量、固定常听歌曲，按需回收空间。WebDAV 原片按需读取，兼容缓存与原片共用容量。" />
+    <PageHeader title="存储与缓存" />
     <div v-if="error" role="alert" class="cache-feedback cache-error">{{ error }}<ElButton v-if="conflict" text :disabled="busy || loading" @click="reloadSettings">重新读取设置</ElButton></div>
     <p v-if="notice" role="status" class="cache-feedback cache-success">{{ notice }}</p>
     <template v-if="result">
@@ -253,7 +252,7 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
         <progress :value="usedPercent" max="100" aria-label="缓存容量使用比例" />
         <div class="cache-capacity-meta">
           <div><span class="cache-used"><i aria-hidden="true" />已用 {{ result.usageReady === false ? '计算中' : `${usageRatio}%` }}</span><span class="cache-remaining">剩余 {{ bytes(remainingBytes) }}</span><span>{{ result.entryCount }} 份歌曲缓存</span></div>
-          <div class="cache-reserved"><span v-if="result.reservedBytes !== undefined">预留 {{ bytes(result.reservedBytes) }}</span><ElPopover trigger="click" placement="bottom-end" :width="300" popper-class="cache-usage-popover"><template #reference><ElButton text :icon="InfoFilled" aria-label="缓存占用与预留说明" /></template><p>占用包含正在接收和待清理残留的数据。预留空间单独列出，不代表可播放的缓存。</p></ElPopover></div>
+          <div class="cache-reserved"><span v-if="result.reservedBytes !== undefined">预留 {{ bytes(result.reservedBytes) }}</span></div>
         </div>
         <p v-if="statisticsPending" class="cache-statistics-note" role="status">{{ result.usageReady === false ? '正在计算缓存占用，请稍候。' : '正在准备播放评分统计，当前尚未就绪。' }}</p>
         <div class="cache-policy-line">
@@ -262,15 +261,14 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
         </div>
         <p v-if="result.settings.policy === 'MANUAL'" class="cache-policy-note">{{ policyDisabledReason }}</p>
         <form v-if="settings" v-show="settingsExpanded" id="cache-settings" class="cache-settings" novalidate @submit.prevent="save">
-          <div class="cache-section-heading"><div><h2>缓存设置</h2><p>自动回收和批量清理保护固定、近 24 小时实际播放、正在播放及下载的缓存。近 3 天播放有软保留加分。</p></div></div>
+          <div class="cache-section-heading"><div><h2>缓存设置</h2></div></div>
           <div class="cache-fields">
-            <label>容量上限<span class="cache-unit">GiB</span><input v-model="draft.capacityGiB" type="number" min="0.0625" max="1048576" step="any" required aria-label="最大缓存容量" :aria-invalid="dirty && capacityValidation" :disabled="busy || loading" /><small>默认 50 GiB；启动时空间不足则按剩余空间的 80% 设置。手动保存后保留设置。</small></label>
-            <label>回收策略<select v-model="draft.policy" aria-label="缓存策略" :disabled="busy || loading"><option v-for="policy in policies" :key="policy.value" :value="policy.value">{{ policy.label }}</option></select><small>{{ selectedPolicy.description }}</small></label>
-            <label>高水位 / 触发点<span class="cache-unit">%</span><input v-model="draft.high" type="number" min="2" max="100" step="1" required aria-label="缓存高水位" :aria-invalid="dirty && !capacityValidation && !!validation" :disabled="busy || loading || runningJob" /><small>达到此占用比例时触发混合回收，默认 90%。</small></label>
-            <label>低水位 / 回收目标<span class="cache-unit">%</span><input v-model="draft.low" type="number" min="1" max="99" step="1" required aria-label="缓存低水位" :aria-invalid="dirty && !capacityValidation && !!validation" :disabled="busy || loading || runningJob" /><small>默认 75%；受保护数据可能使目标无法达到。</small></label>
+            <label>容量上限<span class="cache-unit">GiB</span><input v-model="draft.capacityGiB" type="number" min="0.0625" max="1048576" step="any" required aria-label="最大缓存容量" :aria-invalid="dirty && capacityValidation" :disabled="busy || loading" /></label>
+            <label>回收策略<select v-model="draft.policy" aria-label="缓存策略" :disabled="busy || loading"><option v-for="policy in policies" :key="policy.value" :value="policy.value">{{ policy.label }}</option></select></label>
+            <label>混合策略触发占用<span class="cache-unit">%</span><input v-model="draft.high" type="number" min="2" max="100" step="1" required aria-label="缓存高水位" :aria-invalid="dirty && !capacityValidation && !!validation" :disabled="busy || loading || runningJob" /></label>
+            <label>混合策略目标占用<span class="cache-unit">%</span><input v-model="draft.low" type="number" min="1" max="99" step="1" required aria-label="缓存低水位" :aria-invalid="dirty && !capacityValidation && !!validation" :disabled="busy || loading || runningJob" /></label>
           </div>
-          <p v-if="draft.policy === 'MANUAL'" class="cache-hint">高低水位仅在混合评分策略下生效，手动策略不执行按策略回收。</p>
-          <div class="cache-settings-footer"><p v-if="dirty && validation" class="cache-validation" role="alert">{{ validation }}</p><p v-else class="cache-hint">保存后生效。原片与兼容结果共用容量，清理缓存不修改原始歌曲。</p><div><ElButton :disabled="busy || loading" @click="reloadSettings">重新读取设置</ElButton><ElButton v-if="dirty" :disabled="busy || loading" @click="discardSettings">放弃修改</ElButton><ElButton type="primary" native-type="submit" :loading="busy" :disabled="loading || runningJob || !dirty || !!validation || conflict">保存设置</ElButton></div></div>
+          <div class="cache-settings-footer"><p v-if="dirty && validation" class="cache-validation" role="alert">{{ validation }}</p><div><ElButton :disabled="busy || loading" @click="reloadSettings">重新读取设置</ElButton><ElButton v-if="dirty" :disabled="busy || loading" @click="discardSettings">放弃修改</ElButton><ElButton type="primary" native-type="submit" :loading="busy" :disabled="loading || runningJob || !dirty || !!validation || conflict">保存设置</ElButton></div></div>
         </form>
       </section>
 
@@ -278,17 +276,17 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
         <div class="cache-job-summary"><div><h2>{{ job ? jobStates[job.state] || job.state : '读取清理任务' }}</h2><p v-if="job">已清理 {{ job.removed }} 份缓存，释放 {{ bytes(job.freedBytes) }}；跳过 {{ job.skipped }} 份，失败 {{ job.failed }} 份。</p></div><div class="cache-job-actions"><ElButton v-if="runningJob" :disabled="busy || job?.state === 'CANCELLING'" @click="cancelJob">取消清理</ElButton><ElButton text :aria-expanded="jobDetailsExpanded" aria-controls="cache-job-details" @click="jobDetailsExpanded = !jobDetailsExpanded">{{ jobDetailsExpanded ? '收起详情' : '任务详情' }}<ElIcon><ArrowUp v-if="jobDetailsExpanded" /><ArrowDown v-else /></ElIcon></ElButton></div></div>
         <p v-if="jobError" role="alert" class="cache-error">{{ jobError }}<ElButton text @click="pollJob()">重试读取进度</ElButton></p>
         <p v-if="job?.spaceInsufficient" role="alert" class="cache-error">清理后空间仍不足，还需 {{ bytes(job.shortfallBytes) }}。请取消不需要的固定、等待使用结束，或增加缓存容量及磁盘空间。</p>
-        <div v-show="jobDetailsExpanded" id="cache-job-details" class="cache-job-details"><p>清理在后台执行，取消会保留已完成的删除；离开页面不会停止任务。</p><template v-if="job"><p>占用 {{ bytes(job.usageBeforeBytes) }} → {{ bytes(job.usageAfterBytes) }}，目标 {{ bytes(job.targetBytes) }}</p><p v-if="!job.spaceInsufficient && !runningJob && !job.targetReached" class="cache-hint">未达到目标水位，当前仍有可用缓存空间；受保护条目不会被强制删除。</p><ul v-if="Object.keys(job.skippedByReason ?? {}).length" class="cache-job-reasons"><li v-for="(count, reason) in job.skippedByReason" :key="reason">{{ reasons[reason] || reason }}：{{ count }} 份</li></ul><ul v-if="job.errors?.length" class="cache-error"><li v-for="(item, index) in job.errors" :key="index">{{ jobFailure(item) }}</li></ul></template></div>
+        <div v-show="jobDetailsExpanded" id="cache-job-details" class="cache-job-details"><template v-if="job"><p>占用 {{ bytes(job.usageBeforeBytes) }} → {{ bytes(job.usageAfterBytes) }}，目标 {{ bytes(job.targetBytes) }}</p><p v-if="!job.spaceInsufficient && !runningJob && !job.targetReached" class="cache-hint">未达到目标水位，当前仍有可用缓存空间；受保护条目不会被强制删除。</p><ul v-if="Object.keys(job.skippedByReason ?? {}).length" class="cache-job-reasons"><li v-for="(count, reason) in job.skippedByReason" :key="reason">{{ reasons[reason] || reason }}：{{ count }} 份</li></ul><ul v-if="job.errors?.length" class="cache-error"><li v-for="(item, index) in job.errors" :key="index">{{ jobFailure(item) }}</li></ul></template></div>
       </section>
 
       <section class="cache-workspace sv-glass" aria-label="缓存管理">
-        <div class="cache-workspace-top"><div class="cache-tabs" role="tablist" aria-label="缓存管理视图"><button id="cache-list-tab" ref="cacheTab" type="button" role="tab" :aria-selected="activeView === 'cache'" :tabindex="activeView === 'cache' ? 0 : -1" aria-controls="cache-list-panel" @click="changeView('cache')" @keydown="tabKeydown">缓存明细<span>{{ result.totalElements }}</span></button><button id="cache-pins-tab" ref="pinsTab" type="button" role="tab" :aria-selected="activeView === 'pins'" :tabindex="activeView === 'pins' ? 0 : -1" aria-controls="cache-pins-panel" @click="changeView('pins')" @keydown="tabKeydown">固定歌曲<span>{{ pins?.totalElements ?? '—' }}</span></button></div><p>一首歌可有多份缓存，份数不等于歌曲数</p></div>
+        <div class="cache-workspace-top"><div class="cache-tabs" role="tablist" aria-label="缓存管理视图"><button id="cache-list-tab" ref="cacheTab" type="button" role="tab" :aria-selected="activeView === 'cache'" :tabindex="activeView === 'cache' ? 0 : -1" aria-controls="cache-list-panel" @click="changeView('cache')" @keydown="tabKeydown">缓存明细<span>{{ result.totalElements }}</span></button><button id="cache-pins-tab" ref="pinsTab" type="button" role="tab" :aria-selected="activeView === 'pins'" :tabindex="activeView === 'pins' ? 0 : -1" aria-controls="cache-pins-panel" @click="changeView('pins')" @keydown="tabKeydown">固定歌曲<span>{{ pins?.totalElements ?? '—' }}</span></button></div></div>
         <div class="cache-filter-row"><label class="cache-search"><ElIcon><Search /></ElIcon><input v-model="keyword" type="search" :aria-label="activeView === 'cache' ? '查找当前页歌曲或歌手' : '查找当前页固定歌曲'" :placeholder="activeView === 'cache' ? '查找当前页歌曲或歌手' : '查找当前页固定歌曲'" maxlength="200" :disabled="activeView === 'cache' ? loading : pinsLoading" /></label><select v-if="activeView === 'cache'" v-model="typeFilter" aria-label="筛选当前页缓存类型" :disabled="loading"><option value="ALL">全部类型</option><option value="ORIGINAL">原片</option><option value="COMPATIBLE">兼容缓存</option></select><span class="cache-filter-scope">仅筛选当前页</span><ElButton v-if="activeView === 'pins'" class="cache-pin-refresh" text :icon="RefreshRight" :disabled="pinsLoading || busy" @click="loadPins">刷新固定</ElButton></div>
 
         <section v-show="activeView === 'cache'" id="cache-list-panel" class="cache-list" role="tabpanel" aria-labelledby="cache-list-tab" aria-label="已缓存的音视频" :aria-busy="loading">
           <p v-if="loading" class="cache-loading" role="status">正在读取缓存…</p>
-          <div v-else-if="!result.items.length" class="cache-empty"><ElIcon><Headset /></ElIcon><h3>暂无歌曲缓存</h3><p>播放 WebDAV 原片或生成兼容结果后，已缓存内容会显示在这里。</p></div>
-          <div v-else-if="!filteredEntries.length" class="cache-empty"><ElIcon><Search /></ElIcon><h3>当前页没有匹配的缓存</h3><p>换个关键词、重置筛选，或切换到其他页继续查找。</p><ElButton @click="resetFilters">重置筛选</ElButton></div>
+          <div v-else-if="!result.items.length" class="cache-empty"><ElIcon><Headset /></ElIcon><h3>暂无歌曲缓存</h3></div>
+          <div v-else-if="!filteredEntries.length" class="cache-empty"><ElIcon><Search /></ElIcon><h3>当前页没有匹配的缓存</h3><ElButton @click="resetFilters">重置筛选</ElButton></div>
           <div v-else class="cache-table"><div class="cache-table-heading" aria-hidden="true"><span>歌曲与副本</span><span>类型与规格</span><span>已占用</span><span>保护状态</span><span>最近访问</span><span>操作</span></div>
             <article v-for="entry in filteredEntries" :key="entry.id" class="cache-row" :data-cache-id="entry.id" :data-song-id="entry.songId">
               <div class="cache-row-main">
@@ -303,13 +301,11 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
             </article>
           </div>
           <div class="cache-list-footer"><span v-if="result.totalElements">本页 {{ filteredEntries.length }} / {{ result.items.length }} 份<span v-if="keyword.trim() || typeFilter !== 'ALL'">（已筛选）</span></span><span v-else>共 0 份缓存</span><ElPagination v-if="result.totalElements" :current-page="page" :page-size="20" :total="result.totalElements" :disabled="busy || loading" layout="prev, pager, next" @current-change="value => { page = value; load() }" /></div>
-          <details class="cache-explanation"><summary>关于缓存与保护规则</summary><p>原片可部分缓存，整曲缓存支持跳转复用。不同画质、音轨、字幕或独立生成的片段可能有多份缓存。</p><p>固定对同曲现有及未来缓存生效，不强制下载。自动回收和批量清理会跳过固定、近 24 小时实际播放及使用中的副本。近期播放副本如需单独删除，必须明确确认覆盖保护。</p><p>清理只删除本地缓存，不修改原始歌曲或已有离线兼容版本。</p></details>
         </section>
 
         <section v-show="activeView === 'pins'" id="cache-pins-panel" class="cache-pins" role="tabpanel" aria-labelledby="cache-pins-tab" aria-label="固定的歌曲缓存" :aria-busy="pinsLoading">
-          <p class="cache-pin-note">固定作用于同曲全部变体及未来缓存，不强制下载整曲。取消固定不会删除缓存，没有缓存的固定记录也可在此取消。</p>
           <p v-if="pinError" role="alert" class="cache-feedback cache-error">{{ pinError }}<ElButton text :disabled="busy || pinsLoading" @click="loadPins">重试读取固定</ElButton></p><p v-else-if="pinsLoading" class="cache-loading" role="status">正在读取固定歌曲…</p>
-          <div v-else-if="!pins?.items.length" class="cache-empty"><ElIcon><CollectionTag /></ElIcon><h3>尚未固定歌曲</h3><p>在缓存明细中固定常听歌曲，可保护同曲的所有缓存。</p><ElButton @click="changeView('cache')">查看缓存明细</ElButton></div>
+          <div v-else-if="!pins?.items.length" class="cache-empty"><ElIcon><CollectionTag /></ElIcon><h3>尚未固定歌曲</h3><ElButton @click="changeView('cache')">查看缓存明细</ElButton></div>
           <div v-else-if="!filteredPins.length" class="cache-empty"><ElIcon><Search /></ElIcon><h3>当前页没有匹配的固定歌曲</h3><ElButton @click="resetFilters">重置筛选</ElButton></div>
           <div v-else class="cache-pin-list"><article v-for="pin in filteredPins" :key="pin.songId" class="cache-pin-row" :data-pin-song-id="pin.songId"><SongCover class="cache-song-cover" :song-id="pin.songId" :title="pin.title" /><div><strong>{{ pin.title || pin.songId }}</strong><p>{{ pin.artist || '歌曲信息暂不可用' }}</p></div><span v-if="pin.hasCache === false" class="cache-no-copy">尚无缓存</span><ElButton :disabled="busy" :aria-label="`取消固定${pin.title || pin.songId}`" @click="togglePin(pin)">取消固定</ElButton></article></div>
           <div class="cache-list-footer"><span>本页 {{ filteredPins.length }} / {{ pins?.items.length ?? 0 }} 首</span><ElPagination v-if="pins?.totalElements" :current-page="pinPage" :page-size="20" :total="pins.totalElements" :disabled="busy || pinsLoading" layout="prev, pager, next" @current-change="value => { pinPage = value; loadPins() }" /></div>
@@ -317,7 +313,7 @@ onBeforeUnmount(() => { active = false; epoch++; pinEpoch++; jobEpoch++; clearTi
       </section>
     </template>
     <p v-else-if="loading" role="status" class="cache-loading">正在读取缓存…</p>
-    <section v-else class="cache-unavailable"><h2>暂时无法读取歌曲缓存</h2><p>请检查服务节点的缓存目录、磁盘空间和读写权限。缓存管理无需连接计算节点。</p><ElButton @click="load()">重试</ElButton></section>
+    <section v-else class="cache-unavailable"><h2>暂时无法读取歌曲缓存</h2><ElButton @click="load()">重试</ElButton></section>
 
     <ElDialog v-model="recentOpen" title="覆盖近期保护并删除？" width="min(460px, calc(100vw - 32px))" align-center class="cache-recent-dialog">
       <template v-if="recentEntry"><div class="cache-dialog-song"><strong>{{ recentEntry.title || '未命名歌曲' }}</strong><span>{{ recentEntry.artist || recentEntry.songId }}</span><span>{{ format(recentEntry) }} / {{ bytes(recentEntry.bytes) }}</span></div><p class="cache-dialog-copy">仅删除这一份本地缓存；原始歌曲与离线兼容版本保持不变。</p><p class="cache-dialog-warning">这份缓存近 24 小时内实际播放过，通常受到近期保护。</p><ElCheckbox v-model="recentConfirmed" class="cache-recent-checkbox">我确认覆盖近期播放保护，只删除这一份缓存</ElCheckbox></template>

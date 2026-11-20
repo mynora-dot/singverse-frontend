@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import PageHeader from '../../shared/ui/PageHeader.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElAlert, ElButton, ElDialog, ElIcon, ElInput, ElPagination, ElSkeleton } from 'element-plus'
-import { Plus, Refresh, Search, Star, Delete, Connection } from '@element-plus/icons-vue'
+import { Plus, Refresh, Search, Star, Delete } from '@element-plus/icons-vue'
 import SongCover from '../song-management/components/SongCover.vue'
 import { favoritesApi, type FavoriteSong } from './api'
 
@@ -81,12 +82,11 @@ onBeforeUnmount(() => { active = false; readSequence++; addSequence++; clearInte
 
 <template>
   <section class="favorites-page">
-    <header class="favorites-heading">
-      <div><h1>收藏管理</h1><p><ElIcon><Connection /></ElIcon> 与此 NAS 的手机、电视共用一份收藏</p></div>
-      <ElButton type="primary" :icon="Plus" :disabled="busy" @click="openAdd">添加歌曲</ElButton>
-    </header>
+    <PageHeader title="收藏管理">
+      <template #actions><ElButton type="primary" :icon="Plus" :disabled="busy" @click="openAdd">添加歌曲</ElButton></template>
+    </PageHeader>
     <ElAlert v-if="readError" type="error" :closable="false" class="read-error"><template #title>收藏读取失败：{{ readError }}</template><p>{{ loaded ? '当前显示上次成功读取的内容。' : '请检查连接后重试。' }}<ElButton text @click="load()">重新读取</ElButton></p></ElAlert>
-    <p v-if="notice" class="success-notice" role="status">{{ notice }}。手机与电视刷新后可见。</p>
+    <p v-if="notice" class="success-notice" role="status">{{ notice }}</p>
     <form class="favorites-toolbar sv-glass" @submit.prevent="load(true)">
       <ElInput v-model="query" :prefix-icon="Search" placeholder="搜索歌名或歌手" aria-label="搜索收藏" maxlength="200" clearable @clear="load(true)" />
       <select v-model="availability" aria-label="收藏可用状态" @change="load(true)"><option value="ALL">全部状态</option><option value="AVAILABLE">可用歌曲</option><option value="UNAVAILABLE">暂不可用</option></select>
@@ -121,14 +121,12 @@ onBeforeUnmount(() => { active = false; readSequence++; addSequence++; clearInte
       <div v-if="!items.length && !loading" class="list-state" role="status">
         <ElIcon><Star /></ElIcon>
         <h2>{{ loading ? '正在读取收藏…' : readError ? '暂时无法读取收藏' : query || availability !== 'ALL' ? '没有找到匹配的收藏' : '把想唱的歌留在一起' }}</h2>
-        <p>{{ readError ? '恢复连接后重试。' : query || availability !== 'ALL' ? '换个关键词，或查看全部收藏。' : '在这里添加歌曲，手机和电视也能找到。' }}</p>
         <ElButton v-if="!loading && !readError && !query && availability === 'ALL'" :icon="Plus" @click="openAdd">添加第一首歌</ElButton>
         <ElButton v-else-if="!loading && !readError" @click="query = ''; availability = 'ALL'; load(true)">查看全部收藏</ElButton>
       </div>
     </div>
     <footer class="favorites-footer"><span>{{ loading ? '正在刷新…' : lastRead ? `最近读取 ${lastRead}` : '等待服务器响应' }}</span><ElPagination v-if="total > 20" :current-page="page" :total="total" :page-size="20" layout="prev, pager, next" @current-change="value => { page = value; selected = new Set(); load() }" /></footer>
     <ElDialog v-model="addOpen" title="添加收藏歌曲" class="favorites-dialog" width="min(720px, calc(100vw - 32px))" :close-on-click-modal="false" :close-on-press-escape="!busy" :show-close="!busy" :before-close="closeAdd">
-      <p class="dialog-intro">从此 NAS 曲库选择，添加后手机和电视共用。</p>
       <ElAlert v-if="addOpen && (addError || mutationError)" :title="addError || mutationError" type="error" :closable="false" />
       <form class="add-search" @submit.prevent="loadCandidates(true)"><ElInput v-model="addQuery" aria-label="搜索曲库" placeholder="搜索歌名或歌手" maxlength="200" clearable @clear="loadCandidates(true)" /><ElButton native-type="submit" :loading="addLoading" :disabled="busy">搜索</ElButton></form>
       <p v-if="addLoading" role="status">正在读取曲库与收藏状态…</p>
@@ -137,7 +135,7 @@ onBeforeUnmount(() => { active = false; readSequence++; addSequence++; clearInte
           <span class="check-target"><input type="checkbox" :checked="added.has(song.id) || addSelected.has(song.id)" :disabled="busy || addLoading || !!addError || added.has(song.id) || (addSelected.size >= 500 && !addSelected.has(song.id))" :aria-label="`添加 ${song.title}`" @change="select(song.id, ($event.target as HTMLInputElement).checked, true)"></span>
           <SongCover :song-id="song.id" :title="song.title" /><span class="song-copy"><strong>{{ song.title }}</strong><span class="song-artist">{{ artist(song) }}</span></span><span v-if="added.has(song.id)" class="added-label">已收藏</span>
         </label>
-        <p v-if="!addLoading && !addError && !candidates.length" class="candidate-empty">{{ addQuery ? '没有匹配的歌曲，试试其他关键词。' : '曲库暂时没有歌曲，请先添加歌曲来源。' }}</p>
+        <p v-if="!addLoading && !addError && !candidates.length" class="candidate-empty">{{ addQuery ? '没有匹配的歌曲' : '曲库暂无歌曲' }}</p>
       </div>
       <ElPagination v-if="candidateTotal > 20" :current-page="addPage" :total="candidateTotal" :page-size="20" layout="prev, pager, next" :disabled="busy || addLoading" @current-change="value => { addPage = value; loadCandidates() }" />
       <template #footer><span class="selection-count">已选 {{ addSelected.size }} / 500 首</span><ElButton :disabled="busy" @click="closeAdd()">取消</ElButton><ElButton type="primary" :loading="busy" :disabled="!addSelected.size || addLoading || !!addError" @click="save(true)">添加所选</ElButton></template>
@@ -155,9 +153,6 @@ onBeforeUnmount(() => { active = false; readSequence++; addSequence++; clearInte
 </template>
 <style scoped>
 .favorites-page { min-width:0; }
-.favorites-heading { display:flex; align-items:center; justify-content:space-between; gap:24px; margin-bottom:24px; }
-.favorites-heading h1 { margin:0 0 6px; font-size:26px; line-height:36px; font-weight:650; letter-spacing:-.5px; }
-.favorites-heading p { margin:0; display:flex; gap:8px; align-items:center; color:var(--sv-text-secondary); font-size:14px; line-height:22px; }
 .favorites-page :deep(.el-button) { min-height:44px; }
 .favorites-toolbar { display:flex; gap:12px; align-items:center; margin-bottom:12px; padding:16px 20px; flex-wrap:wrap; }
 .favorites-toolbar .el-input { max-width:400px; flex:1; min-width:160px; }
@@ -180,11 +175,10 @@ button:not(.el-button) { font:inherit; color:inherit; cursor:pointer; }button:no
 .album-cell { color:var(--sv-text-secondary); padding-right:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; }.date-cell { color:var(--sv-text-tertiary); font-size:14px; }.row-remove { justify-self:center; min-width:44px; min-height:44px; background:none; border:0; border-radius:6px; color:var(--sv-text-secondary); }.row-remove:hover:enabled { background:var(--sv-semantic-danger-soft); color:var(--sv-semantic-danger); }.row-remove .el-icon,.mobile-meta { display:none; }
 .check-target { display:flex; width:44px; height:44px; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; }.check-target input { width:18px; height:18px; margin:0; accent-color:var(--sv-accent-primary); cursor:inherit; }
 .list-state { display:flex; min-height:340px; padding:48px 20px; flex-direction:column; align-items:center; justify-content:center; text-align:center; color:var(--sv-text-secondary); }.list-state>.el-icon { font-size:36px; color:var(--sv-text-tertiary); margin-bottom:16px; }.list-state h2 { font-size:18px; font-weight:550; margin:0 0 10px; }.list-state p { line-height:24px; margin:0 0 22px; }
-.favorites-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:12px; font-size:12px; color:var(--sv-text-tertiary); }
-.dialog-intro { margin-top:0; color:var(--sv-text-secondary); }.add-search { display:flex; gap:12px; margin:16px 0; }.candidate-list { max-height:420px; overflow:auto; border-top:1px solid var(--sv-border-subtle); }.candidate-row { display:flex; gap:12px; align-items:center; min-height:80px; border-bottom:1px solid var(--sv-border-subtle); padding-right:8px; cursor:pointer; }.candidate-row.added { color:var(--sv-text-secondary); }.added-label { margin-left:auto; flex-shrink:0; color:var(--sv-text-tertiary); font-size:12px; }.candidate-empty { padding:40px 12px; text-align:center; color:var(--sv-text-secondary); }.selection-count { margin-right:auto; font-size:14px; color:var(--sv-text-secondary); }.favorites-page :deep(.el-dialog__footer) { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }.favorites-page :deep(.el-dialog__footer .el-button + .el-button) { margin:0; }.remove-preview { max-height:200px; overflow:auto; padding-left:20px; color:var(--sv-text-secondary); line-height:26px; }.detail-song { display:flex; align-items:center; gap:16px; }.detail-song h2 { margin:0; font-size:20px; overflow-wrap:anywhere; }.detail-song p { color:var(--sv-text-secondary); margin:6px 0 0; }dl { display:grid; grid-template-columns:80px minmax(0,1fr); gap:12px; margin-top:24px; }dt { color:var(--sv-text-tertiary); }dd { margin:0; overflow-wrap:anywhere; }
+.favorites-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:12px; font-size:12px; color:var(--sv-text-tertiary); }.add-search { display:flex; gap:12px; margin:16px 0; }.candidate-list { max-height:420px; overflow:auto; border-top:1px solid var(--sv-border-subtle); }.candidate-row { display:flex; gap:12px; align-items:center; min-height:80px; border-bottom:1px solid var(--sv-border-subtle); padding-right:8px; cursor:pointer; }.candidate-row.added { color:var(--sv-text-secondary); }.added-label { margin-left:auto; flex-shrink:0; color:var(--sv-text-tertiary); font-size:12px; }.candidate-empty { padding:40px 12px; text-align:center; color:var(--sv-text-secondary); }.selection-count { margin-right:auto; font-size:14px; color:var(--sv-text-secondary); }.favorites-page :deep(.el-dialog__footer) { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }.favorites-page :deep(.el-dialog__footer .el-button + .el-button) { margin:0; }.remove-preview { max-height:200px; overflow:auto; padding-left:20px; color:var(--sv-text-secondary); line-height:26px; }.detail-song { display:flex; align-items:center; gap:16px; }.detail-song h2 { margin:0; font-size:20px; overflow-wrap:anywhere; }.detail-song p { color:var(--sv-text-secondary); margin:6px 0 0; }dl { display:grid; grid-template-columns:80px minmax(0,1fr); gap:12px; margin-top:24px; }dt { color:var(--sv-text-tertiary); }dd { margin:0; overflow-wrap:anywhere; }
 button:focus-visible,select:focus-visible,input:focus-visible { outline:3px solid var(--sv-accent-primary); outline-offset:3px; }
 @media(max-width:1100px) { .list-head,.favorite-row { grid-template-columns:36px minmax(230px,1.5fr) minmax(100px,1fr) 105px 90px; }.favorites-toolbar { gap:8px; }select { min-width:120px; } }
-@media(max-width:760px) { .favorites-heading { align-items:flex-start; gap:16px; margin-bottom:20px; }.favorites-heading h1 { font-size:24px; line-height:32px; }.favorites-heading p { display:block; font-size:14px; max-width:230px; }.favorites-heading p .el-icon { display:none; }.favorites-heading>.el-button { padding:0 12px; }.favorites-toolbar { flex-wrap:wrap; }.favorites-toolbar .el-input { flex-basis:calc(100% - 76px); max-width:none; order:0; }.favorites-toolbar>.el-button:not(.desktop-refresh) { order:1; }.favorites-toolbar select { order:2; flex:1; min-width:0; font-size:16px; }.desktop-refresh { display:none; }.mobile-refresh { display:inline-flex; width:44px; padding:0; }.result-bar { font-size:14px; gap:8px; flex-wrap:wrap; padding:4px 0; }.result-bar.bulk { padding:8px; }.selection-scope { display:block; }.result-actions { gap:4px; }.result-actions .el-button { padding:0 10px; }.list-head { display:none; }.favorite-row { grid-template-columns:0 minmax(0,1fr) 44px; gap:0; padding:0 4px 0 12px; min-height:96px; }.favorite-row:has(.check-target) { grid-template-columns:36px minmax(0,1fr) 44px; padding-left:0; }.favorite-row .check-target { width:36px; }.song-content { gap:12px; min-width:0; }.song-copy strong { font-size:16px; }.song-title { flex-wrap:wrap; gap:4px; }.unavailable { font-size:12px; }.mobile-meta { display:block; color:var(--sv-text-tertiary); font-size:12px; line-height:18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.album-cell,.date-cell,.row-remove>span { display:none; }.row-remove .el-icon { display:inline-flex; font-size:18px; }.row-remove { width:44px; }.song-artist { font-size:14px; }.favorites-footer { flex-wrap:wrap; }.favorites-page :deep(.el-input__inner) { font-size:16px; }.candidate-row { gap:8px; }.candidate-row .check-target { width:32px; }.candidate-row .song-copy { flex:1; }.selection-count { width:100%; text-align:left; margin-bottom:8px; }.detail-song h2 { font-size:18px; } }
+@media(max-width:760px) {.favorites-toolbar { flex-wrap:wrap; }.favorites-toolbar .el-input { flex-basis:calc(100% - 76px); max-width:none; order:0; }.favorites-toolbar>.el-button:not(.desktop-refresh) { order:1; }.favorites-toolbar select { order:2; flex:1; min-width:0; font-size:16px; }.desktop-refresh { display:none; }.mobile-refresh { display:inline-flex; width:44px; padding:0; }.result-bar { font-size:14px; gap:8px; flex-wrap:wrap; padding:4px 0; }.result-bar.bulk { padding:8px; }.selection-scope { display:block; }.result-actions { gap:4px; }.result-actions .el-button { padding:0 10px; }.list-head { display:none; }.favorite-row { grid-template-columns:0 minmax(0,1fr) 44px; gap:0; padding:0 4px 0 12px; min-height:96px; }.favorite-row:has(.check-target) { grid-template-columns:36px minmax(0,1fr) 44px; padding-left:0; }.favorite-row .check-target { width:36px; }.song-content { gap:12px; min-width:0; }.song-copy strong { font-size:16px; }.song-title { flex-wrap:wrap; gap:4px; }.unavailable { font-size:12px; }.mobile-meta { display:block; color:var(--sv-text-tertiary); font-size:12px; line-height:18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.album-cell,.date-cell,.row-remove>span { display:none; }.row-remove .el-icon { display:inline-flex; font-size:18px; }.row-remove { width:44px; }.song-artist { font-size:14px; }.favorites-footer { flex-wrap:wrap; }.favorites-page :deep(.el-input__inner) { font-size:16px; }.candidate-row { gap:8px; }.candidate-row .check-target { width:32px; }.candidate-row .song-copy { flex:1; }.selection-count { width:100%; text-align:left; margin-bottom:8px; }.detail-song h2 { font-size:18px; } }
 
 /* Second polish pass: full-size controls and readable mobile scope/dialog copy. */
 .check-target input { appearance:none; width:44px; height:44px; position:relative; border:0; background:none; border-radius:5px; }
@@ -195,11 +189,6 @@ button:focus-visible,select:focus-visible,input:focus-visible { outline:3px soli
 .check-target input:disabled { opacity:.5; cursor:default; }
 .favorites-page :deep(.el-dialog__headerbtn) { width:44px; height:44px; top:8px; right:8px; }
 @media(max-width:760px) {
-  .favorites-heading { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px 12px; }
-  .favorites-heading>div { display:contents; }
-  .favorites-heading h1 { grid-column:1; grid-row:1; margin:0; }
-  .favorites-heading>.el-button { grid-column:2; grid-row:1; }
-  .favorites-heading p { grid-column:1/-1; grid-row:2; max-width:none; font-size:16px; line-height:24px; }
   .favorite-row:has(.check-target) { grid-template-columns:44px minmax(0,1fr) 44px; }
   .favorite-row .check-target,.candidate-row .check-target { width:44px; }
   .mobile-meta { display:flex; gap:10px; }

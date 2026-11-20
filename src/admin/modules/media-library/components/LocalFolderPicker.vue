@@ -79,7 +79,6 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(filterTimer) 
 <template>
   <ElDialog :model-value="true" title="选择歌曲文件夹" width="min(780px, calc(100vw - 24px))" top="5vh" class="local-folder-dialog" append-to-body :close-on-click-modal="false" @update:model-value="close">
     <div class="folder-picker-content">
-      <p class="folder-description">点击文件夹进入，在下方确认使用。</p>
       <div class="folder-browser-layout">
       <section v-if="locations.length || savedLocations.length" class="folder-places" aria-label="常用位置">
         <span class="folder-section-label">{{ containerized ? '挂载与常用位置' : '常用位置' }}</span>
@@ -115,12 +114,12 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(filterTimer) 
       <div ref="listElement" class="folder-list" role="group" aria-label="文件夹列表" :aria-busy="loading" tabindex="-1">
         <p v-if="loading" class="folder-empty" role="status">正在读取文件夹…</p>
         <template v-else-if="directory">
-          <p v-if="!directory.items.length" class="folder-empty" role="status">{{ filter ? '没有匹配的子文件夹，试试其他名称。' : '此目录没有子文件夹，可以直接选择当前文件夹。' }}</p>
+          <p v-if="!directory.items.length" class="folder-empty" role="status">{{ filter ? '没有匹配的子文件夹' : '此目录没有子文件夹' }}</p>
           <button v-for="entry in directory.items" :key="entry.path" type="button" class="folder-row" :aria-label="`进入 ${entry.name}`" @click="browse(entry.path, 0, '', true)"><ElIcon><FolderOpened /></ElIcon><span>{{ entry.name }}</span><ElIcon class="folder-next" aria-hidden="true"><ArrowRight /></ElIcon></button>
         </template>
       </div>
       <div v-if="directory && (page > 0 || directory.hasMore)" class="folder-pagination"><span>第 {{ page + 1 }} 页，每页最多 100 个文件夹</span><ElButton :disabled="page === 0 || loading" @click="browse(directory.path, page - 1, filter)">上一页</ElButton><ElButton :disabled="!directory.hasMore || loading" @click="browse(directory.path, page + 1, filter)">下一页</ElButton></div>
-      <div class="folder-bottom-hint"><span>扫描时会包含子文件夹</span><details class="folder-help"><summary>找不到文件夹？</summary><p>{{ containerized ? '这里只显示后端容器内的路径。例如宿主机 /volume1/music 挂载到 /media 后，请选择 /media。目录为空或无法读取时，请检查后端的挂载和读取权限。' : '这里只显示后端服务可读取的目录。可以输入完整路径直接前往；外接存储或网络文件夹需先在服务器挂载，并允许后端读取。' }}</p></details></div>
+      <div class="folder-bottom-hint"><details class="folder-help"><summary>找不到文件夹？</summary><p>{{ containerized ? '这里只显示后端容器内的路径。例如宿主机 /volume1/music 挂载到 /media 后，请选择 /media。目录为空或无法读取时，请检查后端的挂载和读取权限。' : '这里只显示后端服务可读取的目录。可以输入完整路径直接前往；外接存储或网络文件夹需先在服务器挂载，并允许后端读取。' }}</p></details></div>
       </div>
       </div>
     </div>
@@ -135,7 +134,6 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(filterTimer) 
 
 <style scoped>
 .folder-picker-content { display: flex; flex-direction: column; gap: 16px; height: min(620px, calc(88dvh - 190px)); }
-.folder-description { margin: 0; color: var(--el-text-color-regular); line-height: 1.6; }
 .folder-browser-layout { display: flex; flex: 1; min-height: 0; gap: 20px; }
 .folder-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; gap: 12px; overflow-y: auto; }
 .folder-main > :not(.folder-list) { flex-shrink: 0; }
@@ -184,8 +182,7 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(filterTimer) 
 .folder-footer-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .folder-footer-actions .el-button { min-height: 44px; margin: 0; }
 button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, .folder-list:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
-@media (max-width: 600px) {
-  .folder-description, .folder-section-label, .folder-path-form > label { display: none; }
+@media (max-width: 600px) { .folder-section-label, .folder-path-form > label { display: none; }
   .folder-browser-layout { flex-direction: column; gap: 12px; }
   .folder-places { width: 100%; overflow: visible; }
   .folder-place-list { display: none; }

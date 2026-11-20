@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElMessage, ElMessageBox, ElSwitch, ElTag, ElSkeleton } from 'element-plus'
+import { ElAlert, ElButton, ElMessage, ElMessageBox, ElSwitch, ElSkeleton } from 'element-plus'
 import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { metadata } from '../api/metadata'
 import { metadataDefaults, providerNames, type MetadataBatch, type MetadataSettings, type MusicProvider } from '../types'
@@ -63,8 +63,7 @@ onBeforeUnmount(() => { active = false; generation++; window.removeEventListener
 
 <template>
   <section class="music-platforms-page management-page">
-    <PageHeader title="音乐平台" description="支持六个音乐平台，可按需选择歌曲信息匹配和封面查找的来源。">
-      <template v-if="ready" #meta><ElTag :type="dirty ? 'warning' : 'info'" effect="light">{{ dirty ? '有未保存的修改' : config.enabled ? `已开启 ${config.providers.length} 个平台` : '查询已关闭' }}</ElTag></template>
+    <PageHeader title="音乐平台">
       <template #actions><ElButton :disabled="busy" @click="router.push(returnTo)">{{ route.query.returnTo ? '返回原页面' : '查看歌曲信息' }}</ElButton></template>
     </PageHeader>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton v-if="!ready" text :loading="loading" @click="load">重新读取</ElButton></ElAlert>
@@ -72,20 +71,19 @@ onBeforeUnmount(() => { active = false; generation++; window.removeEventListener
     <form v-if="ready" aria-label="音乐平台设置" @submit.prevent="save">
       <fieldset :disabled="busy || loading" class="platform-form">
         <section class="platform-panel sv-glass" aria-labelledby="platform-heading">
-          <div class="platform-heading"><div><h2 id="platform-heading">歌曲信息与封面</h2><p>搜索时仅发送歌名、歌手等关键词，媒体文件留在你的 NAS。</p></div><ElSwitch v-model="config.enabled" :disabled="busy || loading" aria-label="启用音乐平台查询" /></div>
-          <div class="platform-selection-heading"><span>{{ config.enabled ? `已开启 ${config.providers.length} 个平台` : '平台查询已关闭，仍可手工编辑与上传封面' }}</span><ElButton text :disabled="config.enabled && config.providers.length === platforms.length" @click="enableAll">启用全部平台</ElButton></div>
-          <div class="platform-options"><label v-for="platform in platforms" :key="platform" class="platform-option" :class="{ selected: config.providers.includes(platform) }"><span class="platform-mark" :data-platform="platform" aria-hidden="true">{{ marks[platform] }}</span><span class="platform-name">{{ providerNames[platform] }}<small>{{ config.providers.includes(platform) ? config.enabled ? '已开启' : '已选中 · 查询已关闭' : '未开启' }}</small></span><input v-model="config.providers" type="checkbox" :value="platform" :aria-label="providerNames[platform]" /></label></div>
-          <p class="platform-note">这里决定可用平台；单曲审核与封面窗口中还可以临时选择本次搜索的平台。</p>
+          <div class="platform-heading"><div><h2 id="platform-heading">歌曲信息与封面</h2></div><ElSwitch v-model="config.enabled" :disabled="busy || loading" aria-label="启用音乐平台查询" /></div>
+          <div class="platform-selection-heading"><span>{{ config.enabled ? `已开启 ${config.providers.length} 个平台` : '平台查询已关闭' }}</span><ElButton text :disabled="config.enabled && config.providers.length === platforms.length" @click="enableAll">启用全部平台</ElButton></div>
+          <div class="platform-options"><label v-for="platform in platforms" :key="platform" class="platform-option" :class="{ selected: config.providers.includes(platform) }"><span class="platform-mark" :data-platform="platform" aria-hidden="true">{{ marks[platform] }}</span><span class="platform-name">{{ providerNames[platform] }}</span><input v-model="config.providers" type="checkbox" :value="platform" :aria-label="providerNames[platform]" /></label></div>
         </section>
         <section class="platform-panel sv-glass" aria-labelledby="automation-heading">
-          <div class="platform-heading"><div><h2 id="automation-heading">批量匹配后的应用方式</h2><p>单曲搜索始终需要核对后确认。批量匹配可按以下规则处理。</p></div><ElTag :type="config.autoApply ? 'warning' : 'info'">{{ config.autoApply ? '自动应用已开启' : '逐曲审核' }}</ElTag></div>
-          <label class="platform-switch-row"><span><strong>高相似度时自动应用</strong><small>默认关闭；开启后，最高候选达到阈值且无相近候选时才自动写入。同分或相近候选需人工确认。</small></span><ElSwitch v-model="config.autoApply" :disabled="busy || loading" aria-label="高相似度时自动应用" /></label>
-          <details class="platform-advanced"><summary>匹配阈值与请求节奏</summary><div class="platform-fields"><label>自动应用阈值<span class="platform-number"><input v-model.number="thresholdPercent" aria-label="自动应用阈值百分比" type="number" min="80" max="100" step="1" required /><span>%</span></span><small>相似度是匹配参考，不代表正确率；同分或分差不足 8 个百分点的候选会保留待人工确认。</small></label><label>每首歌曲完成后等待<span class="platform-interval"><input v-model.number="config.minIntervalSeconds" aria-label="批量最小间隔秒" type="number" min="0" max="300" step="1" required /><span>至</span><input v-model.number="config.maxIntervalSeconds" aria-label="批量最大间隔秒" type="number" min="0" max="300" step="1" required /><span>秒</span></span><small>默认 1～2 秒，可设为 0；平台限流时仍会暂停请求并提示重试。</small></label></div></details>
+          <div class="platform-heading"><div><h2 id="automation-heading">批量匹配后的应用方式</h2></div></div>
+          <label class="platform-switch-row"><span><strong>唯一高相似度候选自动应用</strong></span><ElSwitch v-model="config.autoApply" :disabled="busy || loading" aria-label="唯一高相似度候选自动应用" /></label>
+          <details class="platform-advanced"><summary>匹配阈值与请求节奏</summary><div class="platform-fields"><label>自动应用阈值<span class="platform-number"><input v-model.number="thresholdPercent" aria-label="自动应用阈值百分比" type="number" min="80" max="100" step="1" required /><span>%</span></span><small>同分或分差不足 8 个百分点时保留待审核。</small></label><label>每首歌曲完成后等待<span class="platform-interval"><input v-model.number="config.minIntervalSeconds" aria-label="批量最小间隔秒" type="number" min="0" max="300" step="1" required /><span>至</span><input v-model.number="config.maxIntervalSeconds" aria-label="批量最大间隔秒" type="number" min="0" max="300" step="1" required /><span>秒</span></span></label></div></details>
         </section>
       </fieldset>
       <ElAlert v-if="taskUnknown" title="暂时无法读取匹配任务状态；保存设置仍会暂停正在运行的批次。" type="warning" :closable="false" />
       <p v-if="invalid" role="alert" class="platform-validation">{{ invalid }}</p>
-      <div class="platform-save sv-glass"><p>{{ dirty ? '有未保存的修改' : '当前设置已保存' }}<small>保存会暂停运行中的匹配批次，可在歌曲信息页继续。</small></p><ElButton type="primary" native-type="submit" :loading="busy" :disabled="!dirty || !!invalid || loading">保存设置</ElButton></div>
+      <div class="platform-save sv-glass"><p>{{ dirty ? '有未保存的修改' : '当前设置已保存' }}<small>保存会暂停运行中的匹配批次。</small></p><ElButton type="primary" native-type="submit" :loading="busy" :disabled="!dirty || !!invalid || loading">保存设置</ElButton></div>
     </form>
   </section>
 </template>

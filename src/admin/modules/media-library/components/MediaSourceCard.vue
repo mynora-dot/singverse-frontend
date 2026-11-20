@@ -88,7 +88,6 @@ const scanErrors = computed(() => [...new Set([props.ingest?.error, props.task?.
       <div class="source-info">
         <div class="source-title">
           <h2>{{ source.name }}</h2>
-          <ElTag type="info" effect="plain" size="small">{{ source.type === 'LOCAL' ? '本地目录' : 'WebDAV' }}</ElTag>
           <ElTag v-if="source.useForLxDownloads" type="success" effect="plain" size="small">下载保存位置</ElTag>
           <StatusBadge class="source-status" :tone="status.tone" :label="status.label" role="status" />
         </div>
