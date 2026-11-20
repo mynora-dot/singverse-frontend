@@ -30,12 +30,12 @@ function node(): Node {
 }
 
 it.each([
-  ['Intel', 'openvino', ['panns-cnn6', 'uvr-mdxnet-9482', 'htdemucs', 'htdemucs-openvino']],
-  ['NVIDIA', 'cuda', ['panns-cnn6', 'uvr-mdxnet-9482', 'htdemucs']],
-  ['Mac', 'mps', ['panns-cnn6', 'uvr-mdxnet-9482', 'htdemucs']],
-  ['AMD', 'rocm', ['panns-cnn6', 'uvr-mdxnet-9482', 'htdemucs']],
-  ['瑞芯微', 'rknn', ['panns-cnn6', 'uvr-mdxnet-9482', 'uvr-mdxnet-9482-rknn', 'htdemucs']],
-  ['CPU', 'cpu', ['panns-cnn6', 'uvr-mdxnet-9482', 'htdemucs']],
+  ['Intel', 'openvino', ['htdemucs', 'htdemucs-openvino', 'panns-cnn6']],
+  ['NVIDIA', 'cuda', ['htdemucs', 'panns-cnn6']],
+  ['Mac', 'mps', ['htdemucs', 'panns-cnn6']],
+  ['AMD', 'rocm', ['htdemucs', 'panns-cnn6']],
+  ['瑞芯微', 'rknn', ['uvr-mdxnet-9482-rknn', 'htdemucs', 'panns-cnn6']],
+  ['CPU', 'cpu', ['htdemucs', 'panns-cnn6']],
 ])('模型管理侧栏按 %s 节点过滤，保留通用模型和缺环境设备的模型', (_name, id, expected) => {
   const value = node()
   value.backends.find(item => item.id === id)!.detected = true
@@ -74,12 +74,12 @@ it('Intel 节点概览和环境说明不再列出其他厂商，实际模型入�
   await openOverview(value)
   expect(wrapper!.text()).not.toMatch(/Mac|NVIDIA|AMD|瑞芯微/)
   const button = (text: string) => wrapper!.findAll('button').find(item => item.text() === text)!
-  await button('运行环境说明').trigger('click'); await flushPromises()
+  await button('运行环境').trigger('click'); await flushPromises()
   const environment = wrapper!.get('.environment-help')
   expect(environment.text()).not.toMatch(/Mac|NVIDIA|AMD|瑞芯微|四种加速镜像/)
   expect(environment.findAll('.deployment-guide section')).toHaveLength(1)
   expect(environment.text()).toContain('fixture:openvino')
   expect(environment.text()).not.toMatch(/fixture:(cuda|rocm|rknn)/)
   await button('模型管理').trigger('click'); await flushPromises()
-  expect(wrapper!.get('.models-only').findAll('[data-model]').map(item => item.attributes('data-model'))).toEqual(['panns-cnn6', 'uvr-mdxnet-9482', 'htdemucs', 'htdemucs-openvino'])
+  expect(wrapper!.get('.models-only').findAll('[data-model]').map(item => item.attributes('data-model'))).toEqual(['htdemucs', 'htdemucs-openvino', 'panns-cnn6'])
 })

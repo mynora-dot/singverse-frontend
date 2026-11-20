@@ -1,12 +1,8 @@
 import type { Backend, Model, Node, SeparationProfile } from '../audio-processing/api'
-import { backendName, backendStates } from '../audio-processing/presentation'
+import { backendName, backendStates, generationProfiles, generationProfileNames } from '../audio-processing/presentation'
 import { isRelevantBackend } from '../audio-processing/node-hardware'
 
-export const audioPlans: { id: SeparationProfile; label: string }[] = [
-  { id: 'DSP_FAST', label: '极速消音' },
-  { id: 'AI_CLEAN', label: '轻量 AI' },
-  { id: 'LEGACY_DEMUCS', label: '高级 AI' },
-]
+export const audioPlans = generationProfiles.map(id => ({ id, label: generationProfileNames[id] }))
 export const modelCatalog = (node: Node): Model[] => node.models || [node.model]
 export const modelForBackend = (node: Node, id?: string | null) => modelCatalog(node).find(model => model.id === (id === 'openvino' ? 'htdemucs-openvino' : id === 'rknn' ? 'uvr-mdxnet-9482-rknn' : 'htdemucs'))
 export function planBackends(node: Node, profile: SeparationProfile): Backend[] {
@@ -14,7 +10,8 @@ export function planBackends(node: Node, profile: SeparationProfile): Backend[] 
   return entries.filter(isRelevantBackend)
 }
 export const canVerify = (backend: Backend) => ['AVAILABLE', 'UNVERIFIED', 'FAILED'].includes(backend.state)
-export const backendStatus = (backend?: Backend) => backend ? backendStates[backend.state] || backend.state : '尚未确认'
+const backendLabels: Record<string, string> = { AVAILABLE: '已验证', UNVERIFIED: '待验证', FAILED: '验证失败', TESTING: '验证中', IMAGE_MISSING: '环境未包含', MODEL_MISSING: '缺少模型或依赖', MODEL_UNSUPPORTED: '模型未适配' }
+export const backendStatus = (backend?: Backend) => backend ? backendLabels[backend.state] || backendStates[backend.state] || backend.state : '尚未确认'
 export const backendTone = (backend?: Backend) => backend?.state === 'AVAILABLE' ? 'success' : backend?.state === 'FAILED' ? 'danger' : backend?.state === 'UNVERIFIED' ? 'warning' : 'info'
 
 export function audioPlanStatus(node: Node, profile: SeparationProfile) {
@@ -28,7 +25,9 @@ export function audioPlanStatus(node: Node, profile: SeparationProfile) {
   const selectedBackend = entries.find(item => item.id === selected)
   const cpu = entries.find(item => item.id === 'cpu')
   // 轻量模型必须先验证独立 CPU 环境，再验证加速设备。
-  const candidate = profile === 'AI_CLEAN' && cpu?.state !== 'AVAILABLE' ? cpu : selectedBackend || entries.find(item => item.id !== 'cpu' && canVerify(item)) || cpu || entries[0]
+  const candidate = profile === 'AI_CLEAN' && cpu?.state !== 'AVAILABLE' ? cpu : selectedBackend
+    || entries.find(item => item.id !== 'cpu' && canVerify(item))
+    || entries.find(item => item.id !== 'cpu') || cpu || entries[0]
   const model = profile === 'AI_CLEAN'
     ? modelCatalog(node).find(item => item.id === 'uvr-mdxnet-9482')
     : modelForBackend(node, selected || candidate?.id)

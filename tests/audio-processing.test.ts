@@ -354,7 +354,7 @@ it.each([true, false])('NVIDIA 节点仅显示适配模型，CPU 降级为 %s', 
     models: [
       { ...node().model, id: 'htdemucs', backends: ['cpu', 'cuda', 'rocm', 'mps'] },
       { ...node().model, id: 'htdemucs-openvino', backends: ['openvino'], installed: false },
-      { ...node().model, id: 'uvr-mdxnet-9482-rknn', backends: ['rknn'], installed: false, localOnly: true },
+      { ...node().model, id: 'uvr-mdxnet-9482-rknn', backends: ['rknn'], installed: false, downloadSourceRequired: true },
     ],
     backends: [{ id: 'cuda', detected: true, state: 'UNVERIFIED' }, { id: 'cpu', state: 'UNVERIFIED' }, { id: 'rknn', detected: false, state: 'IMAGE_MISSING' }],
   } as never : previous(...args))
@@ -364,20 +364,60 @@ it.each([true, false])('NVIDIA 节点仅显示适配模型，CPU 降级为 %s', 
   expect(wrapper!.find('[data-model="uvr-mdxnet-9482-rknn"]').exists()).toBe(false)
 })
 
-it('瑞芯微模型仅提示节点本地部署，不提供不支持的网页导入', async () => {
+it('瑞芯微模型支持 ZIP 导入，并填写 HTTPS 地址和摘要后下载', async () => {
   const previous = vi.mocked(authRequest).getMockImplementation()!
   vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/node') ? {
     ...node(), cpuFallback: false,
-    models: [{ ...node().model, id: 'uvr-mdxnet-9482-rknn', installed: false }],
+    models: [{ ...node().model, id: 'uvr-mdxnet-9482-rknn', installed: false, downloadSourceRequired: true, target: 'rk3566' }],
     backends: [{ id: 'rknn', detected: true, state: 'MODEL_MISSING' }],
   } as never : previous(...args))
   wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
   const model = wrapper!.get('[data-model="uvr-mdxnet-9482-rknn"]')
   expect(model.text()).toContain('瑞芯微 NPU 分离模型')
-  expect(model.text()).toContain('manifest.json 和 uvr.rknn')
+  expect(model.get('.file-metadata').text()).toContain('manifest.json、uvr.rknn')
   expect(model.text()).not.toContain('XML 和 BIN')
-  expect(model.find('input[type="file"]').exists()).toBe(false)
-  expect(model.findAll('button')).toHaveLength(0)
+  expect(model.get('input[type="file"]').attributes('accept')).toBe('.zip')
+  expect(model.text()).toContain('rk3566')
+  expect(model.text()).toContain('rk3588/')
+  await button('下载到节点', model).trigger('click'); await flushPromises()
+  expect(requested('/model/download')).toBe(false)
+  const form = model.get('form')
+  await form.get('input[type="url"]').setValue('https://models.example.test/rk.zip')
+  await form.get('input[type="text"]').setValue('a'.repeat(64))
+  await form.trigger('submit'); await flushPromises()
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/model/download?model=uvr-mdxnet-9482-rknn', 'POST', { url: 'https://models.example.test/rk.zip', sha256: 'a'.repeat(64) }, 60000)
+  expect(model.find('form').exists()).toBe(false)
+})
+
+it('瑞芯微模型下载拒绝无效地址和摘要，失败时保留输入便于修正', async () => {
+  const previous = vi.mocked(authRequest).getMockImplementation()!
+  vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/node') ? {
+    ...node(), models: [{ ...node().model, id: 'uvr-mdxnet-9482-rknn', installed: false }],
+    backends: [{ id: 'rknn', detected: true, state: 'MODEL_MISSING' }],
+  } as never : previous(...args))
+  wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
+  const model = wrapper!.get('[data-model="uvr-mdxnet-9482-rknn"]')
+  await button('下载到节点', model).trigger('click')
+  const form = model.get('form')
+  await form.get('input[type="url"]').setValue('http://models.example.test/rk.zip')
+  await form.trigger('submit'); await flushPromises()
+  expect(form.get('[role="alert"]').text()).toContain('HTTPS')
+  expect(form.get('input[type="url"]').attributes('aria-invalid')).toBe('true')
+  expect(form.get('input[type="text"]').attributes('aria-invalid')).toBe('false')
+  await form.get('input[type="url"]').setValue('https://models.example.test/rk.zip')
+  await form.trigger('submit'); await flushPromises()
+  expect(form.get('[role="alert"]').text()).toContain('64 位')
+  expect(form.get('input[type="text"]').attributes('aria-invalid')).toBe('true')
+  expect(form.get('input[type="url"]').attributes('aria-invalid')).toBe('false')
+  expect(requested('/model/download')).toBe(false)
+  await form.get('input[type="text"]').setValue('a'.repeat(64))
+  vi.mocked(authRequest).mockImplementation(async (...args) => {
+    if (args[0].includes('/model/download')) throw new Error('无法识别芯片')
+    return previous(...args)
+  })
+  await form.trigger('submit'); await flushPromises()
+  expect(wrapper!.text()).toContain('无法识别芯片')
+  expect(model.get('form input[type="url"]').element).toHaveProperty('value', 'https://models.example.test/rk.zip')
 })
 
 it('旧 setup 链接跳转性能节点配置', async () => {

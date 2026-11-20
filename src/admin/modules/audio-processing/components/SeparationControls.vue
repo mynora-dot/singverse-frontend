@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useId } from 'vue'
 import type { Backend, SeparationProfile } from '../api'
-import { backendName, generationProfiles, profileNames } from '../presentation'
+import { backendName, generationProfiles, generationProfileNames } from '../presentation'
 defineProps<{ profile: SeparationProfile; backend: string; backends: Backend[]; disabled?: boolean; cards?: boolean }>()
 const emit = defineEmits<{ 'update:profile': [value: SeparationProfile]; 'update:backend': [value: string] }>()
 const group = useId()
@@ -9,8 +9,8 @@ const group = useId()
 
 <template>
   <div class="separation-controls" :class="{ 'as-cards': cards }">
-    <fieldset v-if="cards" class="profile-options" :disabled="disabled"><legend class="sr-only">伴奏方案</legend><label v-for="id in generationProfiles" :key="id" class="profile-card" :class="{ 'is-selected': profile === id }"><input type="radio" :checked="profile === id" :value="id" :name="'separation-profile-' + group" @change="emit('update:profile', id)"><span><strong>{{ profileNames[id] }}</strong></span></label></fieldset>
-    <label v-else>伴奏方案<select :value="profile" aria-label="伴奏方案" :disabled="disabled" @change="emit('update:profile', ($event.target as HTMLSelectElement).value as SeparationProfile)"><option v-for="id in generationProfiles" :key="id" :value="id">{{ profileNames[id] }}</option></select></label>
+    <fieldset v-if="cards" class="profile-options" :disabled="disabled"><legend class="sr-only">伴奏方案</legend><label v-for="id in generationProfiles" :key="id" class="profile-card" :class="{ 'is-selected': profile === id }"><input type="radio" :checked="profile === id" :value="id" :name="'separation-profile-' + group" @change="emit('update:profile', id)"><span><strong>{{ generationProfileNames[id] }}</strong></span></label></fieldset>
+    <label v-else>伴奏方案<select :value="profile" aria-label="伴奏方案" :disabled="disabled" @change="emit('update:profile', ($event.target as HTMLSelectElement).value as SeparationProfile)"><option v-for="id in generationProfiles" :key="id" :value="id">{{ generationProfileNames[id] }}</option></select></label>
     <label v-if="profile !== 'DSP_FAST'">使用设备<select :value="backend" aria-label="生成伴奏使用的设备" :disabled="disabled" @change="emit('update:backend', ($event.target as HTMLSelectElement).value)"><option value="">自动选择</option><option v-for="item in backends.filter(device => !['cpu', 'openvino-cpu'].includes(device.id))" :key="item.id" :value="item.id">{{ backendName(item.id) }}</option></select></label>
     <p v-if="profile === 'DSP_FAST'">无需 AI 模型。居中的鼓、贝斯也可能减弱，混响和和声可能残留；请先试听。单声道或左右相同的素材不适用。</p>
   </div>

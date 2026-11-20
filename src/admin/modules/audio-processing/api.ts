@@ -42,8 +42,9 @@ export interface Batch extends SeparationRecipe {
   prepared?: number; selectionTotal?: number; error?: string
 }
 export interface Model {
-  id: string; version: string; format?: string; backends?: string[]; localOnly?: boolean; installed: boolean; writable: boolean; maxBytes: number
+  id: string; version: string; format?: string; backends?: string[]; installed: boolean; writable: boolean; maxBytes: number
   files?: { name: string; size: number; sha256: string; url: string }[]
+  importFiles?: string[]; downloadSourceRequired?: boolean; target?: string | null
 }
 export interface Backend { id: string; state: string; reason: string; detected?: boolean; device?: { name: string }; elapsedMs?: number }
 export interface SeparationCapabilities {

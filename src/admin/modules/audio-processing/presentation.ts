@@ -125,10 +125,12 @@ export const modelNames: Record<string, { name: string; hint: string }> = {
   'panns-cnn6': { name: '快速人声分类模型', hint: '扫描时识别双音轨，不分离人声，无需 GPU' },
   htdemucs: { name: '标准分离模型', hint: '适用于 NVIDIA、AMD 和 Apple 芯片，内置 CPU 降级' },
   'htdemucs-openvino': { name: 'Intel 优化模型', hint: '用于 Intel 显卡的 OpenVINO 转换版本' },
-  'uvr-mdxnet-9482-rknn': { name: '瑞芯微 NPU 分离模型', hint: '仅适用于 RKNN，需在节点本地部署转换模型' },
+  'uvr-mdxnet-9482-rknn': { name: '瑞芯微 NPU 分离模型', hint: '下载或导入匹配芯片的 RKNN 模型 ZIP，安装后需试跑' },
   'uvr-mdxnet-9482': { name: '轻量两轨分离模型', hint: '干净档；先验证独立 CPU，再启用对应加速设备' },
 }
 export const generationProfiles = ['DSP_FAST', 'LEGACY_DEMUCS'] as const
+export type GenerationProfile = typeof generationProfiles[number]
+export const generationProfileNames: Record<GenerationProfile, string> = { DSP_FAST: '快速', LEGACY_DEMUCS: '高级' }
 export const profileNames: Record<SeparationProfile, string> = { DSP_FAST: '极速档', AI_CLEAN: '轻量 AI（历史版本）', LEGACY_DEMUCS: '高级档' }
 export function profileName(profile?: SeparationProfile) { return profileNames[profile || 'LEGACY_DEMUCS'] }
 export function profileReady(capabilities: SeparationCapabilities | undefined, profile: SeparationProfile, legacyReady: boolean) {
