@@ -53,17 +53,18 @@ it('使用聚合接口统计真实数字，并把待办链接到对应页面', a
   const wrapper = mount(OverviewView, { global: { plugins: [router] } })
   try {
     await flushPromises()
+    expect(wrapper.get('.feature-actions .solid-link').text()).toBe('添加来源')
     expect(wrapper.get('.library-summary').text()).toContain('900 首歌曲')
     expect(wrapper.get('.library-details').text()).toContain('1,280 个文件，950 个媒体版本')
-    expect(wrapper.get('.review-strip').text()).toContain('还有 12 首歌，等你确认')
+    expect(wrapper.get('.review-strip').text()).toContain('12 首文件名识别不完整')
     expect(wrapper.find('.stat-block').exists()).toBe(false)
     const todos = wrapper.findAll('.todo-item, .review-strip').map(item => item.text())
     expect(wrapper.text()).not.toContain('电视等待授权')
     expect(wrapper.findAll('a').some(link => link.attributes('href')?.includes('/system/tv-devices'))).toBe(false)
     expect(todos.some(text => text.includes('1 个媒体库最近扫描失败') && text.includes('来源b'))).toBe(true)
-    expect(todos.some(text => text.includes('还有 12 首歌，等你确认'))).toBe(true)
+    expect(todos.some(text => text.includes('12 首文件名识别不完整'))).toBe(true)
     expect(todos.some(text => text.includes('默认密码') || text.includes('二次验证'))).toBe(false)
-    const review = wrapper.findAll('.todo-action').find(link => link.text().includes('去复核'))!
+    const review = wrapper.findAll('.todo-action').find(link => link.text().includes('查看识别结果'))!
     await review.trigger('click'); await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/library/songs?status=REVIEW')
     expect(fetchMock.mock.calls.every(([path]) => String(path).startsWith('/api/'))).toBe(true)
@@ -87,7 +88,7 @@ it('单块读取失败只影响该块，不显示“无待办”，可重新读�
     expect(wrapper.get('[role="alert"]').text()).toContain('1 项状态读取失败')
     const todos = wrapper.get('.overview-main').text()
     expect(todos).toContain('仍在使用默认密码')
-    expect(todos).toContain('还没有添加媒体库')
+    expect(todos).toContain('还没有添加来源')
     expect(todos).toContain('未开启二次验证')
     fail = false
     await wrapper.get('[role="alert"] button').trigger('click'); await flushPromises()
@@ -202,7 +203,7 @@ it('空曲库给出连接来源的引导，而不是伪造收藏', async () => {
     expect(wrapper.find('.shelf-song').exists()).toBe(false)
     expect(wrapper.find('[aria-label="正在读取最近入库"]').exists()).toBe(false)
     expect(wrapper.get('.empty-state').text()).toContain('从第一首喜欢的歌开始')
-    expect(wrapper.get('.review-strip').text()).toContain('还没有添加媒体库')
+    expect(wrapper.get('.review-strip').text()).toContain('还没有添加来源')
     expect(wrapper.get('.library-summary').text()).toContain('0')
   } finally { wrapper.unmount() }
 })

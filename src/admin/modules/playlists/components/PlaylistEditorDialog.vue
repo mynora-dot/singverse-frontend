@@ -5,6 +5,7 @@ import { ElAlert, ElButton, ElDialog, ElIcon, ElInput, type InputInstance } from
 import SongCover from '../../song-management/components/SongCover.vue'
 import type { AiService } from '../../ai-settings/types'
 import type { Draft, Song } from '../api'
+import { playlistSongSource, playlistSongVersion } from '../presentation'
 
 interface EditorForm { name: string; description: string; songIds: string[] }
 interface Generation { prompt: string; q: string; limit: number; modelServiceId: string }
@@ -126,7 +127,7 @@ watch(() => props.proposal, async value => {
             <li v-for="(id, index) in form.songIds" :key="id" class="editor-song-row" :class="{ dragging: dragFrom === index, 'drag-target': dragOver === index && dragFrom !== index }" :draggable="!blocked" @dragstart="startDrag(index, $event)" @dragover.prevent="dragOver = dragFrom !== null ? index : null" @drop.prevent="drop(index)" @dragend="endDrag">
               <span class="song-position"><ElIcon class="drag-grip" aria-hidden="true"><Rank /></ElIcon><span>{{ index + 1 }}</span></span>
               <SongCover class="editor-song-art" :song-id="id" :title="songs[id]?.title" :fallback-only="!songs[id]?.coverPath" />
-              <div class="song-copy"><strong :title="songs[id]?.title">{{ songs[id]?.title || '已选择歌曲' }}</strong><small :title="songs[id]?.artists.join(' / ') || id">{{ songs[id]?.artists.join(' / ') || id }}</small></div>
+              <div class="song-copy"><strong :title="songs[id]?.title">{{ songs[id]?.title || '已选择歌曲' }}</strong><small :title="songs[id]?.artists.join(' / ') || id">{{ songs[id]?.artists.join(' / ') || id }}</small><small class="song-version" v-if="playlistSongVersion(songs[id])" :title="playlistSongVersion(songs[id])">{{ playlistSongVersion(songs[id]) }}</small><small class="song-source" v-if="playlistSongSource(songs[id])" :title="playlistSongSource(songs[id])">{{ playlistSongSource(songs[id]) }}</small></div>
               <div class="song-actions"><button type="button" class="editor-icon" :disabled="index === 0 || blocked" :aria-label="`上移第${index + 1}首`" title="上移" @click="emit('move', index, -1)"><ElIcon><ArrowUp /></ElIcon></button><button type="button" class="editor-icon" :disabled="index === form.songIds.length - 1 || blocked" :aria-label="`下移第${index + 1}首`" title="下移" @click="emit('move', index, 1)"><ElIcon><ArrowDown /></ElIcon></button><button type="button" class="editor-icon remove-song" data-remove-song :disabled="blocked" :aria-label="`移除第${index + 1}首`" title="移除歌曲" @click="removeSong(index)"><ElIcon><Delete /></ElIcon></button></div>
             </li>
           </ol>
@@ -250,6 +251,7 @@ watch(() => props.proposal, async value => {
 .song-copy { min-width: 0; }
 .song-copy strong, .song-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .song-copy strong { font-size: 15px; line-height: 24px; font-weight: 550; }
+.song-copy .song-version, .song-copy .song-source { font-size: 12px; line-height: 18px; color: var(--sv-text-tertiary); }
 .song-copy small { color: var(--sv-text-secondary); font-size: 14px; line-height: 20px; }
 .song-actions { display: flex; align-items: center; }
 .remove-song:hover:not(:disabled) { color: var(--sv-semantic-danger); background: var(--sv-semantic-danger-soft); }

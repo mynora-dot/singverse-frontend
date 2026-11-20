@@ -1,7 +1,7 @@
-import type { BackgroundTask, TaskExecution } from './api'
+import type { BackgroundTask, TaskExecution, TaskItem } from './api'
 
 export const typeNames: Record<string, string> = {
-  SHARE_IMPORT: '曲库资料导入', SOURCE_INGEST: '来源入库', ARTIST_ARTWORK: '歌手封面获取', LX_DOWNLOAD: '歌曲下载', LOCAL_SCAN: '本地扫描', WEBDAV_SCAN: 'WebDAV 扫描', METADATA: '元数据整理', CLASSIFICATION: 'AI 分类',
+  SHARE_IMPORT: '曲库资料导入', SOURCE_INGEST: '来源入库', ARTIST_ARTWORK: '歌手封面获取', LX_DOWNLOAD: '歌曲下载', LOCAL_SCAN: '本地扫描', WEBDAV_SCAN: 'WebDAV 扫描', METADATA: '歌曲资料匹配', CLASSIFICATION: 'AI 分类',
   AUDIO_DISCOVERY: '自动音轨识别', AUDIO_BATCH: '批量音轨处理', AUDIO_JOB: '单曲音频处理', TRANSCODE: '离线转码', CACHE_CLEANUP: '缓存清理', SHARE_EXPORT: '分享包导出',
 }
 export const statusNames: Record<string, string> = {
@@ -90,4 +90,29 @@ export function statistics(task: BackgroundTask) {
 export const skipReasons: Record<string, string> = {
   PLAYING: '正在播放', DOWNLOADING: '正在下载', PINNED: '歌曲已固定', RECENT_PLAY: '近期播放保护', PREFETCH: '正在预取',
   DELETING: '正在删除', BUILDING: '正在接收', CHANGED: '缓存状态变化', STATISTICS_NOT_READY: '统计尚未就绪', MANUAL: '当前采用手动策略',
+}
+
+const errorNames: Record<string, string> = {
+  AUDIO_EXECUTION_FAILED: '音轨处理失败，请到原唱与伴奏页面查看处理详情后重试。',
+}
+export function failureText(value: string) { return errorNames[value.trim()] || value.trim() }
+export const unsuccessful = (status: string) => ['FAILED', 'INTERRUPTED', 'BLOCKED', 'PARTIAL'].includes(status)
+export function taskFailure(task: BackgroundTask, items: TaskItem[] = [], children: BackgroundTask[] = []) {
+  const messages = items.filter(item => unsuccessful(item.status)).map(item => ({ title: item.title, message: item.message || item.execution?.reason || '' }))
+    .concat(children.filter(child => unsuccessful(child.status)).map(child => ({ title: child.subjectName || child.name, message: child.error || child.execution?.reason || '' })))
+    .filter(item => item.message.trim())
+  const concrete = messages.find(item => !/^[A-Z_]+$/.test(item.message.trim())) || messages[0]
+  // A batch's generic code must not hide the actionable cause in its song records.
+  if (concrete && (!task.error.trim() || /^[A-Z_]+$/.test(task.error.trim()))) return `${concrete.title ? concrete.title + '：' : ''}${failureText(concrete.message)}`
+  return failureText(task.error || task.execution?.reason || '')
+}
+export function failureGuidance(task: BackgroundTask, reason: string) {
+  if (task.type === 'LX_DOWNLOAD') return /403|音源|解析|地址/.test(reason)
+    ? '请重新搜索这首歌，选择其他平台或版本；必要时在下载页更换音源。已入库的歌曲会保留。'
+    : '请到下载记录查看失败歌曲并重试；已入库的歌曲会保留。'
+  if (task.type.startsWith('AUDIO')) return '请到原唱与伴奏查看失败步骤和处理环境，再决定重试。现有可用音轨会保留。'
+  return '请查看下方明细，并到相关页面处理后重试。'
+}
+export function progressStatus(status: string): 'exception' | 'warning' | 'success' | undefined {
+  return ['FAILED', 'INTERRUPTED'].includes(status) ? 'exception' : ['PARTIAL', 'BLOCKED'].includes(status) ? 'warning' : status === 'COMPLETED' ? 'success' : undefined
 }

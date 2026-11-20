@@ -166,3 +166,18 @@ it('唱片室首页使用主区搜索，离开首页后恢复全局搜索与默�
     expect(wrapper.find('.masthead-search').exists()).toBe(true)
   } finally { wrapper.unmount() }
 })
+
+
+it('全局搜索反映曲库当前关键词，切换其他页面清空旧词并说明搜索范围', async () => {
+  await router.push('/library/songs?search=王杰')
+  const wrapper=mount(App,{global:{plugins:[router]}})
+  try {
+    await settleLayout()
+    expect(wrapper.get('.masthead-search input').element).toHaveProperty('value','王杰')
+    await router.push('/library/songs?search=薛之谦'); await settleLayout()
+    expect(wrapper.get('.masthead-search input').element).toHaveProperty('value','薛之谦')
+    await router.push('/library/playlists'); await settleLayout()
+    expect(wrapper.get('.masthead-search input').element).toHaveProperty('value','')
+    expect(wrapper.get('.masthead-search input').attributes('placeholder')).toContain('在曲库中搜索')
+  } finally { wrapper.unmount() }
+})

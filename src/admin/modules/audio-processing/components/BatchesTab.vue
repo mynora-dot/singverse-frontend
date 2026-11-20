@@ -4,7 +4,7 @@ import { ElAlert, ElButton, ElDrawer, ElEmpty, ElPagination, ElProgress, ElTag }
 import { authRequest } from '../../../core/auth/api'
 import { confirmDanger } from '../../../shared/ui/confirm'
 import { base, type Backend, type Batch, type BatchItem } from '../api'
-import { backendName, batchProgress, batchStates, batchTones, executionStage, failure, isRecognition, itemStates, itemTones, profileName, recognitionName, time } from '../presentation'
+import { audioFailureMessage, backendName, batchProgress, batchStates, batchTones, executionStage, failure, isRecognition, itemStates, itemTones, profileName, recognitionName, time } from '../presentation'
 
 const props = defineProps<{ batches: Batch[]; total: number; page: number; focus: string; backends: Backend[]; recognition?: boolean; canAnalyze?: boolean }>()
 const emit = defineEmits<{ preview: [batch: Batch]; page: [page: number]; changed: []; songs: []; song: [id: string] }>()
@@ -14,7 +14,7 @@ let active = true, visible = true, sequence = 0
 function headline(batch: Batch) { return `${batch.total} 首歌曲${isRecognition(batch) ? ' · ' + recognitionName(batch.kind) : batch.separationProfile ? ' · ' + profileName(batch.separationProfile) : ''}` }
 function summary(batch: Batch) {
   if (batch.state === 'PREPARING') return `正在准备 ${batch.prepared || 0} / ${batch.selectionTotal ?? batch.total} 首歌曲`
-  if (batch.state === 'FAILED') return batch.error || '准备失败，请重新选择歌曲'
+  if (batch.state === 'FAILED') return audioFailureMessage(batch.error, '准备失败，请重新选择歌曲')
   const c = batch.counts, parts = [`${isRecognition(batch) ? '已识别并标记' : '已生成'} ${c.SUCCEEDED || 0}`]
   if (c.REVIEW) parts.push(`待人工确认 ${c.REVIEW}`)
   if (c.SKIPPED) parts.push(`跳过 ${c.SKIPPED}`)
@@ -107,7 +107,7 @@ defineExpose({ refresh: () => busy.value ? Promise.resolve() : loadCurrent() })
         <p class="muted">{{ summary(current) }}</p>
         <ul class="item-list" aria-label="任务中的歌曲">
           <li v-for="item in current.items" :key="item.song_id" class="item-row">
-            <div class="item-main"><strong>{{ item.title }}</strong><p v-if="item.error" :class="item.state === 'FAILED' ? 'inline-error' : 'muted'">{{ item.error }}</p></div>
+            <div class="item-main"><strong>{{ item.title }}</strong><p v-if="item.error" :class="item.state === 'FAILED' ? 'inline-error' : 'muted'">{{ audioFailureMessage(item.error) }}</p></div>
             <span v-if="item.execution?.backend" class="muted">{{ backendName(item.execution.backend) }}</span>
             <ElTag :type="itemTones[item.state] || 'info'" effect="light" size="small">{{ itemState(item) }}</ElTag>
             <ElButton link type="primary" :disabled="busy" @click="current = undefined; emit('song', item.song_id)">{{ recognition && item.state === 'REVIEW' ? '去确认' : '查看歌曲' }}</ElButton>

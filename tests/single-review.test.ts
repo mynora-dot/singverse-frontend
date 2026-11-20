@@ -32,7 +32,7 @@ it('没有平台也能编辑并真实提交，成功使用服务端反馈', asyn
   expect(wrapper.get('.review-workspace').classes()).toContain('review-mode')
   expect(wrapper.get('[aria-label="审核工作区"] [role="tab"][aria-selected="true"]').text()).toContain('字段核对')
   expect(metadata.search).not.toHaveBeenCalled()
-  const edit = wrapper.findAll('button').find(b => b.text() === '编辑元数据')!
+  const edit = wrapper.findAll('button').find(b => b.text() === '编辑歌曲资料')!
   await edit.trigger('click'); await flushPromises()
   await wrapper.get('input[aria-label="编辑歌名"]').setValue('手工歌名')
   await wrapper.findAll('button').find(b => b.text() === '保存编辑到草稿')!.trigger('click'); await flushPromises()
@@ -40,7 +40,7 @@ it('没有平台也能编辑并真实提交，成功使用服务端反馈', asyn
   const apply = wrapper.findAll('button').find(b => b.text() === '确认应用（1 项）')!
   await apply.trigger('click'); await flushPromises()
   expect(singleReview.apply).toHaveBeenCalledWith('song-1', expect.objectContaining({ candidateId: null, fields: ['title'], edits: { title: '手工歌名' }, fingerprint: 'fingerprint', version: 'version' }))
-  expect(wrapper.text()).toContain('元数据已应用成功')
+  expect(wrapper.text()).toContain('歌曲资料已应用成功')
   expect(wrapper.text()).toContain('本次更新 1 项')
   expect(wrapper.emitted('applied')).toHaveLength(1)
   expect(wrapper.emitted('applied')![0]).toEqual([expect.objectContaining({ id: 'song-1', metadata: response.metadata })])
@@ -59,7 +59,8 @@ it('切换酷狗候选后，列表、待应用预览和提交使用同一封面�
   vi.mocked(metadata.search).mockResolvedValue({ candidates: [album, portrait], errors: [] })
   wrapper = mount(SingleSongScrapeDialog, { props: { song: context().song }, global: { stubs: { teleport: true } } }); await flushPromises()
   const choices = wrapper.findAll('.review-candidate')
-  expect(wrapper.get('img[alt="待核对封面"]').attributes('src')).toBe(choices[0]!.get('img[alt="候选歌曲封面"]').attributes('src'))
+  expect(wrapper.find('img[alt="待核对封面"]').exists()).toBe(false)
+  expect(wrapper.text()).toContain('多个候选分数接近')
   await choices[1]!.trigger('click'); await flushPromises()
   expect(wrapper.get('img[alt="待核对封面"]').attributes('src')).toBe('/api/v1/metadata/candidates/portrait/cover?quality=ORIGINAL')
   expect(wrapper.get('img[alt="待核对封面"]').attributes('src')).toBe(choices[1]!.get('img[alt="候选歌曲封面"]').attributes('src'))
@@ -76,13 +77,14 @@ it('高相似度候选自动选中但只有确认才应用', async () => {
   await state.apply()
   expect(singleReview.apply).toHaveBeenCalledWith('song-1', expect.objectContaining({ candidateId: 'candidate', fields: ['album'] }))
 })
-it('批次阈值控制自动选择，同分时可手工改选且不自动提交', async () => {
+it('批次阈值控制自动预览，同分候选需主动选择且不自动提交', async () => {
   const state = useSingleSongScrape()
   await state.open('song-1', [candidate], .96)
   expect(state.selected.value).toBeNull(); expect(state.changed.value).toEqual([])
   const second = { ...candidate, id: 'second' }
   await state.open('song-1', [candidate, second], .95)
-  expect(state.selected.value?.id).toBe('candidate'); expect(state.autoSelected.value).toBe(true)
+  expect(state.selected.value).toBeNull(); expect(state.autoSelected.value).toBe(false)
+  expect(state.changed.value).toEqual([]); expect(state.dirty.value).toBe(false)
   state.choose(second)
   expect(state.selected.value?.id).toBe('second'); expect(state.autoSelected.value).toBe(false)
   expect(singleReview.apply).not.toHaveBeenCalled()
@@ -104,7 +106,7 @@ it('关闭或换曲后的迟到请求不会覆盖当前歌曲', async () => {
 it('未应用草稿关闭时确认，取消确认后保留编辑', async () => {
   vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue('cancel')
   wrapper = mount(SingleSongScrapeDialog, { props: { song: context().song }, global: { stubs: { teleport: true } } }); await flushPromises()
-  await wrapper.findAll('button').find(b => b.text() === '编辑元数据')!.trigger('click'); await flushPromises()
+  await wrapper.findAll('button').find(b => b.text() === '编辑歌曲资料')!.trigger('click'); await flushPromises()
   await wrapper.get('input[aria-label="编辑专辑"]').setValue('草稿专辑')
   await wrapper.findAll('button').find(b => b.text() === '保存编辑到草稿')!.trigger('click'); await flushPromises()
   await wrapper.findAll('button').find(b => b.text() === '取消')!.trigger('click'); await flushPromises()
@@ -131,7 +133,7 @@ it('总开关关闭时配置中的平台不会显示为可选或已勾选，未�
   expect(wrapper.text()).toContain('尚未搜索')
   expect(wrapper.text()).not.toContain('0 条结果')
   expect(wrapper.text()).toContain('打开音乐平台设置')
-  expect(wrapper.text()).toContain('手工编辑元数据')
+  expect(wrapper.text()).toContain('手工编辑歌曲资料')
   expect(wrapper.text()).toContain('选择或上传封面')
   expect(wrapper.findAll('button').find(b => b.text() === '重新搜索')!.attributes('disabled')).toBeDefined()
 })
@@ -250,7 +252,7 @@ it('候选页保存手工编辑后返回字段核对，封面保留在同一对�
   wrapper = mount(SingleSongScrapeDialog, { props: { song: context().song }, global: { stubs: { teleport: true } } }); await flushPromises()
   await wrapper.get('[aria-label="审核工作区"] button:last-child').trigger('click')
   expect(wrapper.get('.review-workspace').classes()).not.toContain('review-mode')
-  await wrapper.findAll('button').find(button => button.text() === '手工编辑元数据')!.trigger('click'); await flushPromises()
+  await wrapper.findAll('button').find(button => button.text() === '手工编辑歌曲资料')!.trigger('click'); await flushPromises()
   await wrapper.get('input[aria-label="编辑专辑"]').setValue('手工完善专辑')
   await wrapper.findAll('button').find(button => button.text() === '保存编辑到草稿')!.trigger('click'); await flushPromises()
   expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toContain('字段核对')
@@ -266,11 +268,11 @@ it('仅根据服务端已更新的封面显示成功缩略图，失败反馈保�
   response.updated = ['cover']; response.after.cover = 'asset:confirmed-id'
   vi.mocked(singleReview.apply).mockRejectedValueOnce(new Error('保存失败')).mockResolvedValueOnce(response)
   wrapper = mount(SingleSongScrapeDialog, { props: { song: context().song }, global: { stubs: { teleport: true } } }); await flushPromises()
-  await wrapper.findAll('button').find(b => b.text() === '编辑元数据')!.trigger('click'); await flushPromises()
+  await wrapper.findAll('button').find(b => b.text() === '编辑歌曲资料')!.trigger('click'); await flushPromises()
   await wrapper.get('input[aria-label="编辑歌名"]').setValue('手工歌名')
   await wrapper.findAll('button').find(b => b.text() === '保存编辑到草稿')!.trigger('click'); await flushPromises()
   await wrapper.findAll('button').find(b => b.text() === '确认应用（1 项）')!.trigger('click'); await flushPromises()
-  expect(wrapper.text()).toContain('保存失败'); expect(wrapper.text()).not.toContain('元数据已应用成功')
+  expect(wrapper.text()).toContain('保存失败'); expect(wrapper.text()).not.toContain('歌曲资料已应用成功')
   await wrapper.findAll('button').find(b => b.text() === '确认应用（1 项）')!.trigger('click'); await flushPromises()
   expect(wrapper.get('img[alt="已实际应用的歌曲封面"]').attributes('src')).toBe('/api/v1/metadata/cover-assets/confirmed-id')
   expect(wrapper.text()).toContain('封面已应用')
@@ -278,7 +280,7 @@ it('仅根据服务端已更新的封面显示成功缩略图，失败反馈保�
 
 it('单曲搜索自动选择达到阈值的最高候选，预览更新但不自动写入', async () => {
   vi.mocked(metadata.settings).mockResolvedValue({ enabled: true, providers: ['QQ'], autoApply: false, threshold: .95 })
-  vi.mocked(metadata.search).mockResolvedValue({ candidates: [{ ...candidate, score: .8, id: 'low' }, candidate, { ...candidate, id: 'equal' }], errors: [] })
+  vi.mocked(metadata.search).mockResolvedValue({ candidates: [{ ...candidate, score: .8, id: 'low' }, candidate, { ...candidate, score: .81, id: 'lower' }], errors: [] })
   const state = useSingleSongScrape(); await state.open('song-1')
   expect(state.selected.value?.id).toBe('candidate')
   expect(state.autoSelected.value).toBe(true)
@@ -302,8 +304,8 @@ it('待复核歌曲不再展示顶部说明，保留可操作的手工编辑入�
   wrapper = mount(SingleSongScrapeDialog, { props: { song: review.song }, global: { stubs: { teleport: true } } })
   await flushPromises()
   expect(wrapper.text()).not.toContain('文件名解析待复核')
-  expect(wrapper.text()).not.toContain('可点击“编辑元数据”补充歌名')
-  const edit = wrapper.findAll('button').find(button => button.text() === '手工编辑元数据')!
+  expect(wrapper.text()).not.toContain('可点击“编辑歌曲资料”补充歌名')
+  const edit = wrapper.findAll('button').find(button => button.text() === '手工编辑歌曲资料')!
   expect(edit.exists()).toBe(true)
   await edit.trigger('click'); await flushPromises()
   expect(wrapper.get('input[aria-label="编辑歌名"]').element.tagName).toBe('INPUT')
@@ -316,9 +318,11 @@ it('抽屉切换候选时保护手工草稿，取消放弃后恢复选择并保�
   const other = { ...candidate, id: 'other', track: { ...candidate.track, album: '另一张专辑', provider: 'NETEASE' as const } }
   wrapper = mount(SingleSongScrapeDialog, { props: { song: live.song, presentation: 'drawer', initialCandidates: [candidate, other], autoSelectThreshold: .95 }, global: { stubs: { teleport: true } } })
   await flushPromises()
+  expect(wrapper.text()).toContain('多个候选分数接近')
+  await wrapper.get('.drawer-candidate-select select').setValue('candidate'); await flushPromises()
   expect(wrapper.text()).toContain('候选未标记现场版')
   expect(wrapper.get('.drawer-candidate-select').text()).toContain('网易云音乐 · 歌名 / 歌手 / 另一张专辑')
-  await wrapper.findAll('button').find(b => b.text() === '编辑元数据')!.trigger('click'); await flushPromises()
+  await wrapper.findAll('button').find(b => b.text() === '编辑歌曲资料')!.trigger('click'); await flushPromises()
   await wrapper.get('input[aria-label="编辑专辑"]').setValue('手工草稿')
   await wrapper.findAll('button').find(b => b.text() === '保存编辑到草稿')!.trigger('click'); await flushPromises()
   await wrapper.get('.drawer-candidate-select select').setValue('other'); await flushPromises()
@@ -326,4 +330,68 @@ it('抽屉切换候选时保护手工草稿，取消放弃后恢复选择并保�
   expect(wrapper.get('.drawer-candidate-select select').element).toHaveProperty('value', 'candidate')
   expect(wrapper.get('.field-comparison').text()).toContain('手工草稿')
   expect(singleReview.apply).not.toHaveBeenCalled()
+})
+
+
+it('相近录音版本不自动选择，点选后也不预勾覆盖现有资料', async () => {
+  const original = context()
+  original.values = { ...original.values, album: '一场游戏一场梦', releaseDate: '1987-12-18', durationMs: 257000, cover: 'https://cover.example/current.jpg' }
+  vi.mocked(singleReview.load).mockResolvedValue(original)
+  const live: MetadataCandidate = { ...candidate, id: 'live', track: { ...candidate.track, album: '英皇3周年慈善演唱会', releaseDate: '2003-01-01', durationMs: 264000, coverUrl: 'https://cover.example/live.jpg' } }
+  const studio: MetadataCandidate = { ...candidate, id: 'studio', track: { ...candidate.track, album: '一场游戏一场梦', releaseDate: '1987-12-18', durationMs: 257000 } }
+  const state = useSingleSongScrape(); await state.open('song-1', [live, studio], .95)
+  expect(state.selected.value).toBeNull()
+  expect(state.changed.value).toEqual([])
+  expect(state.dirty.value).toBe(false)
+  state.choose(live)
+  expect(state.changed.value).toEqual([])
+  expect(state.dirty.value).toBe(false)
+  expect(state.preview.value).toEqual(original.values)
+  state.fields.value = ['album']
+  expect(state.dirty.value).toBe(true)
+  await state.apply()
+  expect(singleReview.apply).toHaveBeenCalledWith('song-1', expect.objectContaining({ candidateId: 'live', fields: ['album'] }))
+})
+
+it.each(['dialog', 'drawer'] as const)('手动浏览候选但未勾选变更时，取消不提示放弃草稿：%s', async presentation => {
+  const original = context()
+  original.values = { ...original.values, album: '录音室专辑', releaseDate: '1987-12-18', durationMs: 257000, cover: 'https://cover.example/current.jpg' }
+  vi.mocked(singleReview.load).mockResolvedValue(original)
+  vi.spyOn(ElMessageBox, 'confirm')
+  const live: MetadataCandidate = { ...candidate, id: 'live', track: { ...candidate.track, album: '现场演唱会', releaseDate: '2003-01-01', durationMs: 264000, coverUrl: 'https://cover.example/live.jpg' } }
+  wrapper = mount(SingleSongScrapeDialog, { props: { song: original.song, presentation, initialCandidates: [candidate, live], autoSelectThreshold: .95 }, global: { stubs: { teleport: true } } })
+  await flushPromises()
+  if (presentation === 'drawer') await wrapper.get('.drawer-candidate-select select').setValue('live')
+  else await wrapper.findAll('.review-candidate')[1]!.trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('现场演唱会')
+  expect(wrapper.text()).toContain('确认应用（0 项）')
+  await wrapper.findAll('button').find(button => button.text() === '取消')!.trigger('click'); await flushPromises()
+  expect(ElMessageBox.confirm).not.toHaveBeenCalled()
+  expect(wrapper.emitted('close')).toHaveLength(1)
+  expect(singleReview.apply).not.toHaveBeenCalled()
+})
+
+it('唯一候选只补缺失字段，自动预览直接退出不提示用户修改', async () => {
+  const original = context(); original.values.album = '当前专辑'
+  vi.mocked(singleReview.load).mockResolvedValue(original)
+  vi.mocked(metadata.settings).mockResolvedValue({ enabled: true, providers: ['QQ'], autoApply: false, threshold: .95 })
+  vi.spyOn(ElMessageBox, 'confirm')
+  wrapper = mount(SingleSongScrapeDialog, { props: { song: original.song }, global: { stubs: { teleport: true } } })
+  await flushPromises()
+  expect(wrapper.get('[data-field="album"] input').element).toHaveProperty('checked', false)
+  expect(wrapper.text()).toContain('覆盖已有信息请逐项勾选')
+  await wrapper.findAll('button').find(button => button.text() === '取消')!.trigger('click'); await flushPromises()
+  expect(ElMessageBox.confirm).not.toHaveBeenCalled()
+  expect(wrapper.emitted('close')).toHaveLength(1)
+})
+
+it('自动预览后主动勾选覆盖字段属于未保存修改', async () => {
+  const original = context(); original.values.album = '当前专辑'
+  vi.mocked(singleReview.load).mockResolvedValue(original)
+  const state = useSingleSongScrape(); await state.open('song-1', [candidate], .95)
+  expect(state.dirty.value).toBe(false)
+  state.fields.value = ['album']
+  expect(state.dirty.value).toBe(true)
+  expect(state.changed.value).toEqual(['album'])
 })

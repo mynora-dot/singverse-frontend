@@ -29,6 +29,9 @@ const settingsGroup = navigationGroups.find(group => group.id === 'settings')!
 const { count: taskCount } = useActiveTaskCount()
 const taskBadge = computed(() => taskCount.value > 99 ? '99+' : String(taskCount.value))
 const searchTerm = ref('')
+watch(() => [route.path, route.query.search], () => {
+  searchTerm.value = route.path === '/library/songs' && typeof route.query.search === 'string' ? route.query.search : ''
+}, { immediate: true })
 function submitSearch() {
   const term = searchTerm.value.trim()
   void router.push({ path: '/library/songs', query: { lens: 'songs', ...(term ? { search: term } : {}) } })
@@ -83,7 +86,7 @@ function focusMainContent() { document.getElementById('main-content')?.focus() }
         </nav>
         <form v-if="route.path !== '/overview'" class="masthead-search" role="search" @submit.prevent="submitSearch">
           <ElIcon class="search-icon" aria-hidden="true"><Search /></ElIcon>
-          <input v-model="searchTerm" type="search" class="search-input" placeholder="搜索歌曲或歌手" aria-label="搜索歌曲">
+          <input v-model="searchTerm" type="search" class="search-input" placeholder="在曲库中搜索歌曲或歌手" aria-label="在曲库中搜索歌曲或歌手">
         </form>
         <div class="masthead-actions">
           <nav class="masthead-tools" aria-label="主要功能">

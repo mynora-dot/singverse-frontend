@@ -1,5 +1,5 @@
 import { authRequest } from '../../core/auth/api'
-export interface Song { id:string; title:string; artists:string[]; coverPath?:string }
+export interface Song { id:string; title:string; artists:string[]; coverPath?:string; album?:string; releaseDate?:string; durationMs?:number; version?:string; sourceName?:string; relativePath?:string }
 export interface Playlist {id:string;name:string;description:string;revision:number;count:number;missingCount:number;coverPath?:string;coverVersion?:string;songIds:string[];songs:Song[]}
 export interface Draft {name:string;description:string;songIds:string[];songs:Song[];candidateCount:number;libraryCount:number}
 export const playlists={

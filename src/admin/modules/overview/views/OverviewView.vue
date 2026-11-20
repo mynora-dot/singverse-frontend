@@ -50,10 +50,10 @@ const todos = computed<Todo[]>(() => {
   const d = ov.value
   if (auth.account?.defaultPassword) list.push({ key: 'password', level: 'danger', title: '仍在使用默认密码', detail: '任何知道默认密码的人都能登录管理中心。', action: '修改密码', to: '/system/parameters' })
   const src = ok('sources') ? d!.sources! : null
-  if (src && src.total === 0) list.push({ key: 'no-source', level: 'info', title: '还没有添加媒体库', detail: '添加本地目录或 WebDAV 并扫描后，歌曲才会出现在曲库中。', action: '添加媒体库', to: '/library/media?add=LOCAL' })
+  if (src && src.total === 0) list.push({ key: 'no-source', level: 'info', title: '还没有添加来源', detail: '添加本地目录或 WebDAV 并扫描后，歌曲才会出现在曲库中。', action: '添加来源', to: '/library/media?add=LOCAL' })
   if (src && src.failed.length > 0) list.push({ key: 'scan', level: 'warn', title: `${src.failed.length} 个媒体库最近扫描失败`, detail: src.failed.map(item => item.name).join('、'), action: '查看媒体库', to: '/library/media' })
   const lib = ok('library') ? d!.library! : null
-  if (lib && lib.reviewSongs > 0) list.push({ key: 'review', level: 'info', title: `${fmt(lib.reviewSongs)} 首歌曲待复核`, detail: '文件名未能完整识别歌名或歌手，复核后才能被准确搜索。', action: '去复核', to: '/library/songs?status=REVIEW' })
+  if (lib && lib.reviewSongs > 0) list.push({ key: 'review', level: 'info', title: `${fmt(lib.reviewSongs)} 首文件名识别不完整`, detail: '查看原始文件名识别结果；已确认的歌曲资料可正常搜索，无需重复核对。', action: '查看识别结果', to: '/library/songs?status=REVIEW' })
   const rev = ok('review') ? d!.review! : null
   if (rev?.metadataBatch && rev.metadataBatch.review > 0) list.push({ key: 'metadata', level: 'info', title: `${fmt(rev.metadataBatch.review)} 首平台匹配待审核`, detail: '核对歌名、歌手与封面后确认应用，未确认前不会改动曲库。', action: '去审核', to: `/library/songs/metadata?batch=${encodeURIComponent(rev.metadataBatch.id)}&status=REVIEW` })
   if (rev && rev.classification.reviewItems > 0) list.push({ key: 'classification', level: 'info', title: `${fmt(rev.classification.reviewItems)} 首分类建议待确认`, detail: '查看 AI 给出的分类与标签，确认后才会写入歌曲。', action: '去确认', to: rev.classification.latestTaskId ? `/library/classification?task=${rev.classification.latestTaskId}` : '/library/classification' })
@@ -80,7 +80,7 @@ const primaryTodo = computed(() => {
 })
 const secondaryTodos = computed(() => todos.value.filter(todo => todo.key !== primaryTodo.value?.key))
 const reviewHeading = computed(() => primaryTodo.value?.key === 'review'
-  ? `还有 ${fmt(library.value!.reviewSongs)} 首歌，等你确认`
+  ? `${fmt(library.value!.reviewSongs)} 首文件名识别不完整`
   : primaryTodo.value?.title ?? (todoLoading.value ? '正在读取曲库待办…' : '待办状态暂时无法读取'))
 function submitSearch() {
   const search = searchTerm.value.trim()
@@ -110,7 +110,7 @@ function songLink(id: string) {
           <button class="search-submit" type="submit" aria-label="搜索曲库"><ElIcon aria-hidden="true"><ArrowRight /></ElIcon></button>
         </form>
         <div class="feature-actions">
-          <RouterLink class="solid-link" to="/library/media?add=LOCAL"><ElIcon aria-hidden="true"><Plus /></ElIcon>添加歌曲</RouterLink>
+          <RouterLink class="solid-link" to="/library/media?add=LOCAL"><ElIcon aria-hidden="true"><Plus /></ElIcon>添加来源</RouterLink>
           <RouterLink class="outline-link" to="/library/media"><ElIcon aria-hidden="true"><FolderOpened /></ElIcon>扫描来源</RouterLink>
         </div>
       </div>
@@ -129,7 +129,7 @@ function songLink(id: string) {
       <div class="overview-main">
         <section v-if="primaryTodo || todoLoading || todoErrors" class="review-strip sv-glass" aria-labelledby="review-heading">
           <span class="review-mark" aria-hidden="true"><ElIcon><DocumentChecked /></ElIcon></span>
-          <div class="review-copy"><h2 id="review-heading">{{ reviewHeading }}</h2><p>{{ primaryTodo?.key === 'review' ? '补全歌曲信息，让它在曲库里更好找。' : primaryTodo?.detail ?? (todoLoading ? '正在检查需要你确认的事情。' : '部分状态读取失败，可以重新读取后再查看。') }}</p></div>
+          <div class="review-copy"><h2 id="review-heading">{{ reviewHeading }}</h2><p>{{ primaryTodo?.detail ?? (todoLoading ? '正在检查需要你确认的事情。' : '部分状态读取失败，可以重新读取后再查看。') }}</p></div>
           <RouterLink v-if="primaryTodo" class="outline-link todo-action" :to="primaryTodo.to">{{ primaryTodo.action }}</RouterLink>
           <ElButton v-else-if="!todoLoading" @click="refresh">重新读取</ElButton>
         </section>

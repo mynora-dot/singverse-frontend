@@ -5,7 +5,7 @@ import AudioModelsHarness from './fixtures/AudioModelsHarness.vue'
 import View from '../src/admin/modules/audio-processing/AudioProcessingView.vue'
 import { authRequest } from '../src/admin/core/auth/api'
 import { confirmDanger } from '../src/admin/shared/ui/confirm'
-import { readiness } from '../src/admin/modules/audio-processing/presentation'
+import { audioFailureMessage, audioIssue, readiness } from '../src/admin/modules/audio-processing/presentation'
 import type { Node } from '../src/admin/modules/audio-processing/api'
 
 const router = vi.hoisted(() => ({ route: undefined as unknown as { path: string; query: Record<string, string> }, replace: vi.fn(), push: vi.fn() }))
@@ -230,6 +230,27 @@ it('从歌曲详情带入的歌曲会自动打开音轨面板，并可返回全�
   expect(wrapper!.get('.audio-song-dialog').text()).toContain('哪一条是原唱')
   await button('查看全部歌曲').trigger('click'); await flushPromises()
   expect(router.route.query.song).toBeUndefined()
+})
+
+it('已确认的双音轨把过去失败标为历史记录，并说明当前仍可用', async () => {
+  const previous = vi.mocked(authRequest).getMockImplementation()!
+  vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/songs?') ? { totalElements: 1, items: [row('双音轨', { category: 'READY', audio: { ...roles, state: 'CONFIRMED', jobs: [{ id: 'old', kind: 'ANALYZE', state: 'FAILED', error: 'AUDIO_EXECUTION_FAILED', createdAt: Date.UTC(2026, 10, 19) }] } })] } as never : previous(...args))
+  await open()
+  const state = wrapper!.get('.song-state')
+  expect(state.text()).toContain('自带伴奏')
+  expect(state.text()).toContain('历史记录：深度识别原唱/伴奏失败')
+  expect(state.text()).toContain('现有原唱与伴奏仍可使用')
+  expect(state.text()).toContain('请检查计算服务状态后重试')
+  expect(state.text()).not.toContain('AUDIO_EXECUTION_FAILED')
+  expect(state.find('.task-error').exists()).toBe(false)
+})
+
+it('成功重试后不再显示同类任务更早的失败', () => {
+  expect(audioIssue({ ...roles, jobs: [{ id: 'new', kind: 'PROBE', state: 'SUCCEEDED' }, { id: 'old', kind: 'PROBE', state: 'FAILED', error: 'AUDIO_EXECUTION_FAILED' }] })).toBeUndefined()
+  expect(audioIssue({ ...roles, jobs: [{ id: 'new', kind: 'ANALYZE', state: 'SUCCEEDED' }, { id: 'old', kind: 'FAST', state: 'FAILED', error: 'AUDIO_EXECUTION_FAILED' }] })).toBeUndefined()
+  expect(audioIssue({ ...roles, jobs: [{ id: 'new', kind: 'FAST', state: 'SUCCEEDED' }, { id: 'old', kind: 'ANALYZE', state: 'FAILED', error: 'AUDIO_EXECUTION_FAILED' }] })).toBeUndefined()
+  expect(audioFailureMessage('源文件无法读取')).toBe('源文件无法读取')
+  expect(audioFailureMessage('UNKNOWN_AUDIO_ERROR')).toContain('音频处理失败')
 })
 it('页签与地址同步，支持方向键切换', async () => {
   router.route.query = { tab: 'tasks' }; await open()

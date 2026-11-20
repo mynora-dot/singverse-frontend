@@ -21,6 +21,10 @@ const keyword = ref(''), appliedKeyword = ref(''), sort = ref('DEFAULT')
 const sourceId = ref(''), sources = ref<MediaSource[]>([]), sourcesLoading = ref(false), sourcesError = ref('')
 const startOpen = ref(false), startScope = ref<'source' | 'selected'>('source')
 const selectedIds = computed(() => typeof route.query.songIds === 'string' ? [...new Set(route.query.songIds.split(',').filter(Boolean))] : [])
+const selectionPreview = computed(() => selectedIds.value.length > 0 && typeof route.query.batch !== 'string')
+const showPreviousBatch = ref(false)
+const showBatch = computed(() => !!batch.value && (!selectionPreview.value || showPreviousBatch.value))
+const batchDate = computed(() => batch.value?.createdAt ? new Date(batch.value.createdAt).toLocaleString('zh-CN', { hour12: false }) : '时间未记录')
 const activeBatch = computed(() => !!batch.value && ['RUNNING', 'PAUSED'].includes(batch.value.status))
 const canStart = computed(() => saved.value && config.value.enabled && !!config.value.providers.length && !activeBatch.value && !busy.value && !loading.value)
 const canStartScope = computed(() => canStart.value && (!sourceId.value || sources.value.some(source => source.id === sourceId.value)))
@@ -92,6 +96,7 @@ async function loadSources() {
   } catch (failure) { if (active) sourcesError.value = failure instanceof Error ? failure.message : '读取媒体来源失败' }
   finally { if (active) sourcesLoading.value = false }
 }
+async function chooseSources() { sourceId.value = ''; await router.replace({ query: { ...route.query, songIds: undefined } }) }
 function openStart() { startScope.value = selectedIds.value.length && !sourceId.value ? 'selected' : 'source'; startOpen.value = true }
 async function start() {
   const all = startScope.value === 'source'
@@ -116,7 +121,7 @@ async function retry(itemId: string) {
   await action(async () => { accept(await metadata.retry(batch.value!.id, itemId)); await refreshBatch(); ElMessage.success('已进入等待处理；尚未完成匹配或写入') })
 }
 async function cancel() {
-  try { await ElMessageBox.confirm('终止后，未处理歌曲不再继续，不能恢复或重试本批次；已获取候选保留，已完成的元数据写入不会自动撤销。在途平台请求可能仍需结束。之后可新建批次。', '终止批次', { confirmButtonText: '终止批次', cancelButtonText: '继续处理' }) } catch { return }
+  try { await ElMessageBox.confirm('终止后，未处理歌曲不再继续，不能恢复或重试本批次；已获取候选保留，已完成的歌曲资料写入不会自动撤销。在途平台请求可能仍需结束。之后可新建批次。', '终止批次', { confirmButtonText: '终止批次', cancelButtonText: '继续处理' }) } catch { return }
   await control('cancel')
 }
 async function changeFilter() { page.value = 1; await refreshBatch() }
@@ -128,8 +133,9 @@ function openPlatforms() { void router.push({ path: '/system/music-platforms', q
 function openReview(item: MetadataItem) { reviewItem.value = item; clearTimeout(timer) }
 function closeReview() { reviewItem.value = null; schedule() }
 async function manual(item: MetadataItem) { await router.push({ path: '/library/songs', query: { lens: 'songs', reviewSongId: item.songId, returnBatch: batch.value!.id } }) }
-async function reason(item: MetadataItem) { await ElMessageBox.alert(item.error || (item.status === 'SKIPPED_EXISTING' ? '已有确认元数据且文件未变化，本批次保留原结果。' : item.status === 'AUTO_APPLIED' ? '本批次已按自动写入条件完成应用。具体当前字段可在歌曲详情查看。' : '该项已确认或在查询期间获得确认，已有元数据保留。具体字段可在歌曲详情查看。'), item.status === 'FAILED' ? '失败原因' : '处理结果', { confirmButtonText: '知道了' }).catch(() => {}) }
+async function reason(item: MetadataItem) { await ElMessageBox.alert(item.error || (item.status === 'SKIPPED_EXISTING' ? '已有确认歌曲资料且文件未变化，本批次保留原结果。' : item.status === 'AUTO_APPLIED' ? '本批次已按自动写入条件完成应用。具体当前字段可在歌曲详情查看。' : '该项已确认或在查询期间获得确认，已有歌曲资料保留。具体字段可在歌曲详情查看。'), item.status === 'FAILED' ? '失败原因' : '处理结果', { confirmButtonText: '知道了' }).catch(() => {}) }
 onMounted(() => { void load(); void loadSources() })
+watch(() => route.query.songIds, () => { showPreviousBatch.value = false; if (selectionPreview.value) sourceId.value = '' })
 watch(() => route.query.batch, id => { if (id !== batch.value?.id) { page.value = 1; filter.value = routeStatus(route.query.status); appliedKeyword.value = ''; keyword.value = ''; batch.value = null; void load() } })
 watch(() => route.query.status, status => { const value = routeStatus(status); if (value !== filter.value) { filter.value = value; page.value = 1; if (batch.value) void refreshBatch() } })
 onBeforeUnmount(() => { active = false; generation++; loadGeneration++; clearTimeout(timer) })
@@ -144,7 +150,7 @@ onBeforeUnmount(() => { active = false; generation++; loadGeneration++; clearTim
     <ElAlert v-if="error && !startOpen" :title="error" type="error" :closable="false" show-icon />
     <ElAlert v-if="progressError" :title="progressError" type="error" :closable="false" show-icon><ElButton text :disabled="busy" @click="batch ? refreshBatch() : load()">重新读取进度</ElButton></ElAlert>
     <div class="source-toolbar">
-      <label class="source-scope"><span>匹配范围</span><select v-model="sourceId" aria-label="刮削媒体来源" title="用于下一次匹配，不改变当前批次" :disabled="sourcesLoading || busy"><option value="">全部媒体来源</option><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></label>
+      <div v-if="selectionPreview" class="source-scope"><span>下一次匹配范围</span><strong>曲库所选 {{ selectedIds.length }} 首歌曲</strong><ElButton text :disabled="busy" @click="chooseSources">改为选择来源</ElButton></div><label v-else class="source-scope"><span>下一次匹配范围</span><select v-model="sourceId" aria-label="匹配歌曲来源" title="用于下一次匹配，不改变当前批次" :disabled="sourcesLoading || busy"><option value="">全部媒体来源</option><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></label>
       <ElButton class="platform-entry" text :icon="Setting" :title="`${settingsSummary}，间隔 ${intervalSummary}`" @click="openPlatforms">{{ saved ? config.enabled ? `已启用 ${config.providers.length} 个平台` : '平台未启用' : '音乐平台设置' }}<ElIcon><ArrowRight /></ElIcon></ElButton>
       <span v-if="saved" class="global-apply">全局自动写入 <strong :class="{ enabled: config.autoApply }">{{ config.autoApply ? '已开启' : '已关闭' }}</strong></span>
       <span v-if="selectedIds.length" class="selection-context">已从曲库选择 {{ selectedIds.length }} 首</span>
@@ -153,7 +159,13 @@ onBeforeUnmount(() => { active = false; generation++; loadGeneration++; clearTim
     <p v-if="startReason && !loading" class="inline-notice">{{ startReason }} <ElButton v-if="!saved" text @click="load">重新读取配置</ElButton></p>
     <p v-if="loading" role="status" class="loading-note">正在读取配置与进度…</p>
 
-    <section v-if="batch" class="batch-summary" :class="{ complete: batch.status === 'COMPLETED', paused: batch.status === 'PAUSED', cancelled: batch.status === 'CANCELLED' }" aria-label="匹配批次">
+    <section v-if="selectionPreview && !loading" class="selection-preview" aria-label="本次选择">
+      <div><h2>已选择 {{ selectedIds.length }} 首歌曲，尚未开始本次匹配</h2><p>点击“开始匹配”后，只处理本次选择的歌曲。下方历史批次的完成结果不属于本次选择。</p></div>
+      <ElButton v-if="batch" text :aria-expanded="showPreviousBatch" @click="showPreviousBatch = !showPreviousBatch">{{ showPreviousBatch ? '收起历史批次' : '查看上一次匹配结果' }}</ElButton>
+      <RouterLink to="/library/songs">返回曲库重新选择</RouterLink>
+    </section>
+    <div v-if="showBatch" class="batch-context" :class="{ historical: selectionPreview }"><strong>{{ selectionPreview ? '上一次匹配结果' : '当前查看的匹配批次' }}</strong><span>创建于 {{ batchDate }} · {{ batch?.total }} 首歌曲</span></div>
+    <section v-if="showBatch && batch" class="batch-summary" :class="{ complete: batch.status === 'COMPLETED', paused: batch.status === 'PAUSED', cancelled: batch.status === 'CANCELLED' }" aria-label="匹配批次">
       <div class="batch-summary-line">
         <span class="batch-state"><ElIcon><Check v-if="batch.status === 'COMPLETED'" /><Clock v-else /></ElIcon><strong>{{ batchNames[batch.status] || batch.status }}</strong></span>
         <div class="progress-caption"><strong>{{ batch.completed }} / {{ batch.total }}</strong><span>首已处理</span></div>
@@ -168,10 +180,10 @@ onBeforeUnmount(() => { active = false; generation++; loadGeneration++; clearTim
       </div>
       <div class="batch-progress" role="progressbar" aria-label="歌曲匹配处理进度" :aria-valuenow="percentage" aria-valuemin="0" aria-valuemax="100"><span :style="{ transform: `scaleX(${percentage / 100})` }" /></div>
     </section>
-    <p v-if="batch?.status === 'CANCELLED'" class="status-notice">批次已终止，未处理歌曲不会继续匹配；已获得的候选与应用结果保留。</p>
-    <p v-if="batch?.status === 'PAUSED'" class="status-notice">批次已暂停，在途请求可能仍在结束；确认平台及设置后可继续。</p>
+    <p v-if="showBatch && batch?.status === 'CANCELLED'" class="status-notice">批次已终止，未处理歌曲不会继续匹配；已获得的候选与应用结果保留。</p>
+    <p v-if="showBatch && batch?.status === 'PAUSED'" class="status-notice">批次已暂停，在途请求可能仍在结束；确认平台及设置后可继续。</p>
 
-    <section v-if="batch" class="batch-list-card sv-glass" aria-label="批次歌曲" :aria-busy="refreshing || loading">
+    <section v-if="showBatch && batch" class="batch-list-card sv-glass" aria-label="批次歌曲" :aria-busy="refreshing || loading">
       <div class="list-toolbar">
         <div class="status-filters" role="group" aria-label="歌曲处理状态">
           <button v-for="stat in primaryStats" :key="stat.status" type="button" class="status-filter" :class="{ selected: filter === stat.status }" :data-status="stat.status || 'ALL'" :aria-pressed="filter === stat.status" :disabled="busy || loading" @click="selectStatus(stat.status)">{{ stat.label }} <span>{{ stat.value }}</span></button>
@@ -187,14 +199,14 @@ onBeforeUnmount(() => { active = false; generation++; loadGeneration++; clearTim
       <BatchSongTable :batch="batch" :busy="busy || loading" :retry-disabled-reason="retryReason" :empty-title="emptyTitle" :empty-description="emptyDescription" @review="openReview" @retry="retry" @manual="manual" @reason="reason" @reset="resetFilters" />
       <div class="list-footer"><span>共 {{ batch.total }} 首歌曲<span v-if="filter || appliedKeyword">，当前筛选 {{ batch.totalElements }} 首</span></span><ElPagination v-if="batch.totalElements > 20" v-model:current-page="page" :total="batch.totalElements" :page-size="20" layout="prev, pager, next" :disabled="busy || loading" @current-change="refreshBatch" /><span v-else>显示 {{ batch.items.length }} 首</span></div>
       <p class="list-note">候选可逐字段确认，未确认的歌曲资料保持原样。<RouterLink to="/library/songs">返回全部歌曲</RouterLink></p>
-      <details class="batch-explanation"><summary>批次进度与匹配说明</summary><div class="batch-detail-copy"><p>处理完成包含待审核，不代表已全部写入。已处理 = 待审核 + 已应用 + 失败 + 已跳过。</p><p>当前待处理 {{ batch.pending }} 首，处理中 {{ batch.processing }} 首，已跳过 {{ batch.skippedExisting }} 首。本批次自动写入{{ batch.autoApply ? '开启，仍受当前全局开关及阈值限制' : '关闭' }}。</p><p>高相似度候选在审核时自动选中，仅用于预览；核对字段和版本后再确认。重新匹配只重新查询候选；自动写入开启的批次仍按已有条件处理。进度保存在后台，服务重启后暂停。</p><p v-if="lastRefresh">最近读取：{{ new Date(lastRefresh).toLocaleTimeString() }}{{ batch.status === 'RUNNING' && !reviewItem ? '，每 2 秒自动刷新' : '' }}</p></div></details>
+      <details class="batch-explanation"><summary>批次进度与匹配说明</summary><div class="batch-detail-copy"><p>处理完成包含待审核，不代表已全部写入。已处理 = 待审核 + 已应用 + 失败 + 已跳过。</p><p>当前待处理 {{ batch.pending }} 首，处理中 {{ batch.processing }} 首，已跳过 {{ batch.skippedExisting }} 首。本批次自动写入{{ batch.autoApply ? '开启，仍受当前全局开关及阈值限制' : '关闭' }}。</p><p>仅有唯一高相似度候选时自动预览并勾选缺失资料；多个接近候选需主动选择，已有资料需逐项勾选覆盖。重新匹配只重新查询候选；自动写入开启的批次仅在最高候选达到有效阈值且无相近候选时写入，同分或相近候选需人工确认。进度保存在后台，服务重启后暂停。</p><p v-if="lastRefresh">最近读取：{{ new Date(lastRefresh).toLocaleTimeString() }}{{ batch.status === 'RUNNING' && !reviewItem ? '，每 2 秒自动刷新' : '' }}</p></div></details>
     </section>
-    <section v-else-if="!loading && !progressError" class="metadata-empty"><ElIcon><Search /></ElIcon><h2>从整理第一首歌开始</h2><p>选择歌曲来源，开始匹配。歌曲资料和待审核结果会一起显示在这里。</p><ElButton type="primary" :disabled="!canStart" @click="openStart">开始匹配</ElButton><TaskGuide label="歌曲信息整理流程" :steps="[{ title: '选择歌曲', description: '整理整个来源，或从曲库选择歌曲。' }, { title: '匹配候选', description: '进度保存在后台，可以离开后再回来。' }, { title: '核对后确认', description: '比较资料与封面，再选择要更新的字段。' }]" /><RouterLink to="/library/songs">返回全部歌曲</RouterLink></section>
+    <section v-else-if="!selectionPreview && !loading && !progressError" class="metadata-empty"><ElIcon><Search /></ElIcon><h2>从整理第一首歌开始</h2><p>选择歌曲来源，开始匹配。歌曲资料和待审核结果会一起显示在这里。</p><ElButton type="primary" :disabled="!canStart" @click="openStart">开始匹配</ElButton><TaskGuide label="歌曲信息整理流程" :steps="[{ title: '选择歌曲', description: '整理整个来源，或从曲库选择歌曲。' }, { title: '匹配候选', description: '进度保存在后台，可以离开后再回来。' }, { title: '核对后确认', description: '比较资料与封面，再选择要更新的字段。' }]" /><RouterLink to="/library/songs">返回全部歌曲</RouterLink></section>
 
     <ElDialog v-model="startOpen" title="开始匹配歌曲资料" width="min(480px, calc(100vw - 32px))" :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy" class="metadata-start-dialog">
       <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon />
       <div class="start-scope-options" role="radiogroup" aria-label="匹配范围"><label><input v-model="startScope" type="radio" value="source" :disabled="busy" /><span><strong>{{ sourceId ? selectedSourceName : '全部媒体来源' }}</strong><small>已有有效确认结果会自动跳过。</small></span></label><label v-if="selectedIds.length && !sourceId"><input v-model="startScope" type="radio" value="selected" :disabled="busy" /><span><strong>从曲库选择的 {{ selectedIds.length }} 首歌曲</strong><small>仅匹配本次选择的歌曲。</small></span></label></div>
-      <p class="start-platforms">查询平台：{{ settingsSummary }}</p><p class="start-write-rule">{{ config.autoApply ? '全局自动写入已开启。排序第一的候选达到有效阈值时自动写入，其余等待审核。' : '自动写入已关闭。匹配完成后，候选均等待人工审核。' }}</p><p class="start-privacy">查询间隔 {{ intervalSummary }}。歌名与歌手将发送至启用的平台。匹配不会修改媒体文件。</p>
+      <p class="start-platforms">查询平台：{{ settingsSummary }}</p><p class="start-write-rule">{{ config.autoApply ? '全局自动写入已开启。最高候选达到有效阈值且无相近候选时才自动写入；同分、相近候选及其他结果等待人工确认。' : '自动写入已关闭。匹配完成后，候选均等待人工审核。' }}</p><p class="start-privacy">查询间隔 {{ intervalSummary }}。歌名与歌手将发送至启用的平台。匹配不会修改媒体文件。</p>
       <template #footer><ElButton :disabled="busy" @click="startOpen = false">取消</ElButton><ElButton type="primary" :loading="busy" :disabled="startScope === 'source' ? !canStartScope : !canStart || !selectedIds.length" @click="start">确认开始匹配</ElButton></template>
     </ElDialog>
     <SingleSongScrapeDialog presentation="drawer" :song-id="reviewItem?.songId ?? null" :initial-candidates="reviewItem?.candidates" :batch-id="batch?.id" :item-id="reviewItem?.id" :auto-select-threshold="batch?.threshold" @close="closeReview" @applied="refreshBatch" />

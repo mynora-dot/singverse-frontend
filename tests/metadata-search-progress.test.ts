@@ -53,7 +53,8 @@ it('同时查询所选平台，快平台返回后马上展示候选和剩余进�
   late.resolve({ candidates: [slow], errors: [] }); await done
   expect(state.searching.value).toBe(false)
   expect(state.candidates.value.map(item => item.id)).toEqual(['slow', 'quick'])
-  expect(state.selected.value?.id).toBe('slow')
+  expect(state.selected.value).toBeNull()
+  expect(state.dirty.value).toBe(false)
   expect(singleReview.apply).not.toHaveBeenCalled()
 })
 
@@ -141,4 +142,19 @@ it('可以确认已返回的候选，同时取消剩余查询，迟到结果不�
   late.resolve({ candidates: [slow], errors: [] }); await done
   expect(state.selected.value?.id).toBe('quick')
   expect(state.result.value?.updated).toEqual(['album'])
+})
+
+
+it('候选卡片直接展示专辑、日期、时长和录音版本，便于选择前比较', async () => {
+  const state = useSingleSongScrape()
+  const live = { ...quick, track: { ...quick.track, album: '慈善演唱会', releaseDate: '2003-01-01', durationMs: 264000 } }
+  await state.open('song-1', [live, { ...slow, score: live.score }])
+  wrapper = mount(SingleSongReviewWorkspace, { props: { state, versionWarning: '' } })
+  const recording = wrapper.get('.candidate-recording')
+  expect(recording.text()).toContain('慈善演唱会')
+  expect(recording.text()).toContain('2003-01-01')
+  expect(recording.text()).toContain('4:24')
+  expect(recording.text()).toContain('现场 / 演唱会')
+  expect(wrapper.text()).toContain('多个候选分数接近')
+  expect(state.selected.value).toBeNull()
 })

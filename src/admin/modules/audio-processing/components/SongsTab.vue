@@ -6,7 +6,7 @@ import { Search, Operation } from '@element-plus/icons-vue'
 import AudioRolesPanel from '../../song-management/components/AudioRolesPanel.vue'
 import { authRequest } from '../../../core/auth/api'
 import { base, payload, query, type AudioRow, type Backend, type Batch, type Filter, type SeparationCapabilities, type SeparationProfile } from '../api'
-import { executionStage, failure, latestAnalysis, profileBackends, profileReady, rolesSummary, type Readiness } from '../presentation'
+import { audioIssue, executionStage, failure, latestAnalysis, latestJob, profileBackends, profileReady, rolesSummary, type Readiness } from '../presentation'
 import BatchOptionsDialog from './BatchOptionsDialog.vue'
 
 const props = defineProps<{ songId: string; readiness: Readiness; backends: Backend[]; separation?: SeparationCapabilities; recognitionReady?: boolean; fastReady?: boolean }>()
@@ -44,9 +44,11 @@ const coverErrors = reactive(new Set<string>())
 function latest(row: AudioRow) { return row.audio.jobs.find(job => job.kind === 'SEPARATE') }
 function stateHint(row: AudioRow) {
   const audio = row.audio, streams = audio.streams, job = latest(row)
-  const error = job?.error || latestAnalysis(audio)?.error || audio.jobs.find(item => item.kind === 'PROBE' && item.state === 'FAILED')?.error
-  if (error) return error
   if (job && ['QUEUED', 'RUNNING'].includes(job.state)) return job.state === 'QUEUED' ? '已加入生成队列' : executionStage(job) || '正在生成，完成后可试听'
+  const reading = [latestAnalysis(audio), latestJob(audio, 'PROBE')].find(item => item && ['QUEUED', 'RUNNING'].includes(item.state))
+  if (reading) return reading.state === 'QUEUED' ? '等待识别音轨' : '正在识别音轨'
+  const issue = audioIssue(audio)
+  if (issue) return issue.text
   if (audio.backingResource) return '已生成，可在点歌时切换'
   if (audio.originalSelection?.kind === 'UNIQUE_AUDIO') return '唯一音频作为原唱，按需生成伴奏'
   if (!streams) return '读取后确认原唱与伴奏'
@@ -148,7 +150,7 @@ async function loadSources() {
       if (value.items.length < 100 || (value.totalElements !== undefined && found.length >= value.totalElements)) break
     }
     if (active) sources.value = found
-  } catch (failed) { if (active) sourcesError.value = failure(failed, '媒体库读取失败') }
+  } catch (failed) { if (active) sourcesError.value = failure(failed, '歌曲来源读取失败') }
 }
 watch(() => props.songId, value => { filter.songId = value; opened.value = ''; search() })
 // 从歌曲详情跳转过来时，直接打开这首歌的音轨面板。
@@ -174,7 +176,7 @@ defineExpose({ refresh: loadRows, clear })
     <section v-else class="filter-panel" aria-label="筛选歌曲">
       <form class="filters" role="search" @submit.prevent="search">
         <div class="title-search"><ElInput v-model="filter.title" placeholder="搜索歌曲名称" aria-label="歌曲名称" :prefix-icon="Search" clearable maxlength="200" @clear="search" /><ElButton class="mobile-search" native-type="submit" :icon="Search" aria-label="搜索" :loading="loading" /></div>
-        <select v-model="filter.sourceId" class="native-select" aria-label="媒体库" @change="search"><option value="">全部媒体库</option><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select>
+        <select v-model="filter.sourceId" class="native-select" aria-label="歌曲来源" @change="search"><option value="">全部歌曲来源</option><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select>
         <select v-model="filter.streams" class="native-select" aria-label="音轨数量" @change="search"><option value="">任意音轨数</option><option value="1">1 条音轨</option><option value="2">2 条音轨</option><option value="0">没有音轨</option></select>
         <details ref="moreFilters" class="more-filters" @keydown.esc.stop.prevent="closeFilters(true)"><summary aria-label="更多筛选"><ElIcon class="more-filter-icon"><Operation /></ElIcon><span class="more-label">更多筛选</span><span v-if="applied.artist || advancedLabel" class="filter-dot" aria-label="已应用更多筛选" /></summary><div class="more-filter-content">
           <label class="field-label">歌手<ElInput v-model="filter.artist" placeholder="搜索歌手" aria-label="歌手" clearable maxlength="200" /></label>
@@ -204,14 +206,14 @@ defineExpose({ refresh: loadRows, clear })
     <p v-else-if="indexBuilding" class="index-status" role="status">正在更新歌曲状态…</p>
     <ElAlert v-if="error" :title="error" type="error" show-icon :closable="false" class="list-error"><ElButton link @click="loadRows">重试</ElButton></ElAlert>
     <ElSkeleton v-if="loading && !loaded" :rows="5" animated aria-label="正在读取歌曲" />
-    <ElEmpty v-else-if="loaded && !rows.length" :description="filtered ? '没有符合条件的歌曲' : '曲库里还没有歌曲'"><p class="empty-hint">{{ filtered ? '试试其他状态，或清除筛选查看全部歌曲。' : '添加媒体库并扫描后，可在这里检查原唱与伴奏。' }}</p><ElButton v-if="filtered" @click="reset">清除筛选</ElButton></ElEmpty>
+    <ElEmpty v-else-if="loaded && !rows.length" :description="filtered ? '没有符合条件的歌曲' : '曲库里还没有歌曲'"><p class="empty-hint">{{ filtered ? '试试其他状态，或清除筛选查看全部歌曲。' : '添加歌曲来源并扫描后，可在这里检查原唱与伴奏。' }}</p><ElButton v-if="filtered" @click="reset">清除筛选</ElButton></ElEmpty>
     <div v-else class="song-list-wrap"><table class="song-list" :aria-busy="loading" aria-label="歌曲"><thead><tr class="song-table-header"><th scope="col"><label class="row-selection"><input type="checkbox" aria-label="选择本页歌曲" :checked="pageChecked" :indeterminate.prop="pageMixed" :disabled="!rows.length" @change="pageSelect(($event.target as HTMLInputElement).checked)"></label></th><th scope="col">歌曲 / 歌手</th><th scope="col">媒体来源</th><th scope="col">已有音轨</th><th scope="col">当前状态</th><th scope="col" class="action-heading">操作</th></tr></thead><tbody>
       <tr v-for="row in rows" :key="row.id" class="song-row" :class="{ 'is-selected': all || selected.has(row.id) }">
         <td class="select-cell"><label class="row-selection"><input type="checkbox" class="row-check" :aria-label="'选择' + row.title" :checked="all || selected.has(row.id)" :disabled="all" @change="check(row.id, ($event.target as HTMLInputElement).checked)"></label></td>
         <td class="song-main"><div class="song-identity"><span class="row-cover"><img v-if="row.coverAvailable && !coverErrors.has(row.id)" :src="`/api/v1/metadata/songs/${encodeURIComponent(row.id)}/cover`" :alt="row.title + '封面'" loading="lazy" @error="coverErrors.add(row.id)"><ElIcon v-else :size="20" role="img" aria-label="暂无歌曲封面"><SongPlaceholderIcon /></ElIcon></span><div class="song-copy"><button type="button" class="song-title" @click="editor = row"><strong>{{ row.title }}</strong><span class="song-artist">{{ row.artists?.join(' / ') || '未知歌手' }}<span class="mobile-source"> · {{ row.sourceName }}</span></span></button></div></div></td>
-        <td class="song-location"><span>{{ row.sourceName || '未指定媒体库' }}</span><p :title="row.relativePath">{{ extension(row) }}</p></td>
+        <td class="song-location"><span>{{ row.sourceName || '未指定歌曲来源' }}</span><p :title="row.relativePath">{{ extension(row) }}</p></td>
         <td class="song-tracks"><span>{{ tracks(row) }}</span><p>{{ streamInfo(row) || '检查原文件中的音轨' }}</p></td>
-        <td class="song-state"><ElTag :type="rolesSummary(row.audio).tag === '可生成伴奏' ? 'primary' : rolesSummary(row.audio).tone" effect="light" size="small">{{ rolesSummary(row.audio).tag }}</ElTag><p v-if="stateHint(row)" :class="{ 'task-error': latest(row)?.state === 'FAILED', 'is-long': stateHint(row).length >= 28 }" :title="stateHint(row)">{{ stateHint(row) }}</p></td>
+        <td class="song-state"><ElTag :type="rolesSummary(row.audio).tag === '可生成伴奏' ? 'primary' : rolesSummary(row.audio).tone" effect="light" size="small">{{ rolesSummary(row.audio).tag }}</ElTag><p v-if="stateHint(row)" :class="{ 'task-error': audioIssue(row.audio) && !audioIssue(row.audio)?.historical, 'is-long': stateHint(row).length >= 28 }" :title="stateHint(row)">{{ stateHint(row) }}</p></td>
         <td class="song-actions"><ElButton link type="primary" @click="editor = row">{{ actionLabel(row) }}</ElButton></td>
       </tr>
     </tbody></table></div>

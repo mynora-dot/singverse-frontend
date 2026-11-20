@@ -4,9 +4,9 @@ import type { SourceType } from '../types'
 
 const props = defineProps<{ step: 1 | 2 | 3; editing: boolean; sourceType: SourceType; importing: boolean }>()
 const heading = ref<HTMLHeadingElement>()
-const steps = ['连接媒体', '添加方式', '确认添加']
+const steps = ['连接歌曲来源', '添加方式', '确认添加']
 const description = computed(() => props.step === 1
-  ? '选择媒体位置并填写访问方式。资料包是可选项。'
+  ? '选择歌曲文件所在位置并填写访问方式。资料包是可选项。'
   : props.step === 2
     ? props.sourceType === 'LOCAL' ? '扫描本地目录，整理歌曲资料。按需调整识别与扫描设置。' : '默认直接扫描目录，也可以选用已有资料包。'
     : props.importing ? '核对以下设置。保存来源后上传资料包，接着预览路径并确认导入。' : '核对以下设置。确认后开始处理，也可以先仅保存来源。')
@@ -31,7 +31,7 @@ watch(() => props.step, async () => {
 <template>
   <div :class="editing ? 'source-editor' : 'source-wizard-layout'">
     <div :class="{ 'source-wizard-main': !editing }">
-      <ol v-if="!editing" class="source-wizard-steps" aria-label="添加媒体进度">
+      <ol v-if="!editing" class="source-wizard-steps" aria-label="添加歌曲来源进度">
         <li v-for="(label, index) in steps" :key="label" :class="{ current: step === index + 1, complete: step > index + 1 }" :aria-current="step === index + 1 ? 'step' : undefined">
           <span class="step-marker" aria-hidden="true">{{ step > index + 1 ? '✓' : index + 1 }}</span>
           <span>{{ label }}</span>

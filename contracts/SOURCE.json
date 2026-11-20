@@ -77,8 +77,8 @@
       "sha256": "791094bcbdce4e7adad9a76e92e270e0cdca1e57d2d3a649388836816ad0776c"
     },
     "contracts/openapi/singverse.openapi.json": {
-      "sha256": "2eb8aa4867ce7a8d2121cea8f085eb815716518529f3647bab962202d303428d",
-      "revision": "4a0787a4ca9141507d12802582ef05dd33d2239e"
+      "sha256": "bc2d4eb5888ef4a4e3c17b5942d0ed530c47bf60c9df5d80da8dbcff46d6e715",
+      "revision": "8d8a68387a5ee747a3d3c165151ffe4b9281d4ff"
     },
     "contracts/song-activity.md": {
       "sha256": "ec2b7ded6f3d84993231321f0ef611c8b25a288efbda6d99e3cf8febffb6ba30"

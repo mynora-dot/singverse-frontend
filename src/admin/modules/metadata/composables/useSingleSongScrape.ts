@@ -18,7 +18,7 @@ export function candidateValues(candidate: MetadataCandidate): Values {
 export function useSingleSongScrape() {
   const review = ref<SingleReview | null>(null), keyword = ref(''), providers = ref<MusicProvider[]>([]), available = ref<MusicProvider[]>([])
   const settingsStatus = ref<'loading' | 'ready' | 'error'>('loading'), searched = ref(false)
-  const selectionThreshold = ref<number>(metadataDefaults.threshold), autoSelected = ref(false)
+  const selectionThreshold = ref<number>(metadataDefaults.threshold), autoSelected = ref(false), automaticDraft = ref('')
   const enabled = ref(false), loading = ref(false), searching = ref(false), applying = ref(false)
   const pendingProviders = ref<MusicProvider[]>([]), searchProgress = ref({ completed: 0, total: 0 })
   const error = ref(''), searchError = ref(''), warning = ref(''), candidates = ref<MetadataCandidate[]>([])
@@ -27,7 +27,11 @@ export function useSingleSongScrape() {
   let session = 0, searchGeneration = 0, attempt: { signature: string; input: ReviewApply } | null = null
   let searchController: AbortController | null = null, selectionGeneration = 0
   const changed = computed(() => review.value && draft.value ? reviewFields.filter(f => fields.value.includes(f) && present(draft.value![f]) && !equal(review.value!.values[f], draft.value![f])) : [])
-  const dirty = computed(() => !!review.value && !!draft.value && !result.value && (reviewFields.some(f => !equal(review.value!.values[f], draft.value![f])) || !!selected.value))
+  const draftSignature = computed(() => JSON.stringify({ draft: draft.value, fields: fields.value, edits: edits.value, cover: cover.value }))
+  const dirty = computed(() => !!review.value && !!draft.value && !result.value
+    && (changed.value.length > 0 || Object.keys(edits.value).length > 0)
+    && reviewFields.some(f => !equal(review.value!.values[f], draft.value![f]))
+    && (!autoSelected.value || draftSignature.value !== automaticDraft.value))
   const canSearch = computed(() => !!review.value && settingsStatus.value === 'ready' && enabled.value && providers.value.some(p => available.value.includes(p)) && !!keyword.value.trim() && !loading.value && !searching.value && !applying.value)
   const preview = computed(() => {
     if (!review.value || !draft.value) return null
@@ -66,7 +70,7 @@ export function useSingleSongScrape() {
     if (review.value && initialCandidates) {
       candidates.value = initialCandidates; searched.value = true
       const best = highSimilarityCandidate(initialCandidates, selectionThreshold.value)
-      if (best) { choose(best); autoSelected.value = true }
+      if (best) choose(best, true)
     } else if (review.value && enabled.value && providers.value.length) await search()
   }
   async function search() {
@@ -118,15 +122,19 @@ export function useSingleSongScrape() {
     // Late results must not replace a candidate, manual edit or explicit cancellation.
     if (selectionToken === selectionGeneration) {
       const best = highSimilarityCandidate(candidates.value, selectionThreshold.value)
-      if (best) { choose(best); autoSelected.value = true }
+      if (best) choose(best, true)
     }
     searching.value = false; searchController = null
   }
-  function choose(candidate: MetadataCandidate) {
+  function choose(candidate: MetadataCandidate, automatic = false) {
     selectionGeneration++
     autoSelected.value = false; selected.value = candidate; draft.value = candidateValues(candidate); edits.value = {}; result.value = null; error.value = ''; attempt = null
     cover.value = candidate.track.coverUrl ? { kind: 'candidate', id: candidate.id, value: coverValue(candidate.track.provider, candidate.track.coverUrl, 'ORIGINAL'), originalValue: candidate.track.coverUrl, provider: candidate.track.provider, quality: 'ORIGINAL', url: metadata.candidateCover(candidate.id, 'ORIGINAL'), label: providerNames[candidate.track.provider] } : null
-    fields.value = reviewFields.filter(f => present(draft.value![f]) && !equal(review.value!.values[f], draft.value![f]))
+    // Filling missing data is convenient; overwriting existing values always requires an explicit field choice.
+    fields.value = reviewFields.filter(f => !present(review.value!.values[f]) && present(draft.value![f]))
+    if (automatic) {
+      autoSelected.value = true; automaticDraft.value = draftSignature.value
+    }
   }
   function saveEdits(values: Values) {
     if (!draft.value || !review.value) return

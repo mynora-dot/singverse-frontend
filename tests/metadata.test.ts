@@ -34,7 +34,7 @@ beforeEach(() => {
 it('可选择指定媒体来源创建批次，确认文案与请求范围一致', async () => {
   vi.mocked(metadata.start).mockResolvedValue(batch())
   await page()
-  await wrapper.get('select[aria-label="刮削媒体来源"]').setValue('source-1')
+  await wrapper.get('select[aria-label="匹配歌曲来源"]').setValue('source-1')
   await button('开始匹配').trigger('click'); await flushPromises()
   expect(wrapper.get('.start-scope-options').text()).toContain('家庭 NAS')
   expect(metadata.start).not.toHaveBeenCalled()
@@ -43,7 +43,7 @@ it('可选择指定媒体来源创建批次，确认文案与请求范围一致'
 })
 afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; vi.restoreAllMocks(); vi.clearAllMocks(); vi.useRealTimers() })
 it('历史查询期间误标已应用的记录可重新匹配，正常应用记录不显示恢复入口', async () => {
-  const item = { id: 'item-1', songId: 'song-1', title: '晴天', artists: ['周杰伦'], status: 'MANUAL_APPLIED' as const, candidates: [candidate], error: '查询期间歌曲已确认，保留已有元数据', updatedAt: '', confidence: 'HIGH' as const }
+  const item = { id: 'item-1', songId: 'song-1', title: '晴天', artists: ['周杰伦'], status: 'MANUAL_APPLIED' as const, candidates: [candidate], error: '查询期间歌曲已确认，保留已有歌曲资料', updatedAt: '', confidence: 'HIGH' as const }
   const recovered = { ...batch('COMPLETED'), completed: 2, pending: 0, applied: 2, items: [item, { ...item, id: 'item-2', error: null }], total: 2, totalElements: 2 }
   vi.mocked(metadata.latest).mockResolvedValue(recovered)
   vi.mocked(metadata.retry).mockResolvedValue(batch())
@@ -100,7 +100,7 @@ it('批次审核复用单曲编辑工作区及批次候选', async () => {
   expect(wrapper.find('.drawer-candidate-select').exists()).toBe(true)
   expect(wrapper.text()).toContain('当前歌曲 · 入库信息')
   expect(wrapper.text()).toContain('选中候选与应用预览')
-  expect(wrapper.text()).toContain('编辑元数据')
+  expect(wrapper.text()).toContain('编辑歌曲资料')
   expect(wrapper.text()).toContain('选择封面')
   expect(metadata.search).not.toHaveBeenCalled()
   vi.mocked(singleReview.applyBatch).mockResolvedValue({ metadata: null, updated: ['album'], skipped: [], retained: [], before: { title: '晴天', artists: ['周杰伦'], album: null, releaseDate: null, aliases: [], durationMs: null, cover: null }, after: { title: '晴天', artists: ['周杰伦'], album: '叶惠美', releaseDate: null, aliases: [], durationMs: null, cover: null } })
@@ -230,4 +230,31 @@ it('95% 同分候选展示高相似度及接近候选提示，不误标为低可
   expect(wrapper.get('.batch-song-table').text()).toContain('多个接近候选')
   expect(wrapper.get('.batch-song-table').text()).not.toContain('未达到高相似度阈值')
   expect(singleReview.applyBatch).not.toHaveBeenCalled()
+})
+
+
+it('曲库所选歌曲以待开始状态为主体，旧批次默认收起且明确标记时间', async () => {
+  vi.mocked(metadata.latest).mockResolvedValue({ ...batch('COMPLETED'), total: 31, completed: 31, applied: 31, createdAt: '2026-11-19T12:00:00Z' })
+  await page('/library/songs/metadata?songIds=a,b')
+  expect(wrapper.get('[aria-label="本次选择"]').text()).toContain('已选择 2 首歌曲，尚未开始本次匹配')
+  expect(wrapper.get('.source-toolbar').text()).toContain('下一次匹配范围曲库所选 2 首歌曲')
+  expect(wrapper.find('.batch-summary').exists()).toBe(false)
+  expect(wrapper.find('.batch-list-card').exists()).toBe(false)
+  expect(metadata.start).not.toHaveBeenCalled()
+  await button('查看上一次匹配结果').trigger('click'); await flushPromises()
+  expect(wrapper.get('.batch-context').text()).toContain('上一次匹配结果')
+  expect(wrapper.get('.batch-context').text()).toContain('2026')
+  expect(wrapper.get('.progress-caption').text()).toContain('31 / 31')
+  await button('开始匹配').trigger('click'); await flushPromises()
+  expect(wrapper.get('input[value=selected]').element).toHaveProperty('checked', true)
+})
+
+it('当前有运行批次时仍可从所选歌曲上下文展开查看，阻止并行启动', async () => {
+  vi.mocked(metadata.latest).mockResolvedValue(batch())
+  await page('/library/songs/metadata?songIds=a')
+  expect(button('开始匹配').attributes('disabled')).toBeDefined()
+  expect(wrapper.text()).toContain('已有运行或暂停的批次')
+  await button('查看上一次匹配结果').trigger('click'); await flushPromises()
+  expect(button('暂停')).toBeDefined()
+  expect(metadata.start).not.toHaveBeenCalled()
 })

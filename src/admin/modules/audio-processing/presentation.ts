@@ -20,6 +20,30 @@ export function analysisReason(reason?: string) {
 }
 export function latestJob(roles: AudioRoles | undefined, kind: string) { return roles?.jobs.find(job => job.kind === kind) }
 
+export function audioFailureMessage(message?: string, fallback = '音频处理失败，请检查计算服务后重试。') {
+  const value = message?.trim()
+  if (!value) return fallback
+  if (value === 'AUDIO_EXECUTION_FAILED') return '计算节点未能完成音频处理，请检查计算服务状态后重试。'
+  if (/^[A-Z][A-Z0-9_]+$/.test(value)) return `${fallback}（错误编号：${value}）`
+  return value
+}
+
+const jobFamily = (kind: string) => ['FAST', 'ANALYZE'].includes(kind) ? 'RECOGNITION' : kind
+
+/** 快速与深度识别共用结果，只展示任务族的最近一次失败。 */
+export function audioIssue(roles: AudioRoles) {
+  const failed = roles.jobs.find(job => job.state === 'FAILED'
+    && roles.jobs.find(other => jobFamily(other.kind) === jobFamily(job.kind))?.id === job.id
+    && !roles.jobs.some(other => jobFamily(other.kind) === jobFamily(job.kind) && active(other.state)))
+  if (!failed) return undefined
+  const usable = !!roles.backingResource || (roles.state === 'CONFIRMED' && (roles.streams?.length || 0) >= 2)
+  const timestamp = time(failed.createdAt)
+  return {
+    historical: usable,
+    text: `${usable ? '历史记录：' : '上次'}${jobKinds[failed.kind] || '音频处理'}失败${timestamp ? `（${timestamp}）` : ''}。${audioFailureMessage(failed.error)}${usable ? ' 现有原唱与伴奏仍可使用。' : ' 打开音轨详情检查或重试。'}`,
+  }
+}
+
 export function executionStage(execution?: AudioExecution) {
   const labels: Record<string, string> = { probe: '读取歌曲', extract: '准备音频', separate: '生成伴奏', filterEncode: '处理并保存伴奏', encode: '保存伴奏', validate: '检查伴奏', hash: '检查伴奏' }
   const label = labels[execution?.stage || '']
@@ -50,13 +74,13 @@ export function rolesSummary(roles: AudioRoles | undefined): RolesSummary {
   if (uniqueOriginal || streams?.length === 1) {
     if (roles.backingResource) return { tag: '已有伴奏', title: '已生成独立伴奏', hint: '点歌时可以在原唱和伴奏之间切换。', tone: 'success' }
     if (separate && active(separate.state)) return { tag: '生成中', title: separate.state === 'QUEUED' ? '等待生成伴奏' : executionStage(separate) || '正在生成伴奏', hint: '由计算节点在后台分离人声，完成后自动可用。', tone: 'primary' }
-    if (separate?.state === 'FAILED') return { tag: '生成失败', title: '上次生成伴奏失败', hint: separate.error || '可以检查节点后重新生成。', tone: 'danger' }
+    if (separate?.state === 'FAILED') return { tag: '生成失败', title: '上次生成伴奏失败', hint: audioFailureMessage(separate.error, '可以检查节点后重新生成。'), tone: 'danger' }
     return { tag: '可生成伴奏', title: '只有一条原唱音轨', hint: uniqueOriginal ? '唯一音频直接作为原唱，无需先读取音轨；需要伴奏时可显式生成。' : '可以用 AI 分离人声，生成一份独立伴奏。', tone: 'warning' }
   }
   if (streams?.length === 2) {
     if (roles.state === 'CONFIRMED') return { tag: '自带伴奏', title: '自带原唱和伴奏两条音轨', hint: `已${originLabel(roles.origin)}原唱和伴奏，点歌时可以直接切换。`, tone: 'success' }
     if (analyze && active(analyze.state)) return { tag: '识别中', title: '正在识别哪条是原唱', hint: '识别完成后会自动标记；不确定时需要你来确认。', tone: 'primary' }
-    return { tag: '待标记', title: '有两条音轨，需要确认哪条是原唱', hint: analyze?.state === 'SUCCEEDED' ? analysisReason(analyze.reason) : analyze?.state === 'FAILED' ? analyze.error || '音轨识别失败，可以检查节点后重试。' : '选出原唱，另一条会作为伴奏。', tone: 'warning' }
+    return { tag: '待标记', title: '有两条音轨，需要确认哪条是原唱', hint: analyze?.state === 'SUCCEEDED' ? analysisReason(analyze.reason) : analyze?.state === 'FAILED' ? audioFailureMessage(analyze.error, '音轨识别失败，可以检查节点后重试。') : '选出原唱，另一条会作为伴奏。', tone: 'warning' }
   }
   return { tag: '多条音轨', title: `有 ${streams?.length ?? 0} 条音轨`, hint: '请先试听确认可用的源伴奏音轨。混合音乐分离仅支持单音轨，共享原唱/伴奏标记仅支持双音轨。', tone: 'info' }
 }

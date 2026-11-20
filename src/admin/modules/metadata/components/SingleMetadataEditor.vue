@@ -55,12 +55,12 @@ function save() {
 }
 </script>
 <template>
-  <ElDialog :model-value="open" title="预览与编辑元数据" width="min(760px, calc(100vw - 32px))" append-to-body :close-on-click-modal="false" :before-close="close">
+  <ElDialog :model-value="open" title="预览与编辑歌曲资料" width="min(760px, calc(100vw - 32px))" append-to-body :close-on-click-modal="false" :before-close="close">
     <p class="editor-hint">编辑仅保存在本次审核草稿中；主窗口点击“确认应用”后才写入。留空不会清除现有值。</p>
     <ElTabs v-model="tab"><ElTabPane label="字段对比与编辑" name="fields"><div class="editor-scroll"><table><thead><tr><th>字段 / 当前值</th><th>平台原始值</th><th>编辑值</th></tr></thead><tbody>
       <tr v-for="field in reviewFields.filter(f => f !== 'cover')" :key="field"><td><strong>{{ fieldNames[field] }}</strong><small>{{ show(before[field]) }}{{ field === 'durationMs' && before[field] ? ' ms' : '' }}</small></td><td>{{ original ? show(original[field]) : '无平台候选' }}{{ field === 'durationMs' && original?.durationMs ? ' ms' : '' }}</td>
         <td><ElInput v-model="inputs[field]" :aria-label="`编辑${fieldNames[field]}`" :maxlength="field === 'artists' || field === 'aliases' ? 4100 : 500" :placeholder="field === 'releaseDate' ? 'YYYY-MM-DD，可只填年/月' : field === 'durationMs' ? '秒，支持三位小数' : field === 'artists' || field === 'aliases' ? '多项用顿号分隔' : '留空保留当前值'" :aria-invalid="!!errors[field]" /><small v-if="errors[field]" role="alert" class="field-error">{{ errors[field] }}</small></td></tr>
-    </tbody></table></div></ElTabPane><ElTabPane label="封面" name="cover"><p class="editor-hint">封面使用候选图片或上传至受管存储；不会修改媒体原件。</p><ElButton @click="emit('cover')">选择或上传封面</ElButton></ElTabPane><ElTabPane label="更多信息" name="more"><p class="editor-hint">“当前值”来自入库文件名解析及未失效的确认元数据，不代表已经读取文件内嵌标签。平台时长是外部信息，不代表本地探测结果。</p></ElTabPane></ElTabs>
+    </tbody></table></div></ElTabPane><ElTabPane label="封面" name="cover"><p class="editor-hint">封面使用候选图片或上传至受管存储；不会修改媒体原件。</p><ElButton @click="emit('cover')">选择或上传封面</ElButton></ElTabPane><ElTabPane label="更多信息" name="more"><p class="editor-hint">“当前值”来自入库文件名解析及未失效的确认歌曲资料，不代表已经读取文件内嵌标签。平台时长是外部信息，不代表本地探测结果。</p></ElTabPane></ElTabs>
     <template #footer><ElButton @click="close">取消编辑</ElButton><ElButton type="primary" @click="save">保存编辑到草稿</ElButton></template>
   </ElDialog>
 </template>

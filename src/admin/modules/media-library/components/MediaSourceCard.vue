@@ -112,20 +112,20 @@ const scanErrors = computed(() => [...new Set([props.ingest?.error, props.task?.
     <p v-if="taskError" class="scan-error" role="alert">状态读取失败：{{ taskError }}，正在重试</p>
 
     <details v-if="task" class="source-scan-details" :open="activeScan">
-      <summary><ElIcon class="scan-chevron" aria-hidden="true"><ArrowRight /></ElIcon><span>扫描详情</span><span class="scan-brief">已处理 {{ task.directories }} 个目录 · {{ task.entries }} 个条目<span v-if="task.needsReviewSongs"> · {{ task.needsReviewSongs }} 首需复核</span></span></summary>
+      <summary><ElIcon class="scan-chevron" aria-hidden="true"><ArrowRight /></ElIcon><span>扫描详情</span><span class="scan-brief">已处理 {{ task.directories }} 个目录 · {{ task.entries }} 个条目<span v-if="task.needsReviewSongs"> · {{ task.needsReviewSongs }} 首文件名识别不完整</span></span></summary>
       <div class="scan-progress" aria-live="polite">
-        <span>已处理 {{ task.directories }} 个目录、{{ task.entries }} 个条目；{{ task.totalSongs }} 首，{{ task.needsReviewSongs }} 首需复核</span>
+        <span>已处理 {{ task.directories }} 个目录、{{ task.entries }} 个条目；{{ task.totalSongs }} 首，{{ task.needsReviewSongs }} 首文件名识别不完整</span>
         <span v-if="task.status === 'SUCCEEDED'">新增 {{ task.addedSongs ?? 0 }} · 复用 {{ task.reusedSongs ?? 0 }} · 待确认删除 {{ task.missingSongs ?? 0 }} · 下架 {{ task.removedSongs ?? 0 }}</span>
         <ElButton v-if="activeScan && task.phase === 'SCANNING'" link type="warning" :loading="cancelling" :disabled="task.cancelRequested" @click="$emit('cancelScan')">取消扫描</ElButton>
       </div>
     </details>
-    <p v-else-if="localResult" class="source-scan-result" aria-live="polite">扫描完成：{{ localResult.totalSongs }} 首，{{ localResult.needsReviewSongs }} 首需复核</p>
+    <p v-else-if="localResult" class="source-scan-result" aria-live="polite">扫描完成：{{ localResult.totalSongs }} 首，{{ localResult.needsReviewSongs }} 首文件名识别不完整</p>
 
     <footer class="source-footer">
       <p class="source-schedule"><ElIcon aria-hidden="true"><Clock /></ElIcon><span>{{ source.scanEnabled ? '自动扫描已开启' : '自动扫描未开启' }}<span v-if="nextScan" class="next-scan">下次：{{ nextScan }}</span></span></p>
       <div class="source-actions">
         <ElButton type="primary" @click="$emit('songs')">查看歌曲</ElButton>
-        <ElButton @click="$emit('metadata')">分享资料</ElButton>
+        <ElButton @click="$emit('metadata')">资料管理</ElButton>
         <ElDropdown trigger="click" placement="top-end" :popper-options="menuPopperOptions" :teleported="true" :show-arrow="false" popper-class="source-actions-dropdown">
           <ElButton :icon="MoreFilled" :aria-label="`${source.name}的更多操作`" title="更多操作" />
           <template #dropdown>

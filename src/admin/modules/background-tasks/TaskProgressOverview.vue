@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { ElProgress } from 'element-plus'
 import { Check, Clock, Headset, InfoFilled, Warning } from '@element-plus/icons-vue'
 import type { BackgroundTask } from './api'
-import { activeTask, childTaskCount, date, frameProgress, isScan, progressText, stageName, statusNames } from './presentation'
+import { activeTask, childTaskCount, date, frameProgress, isScan, progressStatus, progressText, stageName, statusNames } from './presentation'
 
 const props = defineProps<{ task: BackgroundTask }>()
 const scanPipeline = computed(() => props.task.isBatch && isScan(props.task)
@@ -50,7 +50,7 @@ const phases = computed(() => [
     </template>
     <div v-else class="task-current-progress" aria-live="polite">
       <p>{{ progressText(task) }}</p>
-      <ElProgress v-if="task.progress.percent !== null" :percentage="Math.floor(task.progress.percent)" :stroke-width="6" />
+      <ElProgress v-if="task.progress.percent !== null" :percentage="Math.floor(task.progress.percent)" :status="progressStatus(task.status)" :stroke-width="6" />
       <p v-if="task.waitingReason" class="progress-description">{{ task.waitingReason }}</p>
     </div>
     <p v-if="frameProgress(task.execution)" class="progress-description">{{ frameProgress(task.execution) }}；此为当前阶段进度。</p>

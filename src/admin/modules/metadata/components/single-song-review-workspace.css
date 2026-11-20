@@ -62,6 +62,7 @@ summary::-webkit-details-marker { display: none; }
 .candidate-info { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .candidate-info strong { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .candidate-info > span { font-size: 12px; color: var(--sv-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.candidate-info > .candidate-recording { white-space: normal; overflow: visible; font-size: 12px; line-height: 1.6; color: var(--sv-text-secondary); }
 .candidate-info small { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--sv-text-tertiary); }
 .candidate-score { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; align-self: start; padding-top: 2px; color: var(--sv-text-tertiary); text-align: right; }
 .chosen .candidate-score { color: var(--sv-accent-muted); }

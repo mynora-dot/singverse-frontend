@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ElAlert, ElButton, ElDialog, ElPagination } from 'element-plus'
 import { authRequest } from '../../../core/auth/api'
 import { base, type Batch, type BatchItem } from '../api'
-import { backendName, failure, isRecognition, itemStates, profileName, recognitionName } from '../presentation'
+import { audioFailureMessage, backendName, failure, isRecognition, itemStates, profileName, recognitionName } from '../presentation'
 
 const props = defineProps<{ batch?: Batch; ready: boolean; busy: boolean; error?: string }>()
 const emit = defineEmits<{ start: []; close: []; cancel: [] }>()
@@ -30,7 +30,7 @@ watch(() => props.batch?.state === 'PREVIEW' ? props.batch.id : '', id => {
 }, { immediate: true })
 onBeforeUnmount(() => { itemRequest++ })
 function itemReason(item: BatchItem) {
-  if (item.error) return item.error
+  if (item.error) return audioFailureMessage(item.error)
   if (item.state === 'PENDING') return item.category === 'UNPROBED' ? '先读取音轨，确认适用后处理' : recognizing.value ? '识别已有音轨' : '生成独立伴奏'
   if (item.state === 'SKIPPED') return ({ READY: recognizing.value ? '已有确认标记，予以保留' : '已有伴奏', PROCESSING: '已有处理任务', INAPPLICABLE: recognizing.value ? '仅双音轨支持自动区分原唱与伴奏' : '音轨数量不适用分离，请先检查已有音轨' } as Record<string, string>)[item.category] || '当前状态无需处理'
   return itemStates[item.state] || item.state
@@ -47,7 +47,7 @@ const skipped = computed(() => {
     <template v-if="batch">
       <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon role="alert" class="preview-error" />
       <p v-if="preparing" class="lead" role="status">正在准备所选歌曲：{{ batch.prepared ?? 0 }} / {{ batch.selectionTotal ?? batch.total }}。准备完成后请确认开始。</p>
-      <p v-else-if="batch.state === 'FAILED'" class="lead" role="alert">{{ batch.error || '歌曲准备失败，请重新选择歌曲后重试。' }}</p>
+      <p v-else-if="batch.state === 'FAILED'" class="lead" role="alert">{{ audioFailureMessage(batch.error, '歌曲准备失败，请重新选择歌曲后重试。') }}</p>
       <p v-else-if="batch.state === 'CANCELLED'" class="lead">已取消准备。</p>
       <p v-else class="lead">将为 <strong>{{ pending }}</strong> 首歌曲{{ recognizing ? '重新识别原唱与伴奏' : '生成独立伴奏' }}。</p>
       <div v-if="batch.state === 'PREVIEW'" class="preview-totals" :class="{ 'has-failed': batch.counts.FAILED }"><div><span>本次选择</span><strong>{{ batch.total }}<small>首</small></strong></div><div><span>可处理</span><strong>{{ pending }}<small>首</small></strong></div><div><span>跳过</span><strong>{{ batch.counts.SKIPPED || 0 }}<small>首</small></strong></div><div v-if="batch.counts.FAILED"><span>准备失败</span><strong>{{ batch.counts.FAILED }}<small>首</small></strong></div></div>

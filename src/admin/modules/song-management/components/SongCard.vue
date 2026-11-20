@@ -3,11 +3,11 @@ import { ElButton, ElIcon } from 'element-plus'
 import { computed } from 'vue'
 import { VideoPlay, EditPen, Check } from '@element-plus/icons-vue'
 import SongCover from './SongCover.vue'
-import { identityReviewed, needsSongReview, songReviewLabel, platformDuration, indexTags, songTags } from '../presentation'
+import { identityReviewed, needsSongReview, songReviewLabel, songVersionSummary, songFileName, songDurationText, songDurationCaption, indexTags, songTags } from '../presentation'
 import { songTitle, songArtists } from '../../metadata/utils'
 import type { Tag } from '../../classification/types'
 import type { MediaSong } from '../../media-library/types'
-const props = withDefaults(defineProps<{ song: MediaSong; tags?: Tag[]; tagIndex?: ReadonlyMap<string, Tag>; selectionMode?: boolean; selected?: boolean }>(), { tags: () => [], selectionMode: false, selected: false })
+const props = withDefaults(defineProps<{ song: MediaSong; tags?: Tag[]; tagIndex?: ReadonlyMap<string, Tag>; sourceLabel?: string; selectionMode?: boolean; selected?: boolean }>(), { tags: () => [], selectionMode: false, selected: false })
 const tagIndex = computed(() => props.tagIndex ?? indexTags(props.tags))
 const classifications = computed(() => songTags(props.song, tagIndex.value))
 const reviewed = computed(() => identityReviewed(props.song))
@@ -20,7 +20,7 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
     <div class="card-artwork">
       <button type="button" class="artwork-open" :aria-label="`查看 ${songTitle(song)} 的详情`" @click="emit('click')"><SongCover :song="song" variant="original" /></button>
       <label v-if="selectionMode" class="selection-checkbox"><input type="checkbox" :checked="selected" :aria-label="`选择 ${songTitle(song)}`" @change="emit('select', song, ($event.target as HTMLInputElement).checked)"></label>
-      <span v-if="platformDuration(song)" class="cover-duration">{{ platformDuration(song) }}</span>
+      <span v-if="songDurationText(song)" class="cover-duration" :title="songDurationCaption(song)">{{ songDurationText(song) }}</span>
       <button type="button" class="cover-play" :aria-label="`播放 ${songTitle(song)}`" @click="emit('play')"><ElIcon><VideoPlay /></ElIcon></button>
     </div>
     <button type="button" class="song-card-title" :aria-label="`查看 ${songTitle(song)} 的详情，${songArtists(song).join('、') || '歌手待补充'}，${reviewLabel}`" @click="emit('click')">
@@ -30,10 +30,13 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
       </span>
       <span class="card-artist" :title="songArtists(song).join('、')">{{ songArtists(song).join('、') || '歌手待补充' }}</span>
     </button>
+    <p class="card-version" :title="songVersionSummary(song)">{{ songVersionSummary(song) }}</p>
+    <p class="card-file" :title="song.relativePath">{{ songFileName(song) }}</p>
+    <p v-if="song.result.needsReview && reviewed" class="card-file">原文件名识别不完整 · 资料已确认</p>
     <p v-if="needsReview" class="song-status review">{{ reviewLabel }}</p>
     <div class="song-card-actions">
       <span v-if="classifications[0]" class="card-tag" :title="classifications[0].name">{{ classifications[0].name }}</span>
-      <span class="card-source" :title="song.sourceName" :aria-label="song.sourceName"><template v-if="song.sourceName === 'WebDAV 歌曲'">WebDAV<span class="source-suffix"> 歌曲</span></template><template v-else>{{ song.sourceName }}</template></span>
+      <span class="card-source" :title="sourceLabel || song.sourceName" :aria-label="sourceLabel || song.sourceName">{{ sourceLabel || song.sourceName }}</span>
       <ElButton text :icon="EditPen" :aria-label="`${needsReview ? '复核' : '编辑'} ${songTitle(song)}`" @click="emit('edit')">{{ needsReview ? '复核' : '编辑' }}</ElButton>
     </div>
   </article>
@@ -207,6 +210,9 @@ const emit = defineEmits<{ click: []; play: []; edit: []; select: [song: MediaSo
 .song-status.review {
   color: var(--sv-semantic-warn)
 }
+
+.card-version, .card-file { margin: 3px 0; font-size: 12px; line-height: 1.5; color: var(--sv-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-file { color: var(--sv-text-tertiary); }
 
 .card-tag {
   flex: 0 1 auto;

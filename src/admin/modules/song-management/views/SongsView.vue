@@ -13,7 +13,7 @@ import { singleReview } from '../../metadata/api/single-review'
 import SongVideoDialog from '../components/SongVideoDialog.vue'
 import SongCard from '../components/SongCard.vue'
 import SongLibraryTable from '../components/SongLibraryTable.vue'
-import { songColumns, defaultSongColumns, indexTags, songTags, needsSongReview, identityReviewed, type SongColumn } from '../presentation'
+import { songColumns, defaultSongColumns, indexTags, songTags, needsSongReview, identityReviewed, sourceDisplayLabels, type SongColumn } from '../presentation'
 import SongDetailDrawer from '../components/SongDetailDrawer.vue'
 import { songs, type SongSort } from '../api/songs'
 import type { MediaSong, MediaSource } from '../../media-library/types'
@@ -23,9 +23,9 @@ const refreshingEmbedded = ref(false)
 async function refreshEmbedded(deep = false) {
   if (refreshingEmbedded.value || !selectedIds.value.length) return
   const ids = [...selectedIds.value]
-  if (deep) try { await ElMessageBox.confirm(`为选中的 ${ids.length} 首歌曲执行深度提取，每首最多读取 128 MiB，仍遵守来源请求间隔与冷却。`, '深度提取内嵌元数据', { confirmButtonText: '加入提取队列', cancelButtonText: '取消' }) } catch { return }
+  if (deep) try { await ElMessageBox.confirm(`为选中的 ${ids.length} 首歌曲执行深度提取，尝试查找普通读取未发现的文件标签，每首最多读取 128 MiB，耗时与网络流量会增加。`, '深入读取文件标签', { confirmButtonText: '加入提取队列', cancelButtonText: '取消' }) } catch { return }
   refreshingEmbedded.value = true
-  try { const result = await embeddedMetadata.refresh(ids, deep); ElMessage.success(`已提交 ${result.accepted} 首内嵌元数据提取任务`) }
+  try { const result = await embeddedMetadata.refresh(ids, deep); ElMessage.success(`已提交 ${result.accepted} 首文件标签读取任务`) }
   catch (e) { ElMessage.error(e instanceof Error ? e.message : '提交失败') }
   finally { refreshingEmbedded.value = false }
 }
@@ -44,6 +44,7 @@ const items = ref<MediaSong[]>([]), sources = ref<MediaSource[]>([]), total = re
 const pageSize = ref(20)
 const sort = ref<SongSort>('SCANNED_DESC')
 const tags = ref<Tag[]>([]), tagIds = ref<string[]>([]), unclassified = ref(false), classificationError = ref(''), editingClasses = ref<string[]>([])
+const sourceLabels = computed(() => sourceDisplayLabels(sources.value))
 const tagIndex = computed(() => indexTags(tags.value))
 async function loadTags() { try { const result = await classification.tags(); if (!active) return; tags.value = result; tagsLoaded.value = true; classificationError.value = '' } catch (e) { classificationError.value = e instanceof Error ? e.message : '分类词表读取失败' } }
 async function changeSize() { await apply(1) }
@@ -73,10 +74,11 @@ const filtered = computed(() => !!route.query.sourceId || !!route.query.q || !!r
 const returnBatch = computed(() => (typeof route.query.returnBatch === 'string' ? route.query.returnBatch : ''))
 
 // 统计
-const reviewCount = computed(() => items.value.filter(needsSongReview).length)
+const reviewCount = computed(() => items.value.filter(song => song.result.needsReview).length)
+const metadataReviewCount = computed(() => items.value.filter(needsSongReview).length)
 const unclassifiedCount = computed(() => items.value.filter(s => !songTags(s, tagIndex.value).some(tag => tag.active)).length)
 const reviewedCount = computed(() => items.value.filter(identityReviewed).length)
-const matchedCount = computed(() => items.value.filter(s => !s.result.needsReview && !identityReviewed(s)).length)
+const matchedCount = computed(() => items.value.filter(s => !s.result.needsReview).length)
 
 let active = true, generation = 0, detailGeneration = 0
 watch(() => route.query.detailSongId, async id => {
@@ -178,11 +180,11 @@ onBeforeUnmount(() => { active = false; generation++ })
       <template #meta><span class="count-badge" aria-live="polite">{{ total }}</span></template>
       <template #actions>
         <div class="page-actions">
-          <ElButton type="primary" :icon="Plus" @click="router.push('/library/media')">添加歌曲</ElButton>
+          <ElButton type="primary" :icon="Plus" @click="router.push('/library/media')">添加来源</ElButton>
           <ElPopover v-model:visible="moreOpen" role="menu" placement="bottom-end" :width="200" trigger="click" :persistent="false">
             <template #reference><ElButton ref="moreButton" class="song-more-button" text :icon="MoreFilled" aria-label="歌曲更多操作" :aria-expanded="moreOpen" @keydown.esc.prevent.stop="closeMore" /></template>
             <div class="song-more-actions" role="menu" aria-label="歌曲更多操作" @keydown.esc.prevent.stop="closeMore">
-              <ElButton text :icon="EditPen" @click="moreOpen = false; router.push('/library/songs/metadata')">整理元数据</ElButton>
+              <ElButton text :icon="EditPen" @click="moreOpen = false; router.push('/library/songs/metadata')">匹配歌曲资料</ElButton>
               <ElButton text @click="moreOpen = false; openFormalLens()">歌曲资料 · 高级</ElButton>
               <ElButton v-if="loaded && items.length && !loading" class="mobile-summary-action" text :aria-expanded="mobileSummaryOpen" aria-controls="song-page-summary" @click="mobileSummaryOpen = !mobileSummaryOpen; closeMore()">本页统计</ElButton>
             </div>
@@ -215,14 +217,19 @@ onBeforeUnmount(() => { active = false; generation++ })
 
       <ElButton class="mobile-filter-toggle" text :icon="Filter" :aria-expanded="mobileFiltersOpen" aria-controls="song-extra-filters" @click="mobileFiltersOpen = !mobileFiltersOpen">{{ mobileFiltersOpen ? '收起筛选' : '来源与分类筛选' }}<span v-if="appliedFilterCount"> · 已选 {{ appliedFilterCount }} 项</span></ElButton>
       <div id="song-extra-filters" class="songs-filter-selects" :class="{ expanded: mobileFiltersOpen }">
-        <ElSelect v-model="sourceId" aria-label="歌曲来源" placeholder="全部来源" filterable clearable @change="apply()"><ElOption label="全部来源" value="" /><ElOption v-for="source in sources" :key="source.id" :label="source.name" :value="source.id" /></ElSelect>
+        <ElSelect v-model="sourceId" aria-label="歌曲来源" placeholder="全部来源" filterable clearable @change="apply()"><ElOption label="全部来源" value="" /><ElOption v-for="source in sources" :key="source.id" :label="sourceLabels[source.id] || source.name" :value="source.id" /></ElSelect>
         <ElSelect v-model="tagIds" aria-label="分类标签" placeholder="按分类筛选" filterable multiple collapse-tags clearable @change="apply()"><ElOption v-for="tag in tags.filter(t => t.active)" :key="tag.id" :label="tag.name" :value="tag.id" /></ElSelect>
-        <ElSelect v-model="status" aria-label="文件名识别状态" @change="apply()"><ElOption label="全部识别状态" value="ALL" /><ElOption label="文件名待复核" value="REVIEW" /><ElOption label="文件名完整" value="MATCHED" /></ElSelect>
+        <ElSelect v-model="status" aria-label="文件名识别状态" @change="apply()"><ElOption label="全部识别状态" value="ALL" /><ElOption label="文件名识别不完整" value="REVIEW" /><ElOption label="文件名完整" value="MATCHED" /></ElSelect>
       </div>
       <p v-if="sourcesError" class="filter-load-error">{{ sourcesError }} <ElButton link @click="loadSources">重试来源</ElButton></p>
       <p v-if="classificationError" class="filter-load-error">{{ classificationError }} <ElButton link @click="loadTags">重试分类</ElButton></p>
       <ElButton v-if="filtered || keyword.trim() || sourceId || tagIds.length" class="filter-reset" text @click="reset">重置筛选</ElButton>
     </section>
+
+    <ElAlert v-if="status === 'REVIEW'" type="info" :closable="false" class="filename-review-note" title="这里展示原始文件名识别不完整的歌曲，与歌曲资料审核分别记录。">
+      <p>已确认的歌名和歌手可正常用于搜索，无需重复核对。资料未确认的歌曲可点击“复核”；若要改善文件名识别，可调整来源的识别方案后重新扫描。</p>
+      <ElButton text type="primary" @click="router.push('/library/media')">查看来源与识别方案</ElButton>
+    </ElAlert>
 
     <div class="songs-workspace sv-glass">
     <!-- 操作栏 -->
@@ -230,7 +237,7 @@ onBeforeUnmount(() => { active = false; generation++ })
       <div class="toolbar-left">
         <span class="sr-only">{{ filtered ? '筛选结果' : '歌曲列表' }}</span>
         <span v-if="loaded && items.length" class="page-range">第 {{ visibleRange }} 首</span><span v-if="view === 'list'" class="table-scroll-hint">更多列可横向滚动</span>
-        <div v-if="loaded && items.length && !loading" id="song-page-summary" class="page-summary" :class="{ expanded: mobileSummaryOpen }" aria-label="当前页歌曲统计"><span>仅本页</span><span><b>{{ reviewCount }}</b> 待复核</span><span><b>{{ matchedCount }}</b> 文件名完整</span><span v-if="reviewedCount"><b>{{ reviewedCount }}</b> 已复核</span><span v-if="tagsLoaded"><b>{{ unclassifiedCount }}</b> 未分类</span></div>
+        <div v-if="loaded && items.length && !loading" id="song-page-summary" class="page-summary" :class="{ expanded: mobileSummaryOpen }" aria-label="当前页歌曲统计"><span>仅本页</span><span><b>{{ reviewCount }}</b> 文件名识别不完整</span><span v-if="metadataReviewCount"><b>{{ metadataReviewCount }}</b> 资料待复核</span><span><b>{{ matchedCount }}</b> 文件名完整</span><span v-if="reviewedCount"><b>{{ reviewedCount }}</b> 资料已确认</span><span v-if="tagsLoaded"><b>{{ unclassifiedCount }}</b> 未分类</span></div>
       </div>
       <div class="toolbar-right">
         <select v-model="sort" class="song-sort" aria-label="歌曲排序" :disabled="loading" @change="apply()"><option value="SCANNED_DESC">最近扫描</option><option value="UPDATED_DESC">最新更新</option></select>
@@ -256,12 +263,13 @@ onBeforeUnmount(() => { active = false; generation++ })
           <span class="batch-count">已选 {{ selectedIds.length }} 首 · 本页</span><ElButton text @click="selectedIds = items.map(song => song.id)">全选本页</ElButton><ElButton v-if="selectedIds.length" text @click="selectedIds = []">清空选择</ElButton>
         </div>
         <div class="batch-actions">
-          <ElButton :disabled="!selectedIds.length" type="primary" @click="openScrape">刮削元数据</ElButton>
-          <ElButton :disabled="!selectedIds.length || refreshingEmbedded" @click="refreshEmbedded()">刷新内嵌元数据</ElButton>
-          <ElButton :disabled="!selectedIds.length || refreshingEmbedded" @click="refreshEmbedded(true)">深度提取</ElButton>
+          <ElButton :disabled="!selectedIds.length" type="primary" @click="openScrape">匹配歌曲资料</ElButton>
+          <ElButton :disabled="!selectedIds.length || refreshingEmbedded" @click="refreshEmbedded()">读取文件标签</ElButton>
+          <ElButton :disabled="!selectedIds.length || refreshingEmbedded" @click="refreshEmbedded(true)">深入读取文件标签</ElButton>
           <ElButton :disabled="!selectedIds.length" @click="classifySelected">AI 分类</ElButton>
           <ElButton @click="exitSelectionMode">取消</ElButton>
         </div>
+        <p class="batch-help">匹配歌曲资料：查询音乐平台，核对并补全资料；读取文件标签：从媒体文件中读取资料；深入读取：读取更多文件内容以查找标签，耗时更长。均只处理本页已选歌曲。</p>
       </div>
 
     <!-- 错误提示 -->
@@ -281,8 +289,8 @@ onBeforeUnmount(() => { active = false; generation++ })
 
     <ElSkeleton v-if="loading && !items.length" :rows="5" animated aria-label="正在加载歌曲" />
     <div v-if="items.length" :aria-busy="loading" class="songs-results">
-      <SongLibraryTable v-if="view === 'list'" class="desktop-song-table" :items="items" :tags="tags" :tag-index="tagIndex" :columns="columns" :compact="compact" :selection-mode="selectionMode" :selected-ids="selectedIds" @play="playing = $event" @review="openReview" @detail="openDetail" @select="toggleSelection" @select-page="selectedIds = $event ? items.map(song => song.id) : []" />
-      <div v-if="view === 'covers'" class="songs-grid"><SongCard v-for="song in items" :key="song.id" :song="song" :tags="tags" :tag-index="tagIndex" :selection-mode="selectionMode" :selected="selectedIds.includes(song.id)" @play="playing = song" @edit="openReview(song)" @click="openDetail(song)" @select="toggleSelection" /></div>
+      <SongLibraryTable v-if="view === 'list'" class="desktop-song-table" :items="items" :tags="tags" :tag-index="tagIndex" :columns="columns" :compact="compact" :source-labels="sourceLabels" :selection-mode="selectionMode" :selected-ids="selectedIds" @play="playing = $event" @review="openReview" @detail="openDetail" @select="toggleSelection" @select-page="selectedIds = $event ? items.map(song => song.id) : []" />
+      <div v-if="view === 'covers'" class="songs-grid"><SongCard v-for="song in items" :key="song.id" :song="song" :tags="tags" :source-label="sourceLabels[song.sourceId]" :tag-index="tagIndex" :selection-mode="selectionMode" :selected="selectedIds.includes(song.id)" @play="playing = song" @edit="openReview(song)" @click="openDetail(song)" @select="toggleSelection" /></div>
     </div>
     <ElEmpty v-if="loaded && total > 0 && !items.length && !loading && !error" description="这一页已经没有歌曲"><ElButton @click="apply(1)">返回第一页</ElButton></ElEmpty>
 
@@ -333,7 +341,7 @@ onBeforeUnmount(() => { active = false; generation++ })
       @changed="classificationChanged"
     />
 
-    <p class="feature-note">列表来自本地目录或 WebDAV 的已保存扫描索引；在媒体库重新扫描后更新。</p>
+    <p class="feature-note">列表来自本地目录或 WebDAV 的已保存扫描索引；在歌曲来源重新扫描后更新。</p>
   </section>
 </template>
 
@@ -365,6 +373,8 @@ onBeforeUnmount(() => { active = false; generation++ })
   min-width: 0;
 }
 .song-more-button { min-width: 40px; }
+.filename-review-note { margin-bottom: 16px; }
+.batch-help { flex-basis: 100%; margin: 0; font-size: 12px; line-height: 1.7; color: var(--sv-text-secondary); }
 .mobile-summary-action.el-button { display: none; }
 .song-more-actions { display: grid; gap: 4px; }
 .song-more-actions :deep(.el-button) { width: 100%; justify-content: flex-start; margin: 0; }

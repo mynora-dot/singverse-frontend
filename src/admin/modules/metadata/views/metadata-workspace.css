@@ -55,3 +55,7 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--sv-accent-
   .list-footer { align-items: flex-start; padding: 12px 0; min-height: 44px; }.list-footer :deep(.el-pagination) { --el-pagination-button-width: 36px; --el-pagination-button-height: 44px; }.metadata-empty { padding: 32px 16px; }.metadata-empty>p { font-size: 14px; }
 }
 @media(prefers-reduced-motion: reduce) { .batch-progress>span { transition: none; } }
+
+.selection-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 20px; margin-bottom: 20px; border: 1px solid var(--sv-border-default); border-radius: 8px; background: var(--sv-accent-soft); }
+.selection-preview>div { flex: 1 1 300px; }.selection-preview h2 { margin: 0; font-size: 18px; }.selection-preview p { margin: 8px 0 0; font-size: 13px; line-height: 1.7; color: var(--sv-text-secondary); }.selection-preview a { display: inline-flex; align-items: center; min-height: 44px; color: var(--sv-accent-muted); font-size: 13px; }
+.batch-context { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 12px 0; font-size: 13px; color: var(--sv-text-secondary); }.batch-context strong { color: var(--sv-text-primary); }.batch-context.historical { padding-top: 12px; border-top: 1px solid var(--sv-border-subtle); }

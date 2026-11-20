@@ -161,7 +161,7 @@ async function scan(item: MediaSource) {
     const result = await media.scan(item.id)
     if (!active) return
     localResults[item.id] = result
-    ElMessage.success(`扫描完成：${result.totalSongs} 首，${result.needsReviewSongs} 首需复核`)
+    ElMessage.success(`扫描完成：${result.totalSongs} 首，${result.needsReviewSongs} 首文件名识别不完整`)
     await load()
 
   } catch (e) { if (active) error.value = e instanceof Error ? e.message : '扫描失败' }
@@ -187,7 +187,7 @@ async function load(append = false, openLinkedSource = true) {
     }
     sourcePage.value = next; moreSources.value = (next + 1) * 100 < result.totalElements; loaded.value = true
     taskPolling.clear(); taskGeneration++; void refreshTasks(true)
-  } catch (e) { if (active && token === loadGeneration) error.value = e instanceof Error ? e.message : '读取媒体库失败' }
+  } catch (e) { if (active && token === loadGeneration) error.value = e instanceof Error ? e.message : '读取歌曲来源失败' }
   finally { if (active && token === loadGeneration) loading.value = false }
 }
 function open(type: SourceType, item?: MediaSource, forImport = false) {
@@ -268,7 +268,7 @@ function validateMethod() {
   if (importingSource.value && !importFile.value) {
     formError.value = '请先选择导出的 ZIP 资料包'
     if (!editing.value) sourceStep.value = 2
-    focusSourceField('input[aria-label="新媒体库资料包"]')
+    focusSourceField('input[aria-label="新歌曲来源资料包"]')
     return false
   }
   if (profilesLoading.value || profilesError.value || !selectedProfile.value) {
@@ -326,7 +326,7 @@ async function save(startScan = !editing.value && !importMode.value) {
       items.value = items.value.some(item => item.id === saved.id) ? items.value.map(item => item.id === saved.id ? saved : item) : [saved, ...items.value]
       if (metadataSource.value?.id === saved.id) metadataSource.value = saved
     }
-    dialog.value = false; draft.password = ''; ElMessage.success(importing ? '媒体库已保存，接下来上传资料包并核对路径' : startScan ? '已保存，后台将自动扫描入库，可以离开页面' : profileChanged ? '已保存解析方案，请重新扫描以更新文件名识别结果' : '媒体库配置已保存')
+    dialog.value = false; draft.password = ''; ElMessage.success(importing ? '歌曲来源已保存，接下来上传资料包并核对路径' : startScan ? '已保存，后台将自动扫描入库，可以离开页面' : profileChanged ? '已保存解析方案，请重新扫描以更新文件名识别结果' : '歌曲来源配置已保存')
     if (saved && importing) { metadataImportFile.value = file; metadataSource.value = saved }
     await load(false, !importing)
   } catch (e) { formError.value = e instanceof Error ? e.message : '保存失败' }
@@ -344,9 +344,9 @@ async function reloadMetadataSource(importJobId?: string) {
 }
 async function remove(item: MediaSource) {
   try {
-    await ElMessageBox.confirm(`移除“${item.name}”的媒体库配置？原始文件不会被删除。`, '移除媒体库', { confirmButtonText: '移除', cancelButtonText: '取消', type: 'warning' })
+    await ElMessageBox.confirm(`移除“${item.name}”的歌曲来源配置？原始文件不会被删除。`, '移除歌曲来源', { confirmButtonText: '移除', cancelButtonText: '取消', type: 'warning' })
   } catch { return }
-  try { await media.remove(item.id); ElMessage.success('已移除媒体库配置'); await load() }
+  try { await media.remove(item.id); ElMessage.success('已移除歌曲来源配置'); await load() }
   catch (e) { error.value = e instanceof Error ? e.message : '移除失败' }
 }
 watch(() => route.query.source, id => { if (typeof id === 'string') void load() })
@@ -375,7 +375,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
       </template>
     </PageHeader>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon class="media-error"><ElButton text @click="load()">重试</ElButton></ElAlert>
-    <section v-loading="loading" class="source-cards" aria-label="媒体库">
+    <section v-loading="loading" class="source-cards" aria-label="歌曲来源">
       <ElEmpty v-if="loaded && !items.length && !error" description="添加本地目录或 WebDAV，开始整理你的歌曲。"><ElButton type="primary" @click="open('LOCAL')">添加第一个目录</ElButton></ElEmpty>
       <MediaSourceCard
         v-for="row in items" :key="row.id" :source="row"
@@ -390,7 +390,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
     </section>
     <details class="media-notes"><summary>扫描与媒体说明</summary><p class="feature-note">本地目录优先读取音频与视频内嵌标签，缺失信息用文件名补充；WebDAV 可启用后台内嵌元数据提取，同路径复用缓存。扫描不会修改原文件，不代表已验证可播放。</p></details>
     <WebDavMetadataDialog v-if="metadataSource" :source="metadataSource" :initial-import-file="metadataImportFile" :import-job-id="typeof route.query.import === 'string' ? route.query.import : undefined" @uploading="metadataUploading = $event" @file-consumed="metadataImportFile = undefined" @songs="showSongs(metadataSource!); metadataSource = null" @close="metadataSource = null; metadataImportFile = undefined" @updated="reloadMetadataSource" />
-    <ElDialog v-model="dialog" :title="editorPanel === 'source' ? (editing ? '编辑媒体库' : '添加媒体') : `${editing?.name || draft.name || '新来源'} · ${editorPanel === 'profiles' ? '文件名识别' : '自定义规则'}`" :width="editorPanel !== 'source' ? 'min(1120px, calc(100vw - 24px))' : editing ? 'min(560px, calc(100vw - 24px))' : 'min(1080px, calc(100vw - 24px))'" class="media-dialog" :class="{ 'source-workbench': editorPanel !== 'source', 'source-wizard-dialog': editorPanel === 'source' && !editing }" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving" :before-close="closeSource" @closed="closed">
+    <ElDialog v-model="dialog" :title="editorPanel === 'source' ? (editing ? '编辑歌曲来源' : '添加歌曲来源') : `${editing?.name || draft.name || '新来源'} · ${editorPanel === 'profiles' ? '文件名识别' : '自定义规则'}`" :width="editorPanel !== 'source' ? 'min(1120px, calc(100vw - 24px))' : editing ? 'min(560px, calc(100vw - 24px))' : 'min(1080px, calc(100vw - 24px))'" class="media-dialog" :class="{ 'source-workbench': editorPanel !== 'source', 'source-wizard-dialog': editorPanel === 'source' && !editing }" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving" :before-close="closeSource" @closed="closed">
       <template v-if="editorPanel !== 'source'">
         <div class="source-workbench-context"><ElButton ref="editorBack" @click="editorPanel === 'rules' ? returnToProfiles() : returnToSource()">{{ editorPanel === 'rules' ? '← 返回识别方案' : '← 返回来源设置' }}</ElButton><p>来源草稿已保留，选好方案后再保存来源。</p></div>
         <FilenameProfilesView v-if="editorPanel === 'profiles'" ref="workbench" embedded :profile-id="workbenchProfileId" @use-profile="returnToSource" @rules="showRules" />
@@ -410,20 +410,20 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
           <ElFormItem :label="editing?.passwordConfigured ? '密码 / 应用密码（留空保留）' : '密码 / 应用密码（可选）'"><ElInput v-model="draft.password" type="password" show-password autocomplete="new-password" maxlength="1024" :disabled="saving || clearPassword" /></ElFormItem>
           <ElCheckbox v-if="editing?.passwordConfigured" v-model="clearPassword" :disabled="saving" @change="draft.password = ''">清除已保存密码</ElCheckbox>
           <p class="profile-help">凭据仅加密保存在服务端，不会回显。建议使用 HTTPS。OpenList 地址填写 /dav/ 加挂载目录，账号需开启 WebDAV 读取权限。</p>
-          <p v-if="editing" class="profile-help">修改地址或账号时需重新填写密码或明确清除。迁移媒体目录并保留已整理资料，请从“分享资料 → 高级选项 → 重新绑定自己的媒体目录”操作。</p>
+          <p v-if="editing" class="profile-help">修改地址或账号时需重新填写密码或明确清除。迁移媒体目录并保留已整理资料，请从“资料管理 → 高级选项 → 重新绑定自己的媒体目录”操作。</p>
         </template>
         <ElFormItem label="名称（可选）" for="source-name" class="source-name"><ElInput id="source-name" v-model="draft.name" :placeholder="draft.type === 'LOCAL' ? '留空使用文件夹名称' : '留空使用 WebDAV 歌曲'" maxlength="100" :disabled="saving" /></ElFormItem>
         </section>
         <section v-show="editing || sourceStep === 2" data-source-step="2">
         <div v-if="draft.type === 'LOCAL' && !editing" class="source-local-method"><strong>直接扫描本地目录</strong><p>优先读取文件内的歌曲信息，缺失时从文件名补充。无需资料包。</p></div>
-        <ElFormItem v-if="draft.type === 'LOCAL'"><ElCheckbox v-model="draft.useForLxDownloads" :disabled="saving">用于保存洛雪下载</ElCheckbox><p class="profile-help">仅能指定一个本地媒体库。启用后检查实际写入权限，下载完成自动加入曲库。有未完成任务时不能修改保存位置。</p></ElFormItem>
+        <ElFormItem v-if="draft.type === 'LOCAL'"><ElCheckbox v-model="draft.useForLxDownloads" :disabled="saving">将下载的歌曲保存到此目录</ElCheckbox><p class="profile-help">仅能指定一个本地歌曲来源作为下载保存位置。启用后检查实际写入权限，下载完成自动加入曲库。有未完成任务时不能修改保存位置。</p></ElFormItem>
         <ElFormItem v-if="!editing && draft.type === 'WEBDAV'" label="入库方式（资料包可选）" class="source-import">
           <div class="source-methods">
             <ElButton class="source-method-direct" :class="{ selected: !importMode }" :aria-pressed="!importMode" :disabled="saving" @click="directScan"><strong>直接扫描</strong><span>使用目录与文件名整理歌曲，无需资料包</span></ElButton>
             <div class="source-method-package" :class="{ selected: importMode }"><ElCheckbox v-model="importMode" :disabled="saving" @change="changeImportMode">从已导出的资料包入库</ElCheckbox><p>可选 · 复用已经整理好的资料</p></div>
           </div>
           <template v-if="importMode">
-            <div class="source-package"><label class="package-choice" :class="{ disabled: saving }">{{ importFile ? '更换资料包' : '选择资料包' }}<input type="file" accept=".zip,application/zip" aria-label="新媒体库资料包" :disabled="saving" @change="chooseImportFile"></label><span v-if="importFile" class="package-name">{{ importFile.name }}</span><ElButton v-if="importFile" text :disabled="saving" @click="directScan">移除资料包</ElButton><ElButton v-else text :disabled="saving" @click="directScan">改为直接扫描</ElButton></div>
+            <div class="source-package"><label class="package-choice" :class="{ disabled: saving }">{{ importFile ? '更换资料包' : '选择资料包' }}<input type="file" accept=".zip,application/zip" aria-label="新歌曲来源资料包" :disabled="saving" @change="chooseImportFile"></label><span v-if="importFile" class="package-name">{{ importFile.name }}</span><ElButton v-if="importFile" text :disabled="saving" @click="directScan">移除资料包</ElButton><ElButton v-else text :disabled="saving" @click="directScan">改为直接扫描</ElButton></div>
             <p class="profile-help">填写自己的 WebDAV 媒体根目录，选择导出的完整 ZIP。保存后上传资料包，核对路径并确认导入；不会自动扫描或读取媒体内容。资料保存后只核验目录和文件大小。</p>
           </template>
           <template v-else>
@@ -436,12 +436,12 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
             <option v-for="profile in profileWorkspace?.profiles ?? []" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
           </select><ElButton :disabled="saving || profilesLoading || !!profilesError || !selectedProfile" @click="showRecognition()">试验与调整</ElButton></div>
           <p v-if="selectedProfile" class="profile-help">{{ enabledEntries.length }} 条启用规则，按方案中的顺序匹配，第一条完整命中生效。</p>
-          <p v-if="selectedProfile && !enabledEntries.length" class="profile-help">此方案没有启用规则，扫描结果会标记为需复核，不会使用其他方案兜底。</p>
+          <p v-if="selectedProfile && !enabledEntries.length" class="profile-help">此方案没有启用规则，扫描结果会标记为文件名识别不完整，不会使用其他方案补充。</p>
           <p v-if="!profilesLoading && !profilesError && !selectedProfile" class="profile-help">所选方案已不可用，请重新选择。</p>
           <p class="profile-help">{{ draft.type === 'LOCAL' ? '优先读取文件内的歌曲信息，缺失时按此方案从文件名补充。' : '扫描时按此方案从文件名提取歌名和歌手。' }}可在此试验命名格式，或进入高级配置编写自定义规则。</p>
         </ElFormItem>
         <details :open="advanced" class="source-advanced" @toggle="advanced = ($event.target as HTMLDetailsElement).open"><summary>更多设置 <span>定时扫描</span></summary>
-        <ElFormItem label="定时扫描"><ElCheckbox v-model="draft.scanEnabled" :disabled="saving || (!editing && importMode)">启用定时扫描</ElCheckbox><p v-if="!editing && importMode" class="profile-help">导入资料时关闭定时扫描。导入完成后，可在编辑媒体库时开启。</p></ElFormItem>
+        <ElFormItem label="定时扫描"><ElCheckbox v-model="draft.scanEnabled" :disabled="saving || (!editing && importMode)">启用定时扫描</ElCheckbox><p v-if="!editing && importMode" class="profile-help">导入资料时关闭定时扫描。导入完成后，可在编辑歌曲来源时开启。</p></ElFormItem>
         <ElFormItem v-if="draft.scanEnabled" label="Cron 表达式" required><ElInput v-model="draft.scanCron" aria-label="扫描 Cron 表达式" placeholder="0 3 * * *" maxlength="120" :disabled="saving" /><p class="profile-help">标准五段：分 时 日 月 周。例：0 3 * * * 每天 03:00；*/30 * * * * 每半小时。时区：Asia/Shanghai。同一来源扫描中跳过，停机期间不逐次补跑。</p></ElFormItem>
         </details>
         </section>
@@ -454,7 +454,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
             <div><dt>文件名识别</dt><dd>{{ selectedProfile?.name || '方案不可用' }}</dd></div>
             <div><dt>文件内信息</dt><dd>{{ draft.type === 'LOCAL' ? '优先读取，缺失时用文件名补充' : importingSource ? '复用资料包，不自动读取媒体内容' : draft.autoExtractEmbedded ? '扫描后在后台按需读取' : '暂不开启，优先使用文件名' }}</dd></div>
             <div><dt>定时扫描</dt><dd>{{ !importingSource && draft.scanEnabled ? draft.scanCron : '未开启' }}<span v-if="!importingSource && draft.scanEnabled" class="source-confirm-detail">时区 Asia/Shanghai；仅保存也会保留此定时设置。</span></dd></div>
-            <div v-if="draft.type === 'LOCAL' && draft.useForLxDownloads"><dt>洛雪下载</dt><dd>使用此目录保存新下载</dd></div>
+            <div v-if="draft.type === 'LOCAL' && draft.useForLxDownloads"><dt>下载保存位置</dt><dd>使用此目录保存新下载</dd></div>
           </dl>
           <p class="source-confirm-note">{{ importingSource ? '保存后上传资料包，接着核对路径并确认导入。不会自动扫描；路径不匹配或上传失败时可继续处理，无需重复新建来源。' : '保存并扫描会在后台整理歌曲，完成后可在来源中查看结果。仅保存不会立即扫描。扫描不会修改原始文件，目录可访问也不代表媒体可播放。' }}</p>
         </section>

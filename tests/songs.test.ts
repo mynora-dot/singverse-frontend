@@ -196,16 +196,28 @@ describe('歌曲管理集中展示扫描数据及详情', () => {
     expect(songs.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'REVIEW' }))
   })
 
+  it('文件名不完整筛选与资料已确认分别计数，不要求重复审核已确认身份', async () => {
+    const row = pending()
+    row.metadata = { track: { provider: null, externalId: null, title: '已确认歌名', artists: ['已确认歌手'], album: null, releaseDate: null, durationMs: null, aliases: [], coverUrl: null, availability: 'UNKNOWN', fetchedAt: '' }, fields: ['title', 'artists'], appliedAt: '', stale: false, origins: {} }
+    vi.mocked(songs.list).mockResolvedValue(result([row]))
+    await router.replace('/library/songs?status=REVIEW'); await flushPromises()
+    expect(wrapper.get('.page-summary').text()).toContain('1 文件名识别不完整')
+    expect(wrapper.get('.page-summary').text()).toContain('1 资料已确认')
+    expect(wrapper.get('.filename-review-note').text()).toContain('无需重复核对')
+    expect(wrapper.get('.song-card').text()).toContain('原文件名识别不完整 · 资料已确认')
+    expect(wrapper.get('.song-card-actions button').text()).toBe('编辑')
+  })
+
   it('更多操作按需展开且高级资料保留歌曲搜索、来源和页码', async () => {
     await router.replace('/library/songs?lens=songs&search=晴天&sourceId=source-1&page=2'); await flushPromises()
     const before = vi.mocked(songs.list).mock.calls.length
     const toggle = wrapper.get('button[aria-label="歌曲更多操作"]')
     expect(toggle.attributes('aria-expanded')).toBe('false')
-    expect(wrapper.find('.page-actions').text()).not.toContain('整理元数据')
+    expect(wrapper.find('.page-actions').text()).not.toContain('匹配歌曲资料')
     await toggle.trigger('click'); await flushPromises()
     await vi.waitFor(() => expect(toggle.attributes('aria-expanded')).toBe('true'))
     expect(songs.list).toHaveBeenCalledTimes(before)
-    const advanced = [...document.querySelectorAll('.song-more-actions button')].find(el => el.textContent?.includes('歌曲资料')) as HTMLButtonElement
+    const advanced = [...document.querySelectorAll('.song-more-actions button')].find(el => el.textContent?.includes('歌曲资料 · 高级')) as HTMLButtonElement
     expect(advanced).toBeDefined()
     advanced.click(); await flushPromises()
     expect(router.currentRoute.value.query).toEqual({ lens: 'formal', search: '晴天', sourceId: 'source-1', page: '2' })
@@ -424,7 +436,7 @@ describe('歌曲管理集中展示扫描数据及详情', () => {
   it('封面浏览使用有效身份，切换列表不请求数据，搜索由服务端分页完成', async () => {
     expect(wrapper.get('[aria-label="封面浏览"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('.song-card-title').text()).toContain('晴天')
-    expect(wrapper.find('.song-card').text()).not.toContain('周杰伦-晴天.mp4')
+    expect(wrapper.find('.song-card .card-file').text()).toContain('周杰伦-晴天.mp4')
     const before = vi.mocked(songs.list).mock.calls.length
     await wrapper.get('[aria-label="列表整理"]').trigger('click')
     expect(wrapper.find('.library-table').exists()).toBe(true)
@@ -619,4 +631,26 @@ describe('歌曲明细表信息与交互', () => {
     for (const button of w.findAll('.table-actions button')) await button.trigger('click')
     expect(w.emitted('play')).toEqual([[row]]); expect(w.emitted('review')).toEqual([[row]]); expect(w.emitted('detail')).toEqual([[row]]); w.unmount()
   })
+})
+
+it('同名歌曲卡片直接展示专辑年份版本及文件，重名来源展示各自目录', () => {
+  const row = song()
+  row.result.versionType = 'LIVE'
+  row.metadata = { track: { provider: null, externalId: null, title: '晴天', artists: ['周杰伦'], album: '演唱会', releaseDate: '2004-11-01', durationMs: 245000, aliases: [], coverUrl: null, availability: 'UNKNOWN', fetchedAt: '' }, fields: ['title', 'artists', 'album', 'releaseDate', 'durationMs'], appliedAt: '', stale: false, origins: {} }
+  const w = mount(SongCard, { props: { song: row, sourceLabel: 'WebDAV 歌曲 · ktv/live' } })
+  expect(w.get('.card-version').text()).toBe('演唱会 · 2004 · 现场 · MP4')
+  expect(w.get('.card-file').text()).toBe('周杰伦-晴天.mp4')
+  expect(w.get('.card-source').text()).toBe('WebDAV 歌曲 · ktv/live')
+  expect(w.get('.cover-duration').text()).toBe('4:05')
+  expect(w.get('.cover-duration').attributes('title')).toBe('资料参考时长')
+  w.unmount()
+})
+
+it('卡片优先显示文件实际时长并明确区分平台参考时长', () => {
+  const row=song()
+  row.metadata={ track: { provider: null, externalId: null, title: '晴天', artists: ['周杰伦'], album: null, releaseDate: null, durationMs: 310000, aliases: [], coverUrl: null, availability: 'UNKNOWN', fetchedAt: '' }, fields: ['durationMs'], appliedAt: '', stale: false, origins: {}, media:{durationMs:304000} }
+  const w=mount(SongCard,{props:{song:row}})
+  expect(w.get('.cover-duration').text()).toBe('5:04')
+  expect(w.get('.cover-duration').attributes('title')).toBe('文件实际时长')
+  w.unmount()
 })

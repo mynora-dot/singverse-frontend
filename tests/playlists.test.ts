@@ -123,3 +123,18 @@ it('AI 配置校验阻止无效推荐首数，返回歌曲保留手动编辑', a
   expect(wrapper!.get('input[aria-label="歌单名称"]').element).toHaveProperty('value','自己起的名称')
   expect(wrapper!.get('.editor-draft').text()).toBe('尚未保存')
 })
+
+
+it('点击歌单卡片只浏览详情和录音版本，明确编辑后才进入表单', async () => {
+  vi.mocked(playlists.get).mockResolvedValue({ ...playlist, songs: [{ ...song, album: '慈善演唱会', releaseDate: '2003-01-01', durationMs: 264000, version: 'LIVE', sourceName: 'WebDAV 歌曲', relativePath: '现场/一场游戏一场梦.mkv' }] })
+  await page(); await wrapper!.get('.card-open').trigger('click'); await flushPromises()
+  expect(wrapper!.find('[aria-label="歌单名称"]').exists()).toBe(false)
+  expect(wrapper!.get('[aria-label="歌单歌曲"]').text()).toContain('慈善演唱会 · 2003 · 现场 · 4:24')
+  expect(wrapper!.get('[aria-label="歌单歌曲"]').text()).toContain('现场/一场游戏一场梦.mkv')
+  expect(playlists.save).not.toHaveBeenCalled()
+  const detail=wrapper!.findComponent({ name: 'PlaylistDetailDialog' })
+  detail.vm.$emit('edit'); await flushPromises()
+  expect(wrapper!.get('input[aria-label="歌单名称"]').element).toHaveProperty('value', playlist.name)
+  expect(wrapper!.get('.editor-song-list').text()).toContain('慈善演唱会 · 2003 · 现场 · 4:24')
+  expect(playlists.save).not.toHaveBeenCalled()
+})

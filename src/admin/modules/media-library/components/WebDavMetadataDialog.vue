@@ -121,7 +121,7 @@ async function updated(importJobId?: string) {
 }
 </script>
 <template>
-  <ElDialog :model-value="!!source" :title="source ? source.name + ' · 分享资料' : '分享资料'" width="min(640px, calc(100vw - 24px))" class="library-workflow-dialog" :close-on-click-modal="false" :before-close="beforeClose" @update:model-value="value => { if (!value) close() }">
+  <ElDialog :model-value="!!source" :title="source ? source.name + ' · 资料管理' : '资料管理'" width="min(640px, calc(100vw - 24px))" class="library-workflow-dialog" :close-on-click-modal="false" :before-close="beforeClose" @update:model-value="value => { if (!value) close() }">
     <div class="workflow-content">
     <ElAlert v-if="error" :title="error" type="error" :closable="true" @close="error = ''" />
     <section class="library-overview">

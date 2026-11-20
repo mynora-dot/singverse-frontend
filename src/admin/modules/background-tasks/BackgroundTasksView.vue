@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Clock, Document, FolderOpened, Headset, InfoFill
 import PageHeader from '../../shared/ui/PageHeader.vue'
 import TaskProgressOverview from './TaskProgressOverview.vue'
 import { backgroundTasks, type BackgroundTask, type ChildPage, type ItemPage, type TaskPage } from './api'
-import { activeTask, childTaskCount, compactTaskName, countNames, date, frameProgress, isScan, itemStatusNames, progressText, skipReasons, stageName, statistics, statusNames, taskHighlights, tone, typeNames } from './presentation'
+import { activeTask, childTaskCount, compactTaskName, countNames, date, failureGuidance, failureText, frameProgress, isScan, itemStatusNames, progressStatus, progressText, skipReasons, stageName, statistics, statusNames, taskFailure, taskHighlights, tone, typeNames, unsuccessful } from './presentation'
 
 const route = useRoute(), router = useRouter()
 const taskId = computed(() => typeof route.params.id === 'string' ? route.params.id : '')
@@ -17,6 +17,7 @@ const filter = computed(() => ({ view: ['HISTORY', 'ALL'].includes(value('view')
 const keyword = ref(filter.value.q)
 const result = ref<TaskPage>(), task = ref<BackgroundTask>(), items = ref<ItemPage>(), children = ref<ChildPage>()
 const error = ref(''), loading = ref(false), observed = ref('')
+const failureReason = ref(''), failureSong = ref('')
 const detailStats = computed(() => task.value ? statistics(task.value) : [])
 const skipped = computed(() => task.value?.statistics.skippedByReason as Record<string, number> | undefined)
 const parentBatch = computed(() => value('fromBatch') || (!task.value?.isBatch ? task.value?.batches[0]?.id : '') || '')
@@ -42,6 +43,20 @@ async function refresh() {
       const entries = native ? await backgroundTasks.items(id, pageNumber('itemPage'), value('itemStatus'))
         : await backgroundTasks.children(id, pageNumber('itemPage'), value('itemStatus'), value('itemType'))
       if (!valid(turn, path)) return
+      let failedItems = native ? (entries as ItemPage).items : []
+      let failedChildren = native ? [] : (entries as ChildPage).items
+      if (unsuccessful(detail.status) && (!detail.error.trim() || /^[A-Z_]+$/.test(detail.error.trim())) && !taskFailure({ ...detail, error: '', execution: {} }, failedItems, failedChildren)) {
+        // Page/filter changes must not make the overview lose a cause recorded on another page.
+        const counts = entries.counts
+        const failedStatus = ['FAILED', 'INTERRUPTED', 'BLOCKED'].find(status => (counts[status] || 0) > 0) || 'FAILED'
+        try {
+          if (native) failedItems = (await backgroundTasks.items(id, 0, failedStatus)).items
+          else failedChildren = (await backgroundTasks.children(id, 0, failedStatus, '')).items
+        } catch { /* The main detail remains usable; the related business page is still available. */ }
+        if (!valid(turn, path)) return
+      }
+      failureReason.value = taskFailure(detail, failedItems, failedChildren)
+      failureSong.value = failedItems.find(item => unsuccessful(item.status))?.title || failedChildren.find(child => unsuccessful(child.status))?.subjectName || ''
       task.value = detail; items.value = native ? entries as ItemPage : undefined
       children.value = native ? undefined : entries as ChildPage; observed.value = detail.observedAt
       const last = Math.max(0, Math.ceil(entries.totalElements / 20) - 1)
@@ -82,7 +97,7 @@ function back() {
 function visibility() { generation++; clearTimeout(timer); loading.value = false; if (document.visibilityState !== 'hidden') void refresh() }
 watch(() => route.fullPath, (_next, previous) => {
   generation++; clearTimeout(timer); keyword.value = filter.value.q
-  if (previous?.split('?')[0] !== route.path) { task.value = undefined; items.value = undefined; children.value = undefined; result.value = undefined; observed.value = '' }
+  if (previous?.split('?')[0] !== route.path) { task.value = undefined; items.value = undefined; children.value = undefined; result.value = undefined; observed.value = ''; failureReason.value = ''; failureSong.value = '' }
   error.value = ''; void refresh()
 })
 onMounted(() => { document.addEventListener('visibilitychange', visibility); void refresh() })
@@ -125,8 +140,8 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer); docum
           <tbody><tr v-for="entry in result.items" :key="entry.id">
             <td class="task-identity"><div class="task-identity-content"><span class="task-type-icon"><component :is="isScan(entry) ? FolderOpened : entry.type.startsWith('AUDIO') ? Headset : Document" aria-hidden="true" /></span><div><button class="task-name" :title="entry.name" @click="open(entry.id)">{{ compactTaskName(entry) }}</button><span class="task-subject">{{ entry.subjectName || '全部或选定范围' }}</span><span v-if="!entry.name.includes(typeNames[entry.type] || entry.type)" class="task-type-caption">{{ typeNames[entry.type] || entry.type }}</span></div></div></td>
             <td class="task-list-status"><ElTag :type="tone(entry.status)" class="task-status" :class="{ 'is-waiting': entry.status === 'QUEUED' }" size="small"><Clock v-if="entry.status === 'QUEUED'" aria-hidden="true" />{{ statusNames[entry.status] || entry.status }}</ElTag></td>
-            <td class="task-progress"><strong>{{ stageName(entry.stage) }}</strong><ElProgress v-if="entry.progress.percent !== null" :percentage="Math.floor(entry.progress.percent)" :stroke-width="4" :show-text="false" />
-              <div class="task-progress-meta"><span v-if="isScan(entry) && entry.operation.status === 'COMPLETED'" class="task-success">扫描完成</span><span v-if="progressText(entry) !== '查看处理结果'">{{ progressText(entry) }}</span><span v-for="highlight in taskHighlights(entry)" :key="highlight.key" :class="{ 'task-danger': highlight.key === 'failed', 'task-warning': highlight.key === 'review' || highlight.key === 'uncertain' }">{{ highlight.value }} 项{{ highlight.label }}</span><span v-if="['FAILED', 'INTERRUPTED'].includes(entry.status)">{{ entry.error || '失败原因未记录' }}</span></div>
+            <td class="task-progress"><strong>{{ stageName(entry.stage) }}</strong><ElProgress v-if="entry.progress.percent !== null" :percentage="Math.floor(entry.progress.percent)" :status="progressStatus(entry.status)" :stroke-width="4" :show-text="false" />
+              <div class="task-progress-meta"><span v-if="isScan(entry) && entry.operation.status === 'COMPLETED'" class="task-success">扫描完成</span><span v-if="progressText(entry) !== '查看处理结果'">{{ progressText(entry) }}</span><span v-for="highlight in taskHighlights(entry)" :key="highlight.key" :class="{ 'task-danger': highlight.key === 'failed', 'task-warning': highlight.key === 'review' || highlight.key === 'uncertain' }">{{ highlight.value }} 项{{ highlight.label }}</span><span v-if="unsuccessful(entry.status)">{{ failureText(entry.error || entry.execution?.reason || '') || '任务未全部完成，打开详情查看具体原因' }}</span></div>
               <small v-if="frameProgress(entry.execution)">{{ frameProgress(entry.execution) }}</small>
             </td>
             <td class="task-created"><time :datetime="entry.createdAt || undefined">{{ date(entry.createdAt) }}</time></td>
@@ -148,8 +163,11 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer); docum
         <section class="sv-glass task-panel task-overview" aria-label="任务概览">
           <p v-if="task.batchKind === 'LEGACY'" class="task-muted">未记录原始批次：这些历史任务按来源和类型归档，未推断扫描归属。</p>
           <p v-if="!task.relatedAvailable" class="task-muted">关联对象或原业务任务已移除或过期，任务记录仍保留。</p>
-          <ElAlert v-if="task.error" :title="task.error" :type="['FAILED', 'INTERRUPTED'].includes(task.status) ? 'error' : 'warning'" show-icon :closable="false" class="task-error" />
-          <div v-else-if="['FAILED', 'INTERRUPTED'].includes(task.status) && !task.execution.reason" class="task-failure-note"><strong>{{ task.status === 'INTERRUPTED' ? '中断原因未记录' : '失败原因未记录' }}</strong><p>当前任务记录未提供具体错误信息。</p></div>
+          <ElAlert v-if="failureReason || unsuccessful(task.status)" :title="failureReason || '本次处理未全部完成'" :type="['FAILED', 'INTERRUPTED'].includes(task.status) ? 'error' : 'warning'" show-icon :closable="false" class="task-error">
+            <p v-if="unsuccessful(task.status)">{{ failureGuidance(task, failureReason) }}</p>
+            <ElButton v-if="task.type === 'LX_DOWNLOAD' && unsuccessful(task.status)" text type="primary" @click="router.push({ path: '/library/downloads', query: { tab: 'search', q: failureSong || undefined } })">重新搜索歌曲</ElButton>
+            <ElButton v-if="task.relatedAvailable && unsuccessful(task.status)" text type="primary" @click="router.push(task.relatedPath)">{{ task.type === 'LX_DOWNLOAD' ? '查看下载记录' : '前往处理' }}</ElButton>
+          </ElAlert>
           <TaskProgressOverview :task="task" />
           <details class="task-extra"><summary>编号、处理范围与时间</summary><dl class="task-metadata"><div><dt>任务编号</dt><dd class="task-number">{{ task.id }}</dd></div><div><dt>业务编号</dt><dd class="task-number">{{ task.businessId || '未记录' }}</dd></div><div><dt>任务类型</dt><dd>{{ typeNames[task.type] || task.type }}</dd></div><div><dt>处理范围</dt><dd>{{ task.subjectName || '全部或选定范围' }}</dd></div><div><dt>创建时间</dt><dd>{{ date(task.createdAt) }}</dd></div><div><dt>开始时间</dt><dd>{{ date(task.startedAt) }}</dd></div><div><dt>结束时间</dt><dd>{{ date(task.finishedAt) }}</dd></div><div><dt>最近变化</dt><dd>{{ date(task.updatedAt) }}</dd></div></dl></details>
           <p v-if="task.timeIncomplete" class="task-muted">这条历史任务的部分时间未记录，无法还原准确耗时。</p>
@@ -157,7 +175,7 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer); docum
         <aside v-if="task.isBatch" class="sv-glass task-panel task-count-summary" aria-label="子任务统计"><h2>子任务统计</h2><dl><div v-for="(label, key) in countNames" :key="key" :class="{ 'task-danger': key === 'failed' && task.childrenCounts[key], 'task-warning': (key === 'review' || key === 'uncertain') && task.childrenCounts[key] }"><dt>{{ label }} </dt> <dd>{{ task.childrenCounts[key] || 0 }}</dd></div></dl><p class="task-count-note">子任务状态与扫描结果分别统计。</p></aside>
         <section v-if="task.detailMode === 'ITEMS'" class="sv-glass task-panel" aria-label="结果明细">
           <div class="task-detail-heading"><h2>任务明细</h2><ElSelect :model-value="value('itemStatus')" aria-label="明细状态" placeholder="全部结果" @change="change({ itemStatus: $event || undefined, itemPage: undefined })"><ElOption label="全部结果" value="" /><ElOption v-for="(count, status) in items?.counts" :key="status" :label="(itemStatusNames[status] || status) + '（' + count + '）'" :value="status" /></ElSelect></div>
-          <div v-if="items?.items.length" class="task-table-wrap"><table class="task-table task-data-table"><thead><tr><th scope="col">歌曲 / 条目</th><th scope="col">状态</th><th scope="col">说明</th></tr></thead><tbody><tr v-for="item in items.items" :key="item.id"><td data-label="歌曲 / 条目">{{ item.title || item.songId || item.id }}</td><td data-label="状态">{{ ['PROBING', 'PROCESSING'].includes(item.status) && item.execution?.jobState === 'QUEUED' ? '排队中' : itemStatusNames[item.status] || item.status }}</td><td data-label="说明">{{ item.message || (item.execution?.stage ? stageName(item.execution.stage) : '—') }}<small v-if="frameProgress(item.execution)">{{ frameProgress(item.execution) }}</small></td></tr></tbody></table></div>
+          <div v-if="items?.items.length" class="task-table-wrap"><table class="task-table task-data-table"><thead><tr><th scope="col">歌曲 / 条目</th><th scope="col">状态</th><th scope="col">说明</th></tr></thead><tbody><tr v-for="item in items.items" :key="item.id"><td data-label="歌曲 / 条目">{{ item.title || item.songId || item.id }}</td><td data-label="状态">{{ ['PROBING', 'PROCESSING'].includes(item.status) && item.execution?.jobState === 'QUEUED' ? '排队中' : itemStatusNames[item.status] || item.status }}</td><td data-label="说明">{{ failureText(item.message || '') || (item.execution?.stage ? stageName(item.execution.stage) : '—') }}<small v-if="frameProgress(item.execution)">{{ frameProgress(item.execution) }}</small></td></tr></tbody></table></div>
           <ElEmpty v-if="items && !items.items.length" description="暂无符合条件的明细" :image-size="48" />
           <ElPagination v-if="items && items.totalElements > 20" :current-page="pageNumber('itemPage') + 1" :page-size="20" :total="items.totalElements" layout="total, prev, pager, next" @current-change="change({ itemPage: $event === 1 ? undefined : String($event - 1) })" />
         </section>
@@ -169,7 +187,7 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer); docum
           <div v-if="children?.items.length" class="task-table-wrap"><table class="task-table task-data-table"><thead><tr><th scope="col">具体任务 / 歌曲</th><th scope="col">状态</th><th scope="col">当前阶段与进度</th><th scope="col">说明</th></tr></thead><tbody><tr v-for="child in children.items" :key="child.id">
             <td data-label="具体任务 / 歌曲"><button v-if="child.id !== taskId" class="task-name" @click="openChild(child.id)">{{ child.name }}</button><span v-else>{{ child.name }}</span><small>{{ child.subjectName }}</small><small class="task-number">{{ child.businessId }}</small></td>
             <td data-label="状态"><ElTag :type="tone(child.status)" size="small">{{ statusNames[child.status] || child.status }}</ElTag><small v-if="child.execution.resultState === 'UNKNOWN'">识别不确定</small></td>
-            <td data-label="当前阶段与进度"><span>{{ stageName(child.stage) }}</span><small>{{ progressText(child) }}</small><small v-if="frameProgress(child.execution)">{{ frameProgress(child.execution) }}</small></td><td data-label="说明">{{ child.error || '—' }}</td>
+            <td data-label="当前阶段与进度"><span>{{ stageName(child.stage) }}</span><small>{{ progressText(child) }}</small><small v-if="frameProgress(child.execution)">{{ frameProgress(child.execution) }}</small></td><td data-label="说明">{{ failureText(child.error || child.execution?.reason || '') || '—' }}</td>
           </tr></tbody></table></div>
           <div v-else class="task-entries-empty"><Document aria-hidden="true" /><div><strong>{{ value('itemStatus') || value('itemType') ? '暂无符合条件的任务' : '尚无子任务记录' }}</strong><p>{{ value('itemStatus') || value('itemType') ? '试试其他类型或状态。' : childTaskCount(task) ? '当前没有可展示的具体任务明细，请稍后刷新。' : activeTask(task.status) ? '等待扫描登记处理范围或创建后续任务，创建后将在这里显示。' : '本批次未创建后续任务；扫描不记录逐文件日志。' }}</p></div></div>
           <ElPagination v-if="children && children.totalElements > 20" :current-page="pageNumber('itemPage') + 1" :page-size="20" :total="children.totalElements" layout="total, prev, pager, next" @current-change="change({ itemPage: $event === 1 ? undefined : String($event - 1) })" />

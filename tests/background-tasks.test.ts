@@ -213,6 +213,31 @@ it('清除空结果的筛选时保留历史范围并恢复搜索框', async () =
   expect(backgroundTasks.list).toHaveBeenLastCalledWith({ view: 'HISTORY', type: '', status: '', q: '', page: 0 })
 })
 
+it('失败下载将歌曲明细的403原因展示在概览，并可带歌名重新搜索', async () => {
+  vi.mocked(backgroundTasks.detail).mockResolvedValue(sample({ type: 'LX_DOWNLOAD', name: '歌曲下载 · 1 首', status: 'FAILED', detailMode: 'ITEMS', error: '', relatedPath: '/library/downloads?tab=records&batch=download-batch', progress: { completed: 1, total: 1, percent: 100, unit: 'SONGS' } }))
+  vi.mocked(backgroundTasks.items).mockResolvedValue({ ...emptyItems, totalElements: 1, counts: { FAILED: 1 }, items: [{ id: 'failed', songId: null, title: 'In Dreams', status: 'FAILED', message: '音频下载返回 HTTP 403，请重新解析或更换音源', execution: {} }] })
+  await open('/system/tasks/task-one?view=HISTORY')
+  const overview = wrapper!.get('section[aria-label="任务概览"]')
+  expect(overview.text()).toContain('In Dreams：音频下载返回 HTTP 403')
+  expect(overview.text()).toContain('选择其他平台或版本')
+  expect(wrapper!.text()).not.toContain('失败原因未记录')
+  expect(overview.get('.el-progress').classes()).toContain('is-exception')
+  expect(backgroundTasks.items).toHaveBeenCalledTimes(1)
+  await button('重新搜索歌曲').trigger('click'); await flushPromises()
+  expect(router.currentRoute.value.fullPath).toBe('/library/downloads?tab=search&q=In+Dreams')
+})
+
+it('查看成功明细分页时仍从失败记录读取概览原因，不受当前明细筛选影响', async () => {
+  vi.mocked(backgroundTasks.detail).mockResolvedValue(sample({ type: 'LX_DOWNLOAD', status: 'PARTIAL', detailMode: 'ITEMS', error: '' }))
+  vi.mocked(backgroundTasks.items).mockImplementation(async (_id, page, status) => ({ ...emptyItems, page, totalElements: status === 'FAILED' ? 1 : 25, counts: { SUCCESS: 25, FAILED: 1 }, items: status === 'FAILED' ? [{ id: 'failed', songId: null, title: '失败歌曲', status: 'FAILED', message: '下载地址已过期', execution: {} }] : [{ id: 'success', songId: 'saved', title: '已完成歌曲', status: 'SUCCESS', message: '', execution: {} }] }))
+  await open('/system/tasks/task-one?itemStatus=SUCCESS&itemPage=1')
+  expect(backgroundTasks.items).toHaveBeenCalledWith('task-one', 1, 'SUCCESS')
+  expect(backgroundTasks.items).toHaveBeenCalledWith('task-one', 0, 'FAILED')
+  expect(wrapper!.get('section[aria-label="任务概览"]').text()).toContain('失败歌曲：下载地址已过期')
+  expect(wrapper!.get('section[aria-label="结果明细"]').text()).toContain('已完成歌曲')
+  expect(router.currentRoute.value.query).toEqual({ itemStatus: 'SUCCESS', itemPage: '1' })
+})
+
 it('迟到的子任务响应不会覆盖新批次，明细失败保留结果并五秒重试', async () => {
   let resolve!: (result: Awaited<ReturnType<typeof backgroundTasks.children>>) => void
   vi.mocked(backgroundTasks.children).mockImplementationOnce(() => new Promise(done => { resolve = done }))

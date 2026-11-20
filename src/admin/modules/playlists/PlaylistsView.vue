@@ -12,10 +12,13 @@ import type { MediaSong } from '../media-library/types'
 import { songArtists, songTitle } from '../metadata/utils'
 import SongPicker from '../classification/components/ClassificationSongPicker.vue'
 import PlaylistEditorDialog from './components/PlaylistEditorDialog.vue'
+import PlaylistDetailDialog from './components/PlaylistDetailDialog.vue'
+import { confirmedField } from '../song-management/presentation'
 
 const coverFailures = ref(new Set<string>())
 const items = ref<Playlist[]>([]), query = ref(''), sort = ref('UPDATED_DESC')
 const page = ref(1), total = ref(0), loading = ref(false), busy = ref(false), error = ref('')
+const detail = ref<Playlist | null>(null)
 const open = ref(false), picker = ref(false), current = ref<Playlist | null>(null)
 const songs = ref<Record<string, Song>>({}), models = ref<AiService[]>([])
 const proposal = ref<Draft | null>(null), generating = ref(false)
@@ -60,6 +63,14 @@ function create() {
   Object.assign(form, { requestId: newRequestId(), name: '', description: '', songIds: [], revision: 0 })
   originalForm.value = formValue(); proposal.value = null; undoSnapshot.value = null; error.value = ''; open.value = true
 }
+async function viewPlaylist(id: string) {
+  if (busy.value) return
+  busy.value = true; error.value = ''
+  try { const result = await playlists.get(id); if (active) detail.value = result }
+  catch (e) { failure(e) }
+  finally { if (active) busy.value = false }
+}
+function editDetail() { const id = detail.value?.id; detail.value = null; if (id) void edit(id) }
 async function edit(id: string) {
   if (busy.value) return
   busy.value = true
@@ -117,6 +128,8 @@ function rememberSongs(selected: MediaSong[]) {
     const metadata = song.metadata
     songs.value[song.id] = {
       id: song.id, title: songTitle(song) || '未知歌曲', artists: songArtists(song),
+      album: confirmedField(song, 'album') as string | undefined, releaseDate: confirmedField(song, 'releaseDate') as string | undefined, durationMs: !metadata?.stale && metadata?.media?.durationMs || confirmedField(song, 'durationMs') as number | undefined,
+      version: !metadata?.stale && metadata?.variant?.kind || song.result.versionType, sourceName: song.sourceName, relativePath: song.relativePath,
       coverPath: metadata && !metadata.stale && metadata.fields.includes('cover') && metadata.track.coverUrl ? `/api/v1/metadata/songs/${encodeURIComponent(song.id)}/cover?variant=thumbnail` : undefined,
     }
   })
@@ -167,8 +180,9 @@ onBeforeUnmount(() => { active = false; epoch++; window.removeEventListener('bef
 <p v-if="loading && items.length" role="status">正在刷新歌单…</p>
 <div v-if="loading && !items.length" class="grid" role="status" aria-label="正在读取歌单"><ElSkeleton v-for="index in 4" :key="index" class="playlist-skeleton sv-glass" animated><template #template><ElSkeletonItem variant="image" style="width:100%;height:auto;aspect-ratio:1" /><ElSkeletonItem variant="h3" style="width:60%;margin-top:16px" /><ElSkeletonItem variant="text" style="width:40%;margin-top:12px" /></template></ElSkeleton></div>
 <div v-else-if="!items.length" class="empty"><span><ElIcon><SongPlaceholderIcon /></ElIcon></span><h2>{{query?'没有找到歌单':'为下一次欢聚准备一张歌单'}}</h2><p>手动选歌，或让 AI 根据你的想法从曲库中推荐。</p><ElButton @click="create">创建第一张歌单</ElButton></div>
-<div v-else class="grid"><article v-for="p in items" :key="p.id" class="card sv-glass"><button class="card-open" @click="edit(p.id)"><div class="cover"><img v-if="p.coverPath&&!coverFailures.has(p.id+(p.coverVersion||''))" @error="coverFailures.add(p.id+(p.coverVersion||''))" :src="`${p.coverPath}?v=${encodeURIComponent(p.coverVersion||'')}`" alt=""/><span v-else role="img" aria-label="暂无歌单封面"><ElIcon><SongPlaceholderIcon /></ElIcon></span></div><div class="card-copy"><h2 :title="p.name">{{p.name}}</h2><p>{{p.count}} 首可用歌曲<span v-if="p.missingCount"> · {{p.missingCount}} 首已移除</span></p><small :title="p.description">{{p.description||'打开歌单，选一首想唱的歌'}}</small></div></button><div class="card-actions"><ElButton text @click="edit(p.id)">编辑歌单</ElButton><ElButton text type="danger" :disabled="busy" @click="remove(p)">删除</ElButton></div></article></div>
+<div v-else class="grid"><article v-for="p in items" :key="p.id" class="card sv-glass"><button class="card-open" :aria-label="`查看歌单 ${p.name}`" :disabled="busy" @click="viewPlaylist(p.id)"><div class="cover"><img v-if="p.coverPath&&!coverFailures.has(p.id+(p.coverVersion||''))" @error="coverFailures.add(p.id+(p.coverVersion||''))" :src="`${p.coverPath}?v=${encodeURIComponent(p.coverVersion||'')}`" alt=""/><span v-else role="img" aria-label="暂无歌单封面"><ElIcon><SongPlaceholderIcon /></ElIcon></span></div><div class="card-copy"><h2 :title="p.name">{{p.name}}</h2><p>{{p.count}} 首可用歌曲<span v-if="p.missingCount"> · {{p.missingCount}} 首已移除</span></p><small :title="p.description">{{p.description||'打开歌单，选一首想唱的歌'}}</small></div></button><div class="card-actions"><ElButton text @click="edit(p.id)">编辑歌单</ElButton><ElButton text type="danger" :disabled="busy" @click="remove(p)">删除</ElButton></div></article></div>
 <ElPagination v-if="total" :current-page="page" :total="total" :page-size="12" layout="total, prev, pager, next" @current-change="v=>{page=v;load()}"/>
+<PlaylistDetailDialog :playlist="detail" :busy="busy" @close="detail=null" @edit="editDetail" />
 <PlaylistEditorDialog :model-value="open" :editing="!!current" :form="form" :songs="songs" :generation="generation" :models="models" :proposal="proposal" :busy="busy" :generating="generating" :dirty="dirty" :error="error" :undo-label="undoSnapshot?.label || ''" @close="close" @save="save" @update:form="updateEditor" @update:generation="Object.assign(generation, $event)" @open-picker="picker=true" @move="move" @reorder="reorder" @remove="removeSong" @generate="generate" @dismiss-proposal="proposal=null" @use-proposal="useProposal" @undo="undo" />
 <SongPicker v-if="picker" purpose="playlist" :selected-ids="form.songIds" @close="picker=false" @confirm="choose" @selected-songs="rememberSongs" />
 </section>

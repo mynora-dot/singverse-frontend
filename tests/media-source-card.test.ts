@@ -51,7 +51,7 @@ it('扫描进行时自动展开并支持取消，完成后收起明细仍显示�
   await wrapper.setProps({ task: task('SUCCEEDED') })
   expect(wrapper.get('.source-scan-details').attributes('open')).toBeUndefined()
   expect(wrapper.get('[role="status"]').text()).toBe('扫描完成')
-  expect(wrapper.get('.source-scan-details summary').text()).toContain('1 首需复核')
+  expect(wrapper.get('.source-scan-details summary').text()).toContain('1 首文件名识别不完整')
 })
 
 it('折叠扫描明细时仍直接显示失败原因，避免重复显示同一错误', () => {
@@ -62,10 +62,10 @@ it('折叠扫描明细时仍直接显示失败原因，避免重复显示同一�
   expect(wrapper.get('.scan-error').element.closest('details')).toBeNull()
 })
 
-it('分享资料直接显示，更多菜单移除重复入口并回传正确事件', async () => {
+it('资料管理直接显示，更多菜单移除重复入口并回传正确事件', async () => {
   render()
   const actions = wrapper.get('.source-actions')
-  expect(actions.findAll('button').map(button => button.text())).toEqual(['查看歌曲', '分享资料', ''])
+  expect(actions.findAll('button').map(button => button.text())).toEqual(['查看歌曲', '资料管理', ''])
   await actions.findAll('button')[1]!.trigger('click')
   expect(wrapper.emitted('metadata')).toHaveLength(1)
   await wrapper.get('button[aria-label="WebDAV 歌曲的更多操作"]').trigger('click')

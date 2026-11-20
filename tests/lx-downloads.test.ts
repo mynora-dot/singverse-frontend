@@ -9,6 +9,7 @@ import SourcesDialog from '../src/admin/modules/lx-downloads/SourcesDialog.vue'
 import TrackPicker from '../src/admin/modules/lx-downloads/TrackPicker.vue'
 import { lx, type Batch, type Item, type LxSource, type Status, type Track, type SearchResult } from '../src/admin/modules/lx-downloads/api'
 import { media } from '../src/admin/modules/media-library/api/media'
+import { searchResults } from '../src/admin/modules/lx-downloads/presentation'
 
 vi.mock('../src/admin/modules/lx-downloads/api', async importOriginal => {
   const actual = await importOriginal<typeof import('../src/admin/modules/lx-downloads/api')>()
@@ -36,7 +37,7 @@ beforeEach(async () => {
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; document.body.innerHTML = ''; vi.clearAllMocks(); vi.restoreAllMocks(); vi.useRealTimers() })
 async function page() { wrapper = mount(DownloadsView, { global: { plugins: [router], stubs: { teleport: true, SourcesDialog: true, RecordsPanel: { template: '<div />', methods: { refresh: vi.fn() } } } } }); await flushPromises(); return wrapper }
 const button = (text: string) => wrapper!.findAll('button').find(b => b.text() === text)!
-async function search() { await wrapper!.get('input[aria-label="歌名或歌手"]').setValue('测试'); await wrapper!.get('.search-form').trigger('submit'); await flushPromises() }
+async function search(query = '测试') { await wrapper!.get('input[aria-label="歌名或歌手"]').setValue(query); await wrapper!.get('.search-form').trigger('submit'); await flushPromises() }
 
 it('目录和音源缺失时禁用找歌，配置入口保持可用', async () => {
   vi.mocked(lx.status).mockResolvedValue({ ...status(), ready: false, target: { id: null, name: null, path: null, ready: false, reason: '尚未设置' }, activeSource: null })
@@ -54,6 +55,9 @@ it('目录失效显示检查挂载提示，选择新目录显示原位置并保�
   await page(); expect(wrapper!.text()).toContain('检查 NAS 挂载')
   await button('更改保存位置').trigger('click'); await flushPromises()
   expect(wrapper!.text()).toContain('原保存位置：/downloads'); expect(wrapper!.text()).toContain('新保存位置：/new-downloads')
+  expect(wrapper!.find('select[aria-label="下载保存来源"]').exists()).toBe(true)
+  expect(wrapper!.text()).toContain('本地歌曲来源')
+  expect(wrapper!.text()).toContain('添加本地歌曲来源')
   await button('保存位置').trigger('click'); await flushPromises()
   expect(media.save).toHaveBeenCalledWith(expect.objectContaining({ useForLxDownloads: true, location: '/new-downloads' }), 'local')
   expect(wrapper!.text()).toContain('原保存位置仍有下载任务')
@@ -66,11 +70,56 @@ it('保留部分平台结果、版本和失败提示，批量确认显示数量�
   await button('下载所选').trigger('click'); await flushPromises()
   const confirm = wrapper!.findAllComponents(ElDialog).find(c => c.props('title') === '确认下载')!
   expect(confirm.text()).toContain('2 首歌曲'); expect(confirm.text()).toContain('/downloads')
+  expect(confirm.get('.confirm-tracks').text()).toContain('歌曲a')
+  expect(confirm.get('.confirm-tracks').text()).toContain('歌曲b')
+  expect(confirm.get('.confirm-tracks').text()).toContain('歌手')
+  expect(confirm.get('.confirm-tracks').text()).toContain('专辑 · 3:00')
+  expect(confirm.get('.confirm-tracks').text()).toContain('网易云音乐')
+  expect(confirm.get('.confirm-tracks').text()).toContain('QQ 音乐')
   const select = confirm.get('select[aria-label="下载音质"]'); expect(select.element).toHaveProperty('value', 'auto')
   expect(select.findAll('option').map(o => o.attributes('value'))).toEqual(['auto', '128k'])
   await select.setValue('128k'); await button('开始下载').trigger('click'); await flushPromises()
-  expect(lx.create).toHaveBeenCalledWith(['a', 'b'], '128k', undefined)
+  expect(lx.create).toHaveBeenCalledWith(['a', 'b'], '128k', '歌曲a · 歌手 等 2 首')
   expect(wrapper!.findAll('.track')).toHaveLength(2); expect(wrapper!.text()).toContain('已提交 2 首歌曲')
+})
+it('搜索结果跨平台按相关度排序，筛选版本时保留并确认筛选外的已选歌曲', async () => {
+  vi.mocked(lx.search).mockImplementation(async (_query, platform) => ({ tracks: platform === 'wy' ? [track('unrelated', { title: '安妮', artists: ['王杰'] }), track('studio', { title: '一场游戏一场梦', artists: ['王杰'], album: '一场游戏一场梦' })] : [track('live', { platform: 'tx', title: '一场游戏一场梦 (Live)', artists: ['王杰'], album: '2003 演唱会' })], errors: [], warnings: [], page: 1, hasMore: false }))
+  await page(); await search('一场游戏一场梦 王杰')
+  expect(wrapper!.findAll('.track').map(row => row.get('.identity strong').text())).toEqual(['一场游戏一场梦', '一场游戏一场梦 (Live)', '安妮'])
+  await wrapper!.findAll('.track')[0]!.get('input[type="checkbox"]').setValue(true)
+  await wrapper!.get('select[aria-label="歌曲版本"]').setValue('live')
+  expect(wrapper!.findAll('.track')).toHaveLength(1)
+  expect(wrapper!.find('.track').text()).toContain('2003 演唱会')
+  expect(wrapper!.text()).toContain('1 首在筛选结果外')
+  await button('下载所选').trigger('click'); await flushPromises()
+  const confirm = wrapper!.findAllComponents(ElDialog).find(c => c.props('title') === '确认下载')!
+  expect(confirm.get('.confirm-tracks').text()).not.toContain('(Live)')
+  expect(confirm.get('.confirm-tracks').text()).toContain('一场游戏一场梦')
+  expect(lx.create).not.toHaveBeenCalled()
+})
+it('中文歌名歌手未以空格分隔时，仍优先完整目标而非同歌手的其他歌曲', () => {
+  const unrelated = track('unrelated', { title: '安妮', artists: ['王杰'] })
+  const target = track('target', { title: '一场游戏一场梦', artists: ['王杰'] })
+  expect(searchResults([unrelated, target], '王杰一场游戏一场梦', '', 'all', 'relevance').map(t => t.id)).toEqual(['target', 'unrelated'])
+})
+it('从失败任务带入的歌名显示在下载搜索框，用户确认搜索后才发请求', async () => {
+  await router.replace('/library/downloads?tab=search&q=In%20Dreams'); await page()
+  expect(wrapper!.get('input[aria-label="歌名或歌手"]').element).toHaveProperty('value', 'In Dreams')
+  expect(lx.search).not.toHaveBeenCalled()
+  await router.replace('/library/downloads?tab=search&q=另一首歌'); await flushPromises()
+  expect(wrapper!.get('input[aria-label="歌名或歌手"]').element).toHaveProperty('value', '另一首歌')
+})
+it('歌曲目录的编码按纯文本显示，下载请求保留原始歌曲标识', async () => {
+  vi.mocked(lx.search).mockResolvedValue({ tracks: [track('original-id', { title: '一场游戏一场梦 \\u0026 现场', artists: ['雷婷\\u0026王杰', 'nbsp'], album: '演唱会&amp;nbsp;精选' })], errors: [], warnings: [], page: 1, hasMore: false })
+  await page(); await search()
+  expect(wrapper!.get('.track .identity').text()).toContain('雷婷&王杰')
+  expect(wrapper!.get('.track .album').text()).toBe('演唱会 精选')
+  expect(wrapper!.get('.track').text()).not.toContain('\\u0026')
+  expect(wrapper!.get('.track').text()).not.toContain('nbsp')
+  await button('下载').trigger('click'); await flushPromises()
+  expect(wrapper!.get('.confirm-tracks').text()).toContain('一场游戏一场梦 & 现场')
+  await button('开始下载').trigger('click'); await flushPromises()
+  expect(lx.create).toHaveBeenCalledWith(['original-id'], 'auto', '一场游戏一场梦 & 现场 · 雷婷&王杰')
 })
 it('指定音质失败保留确认框和歌曲选择', async () => {
   vi.mocked(lx.create).mockRejectedValueOnce(new Error('该音质不可用，请更换音源'))
@@ -269,6 +318,17 @@ it('下载记录按当前页真实状态筛选，保留失败原因和重试入�
   await filters[2]!.trigger('click')
   expect(wrapper.get('.batch').text()).toContain('完成批次')
   expect(wrapper.get('[role="progressbar"]').attributes('aria-valuenow')).toBe('1')
+})
+it('任务深链接打开下载记录时自动定位详情，刷新进度不反复抢滚动位置', async () => {
+  const scroll = vi.fn()
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scroll })
+  await router.replace('/library/downloads?tab=records&batch=batch')
+  vi.mocked(lx.batches).mockResolvedValue({ items: [batch('FAILED')], total: 1, page: 0, size: 20 })
+  wrapper = mount(RecordsPanel, { props: { visible: true, status: status() }, global: { plugins: [router] } }); await flushPromises()
+  expect(scroll).toHaveBeenCalledTimes(1)
+  await button('刷新记录').trigger('click'); await flushPromises()
+  expect(scroll).toHaveBeenCalledTimes(1)
+  delete (HTMLElement.prototype as { scrollIntoView?: unknown }).scrollIntoView
 })
 it('重新测试音源后刷新能力列表和主页面状态', async () => {
   vi.mocked(lx.test).mockResolvedValue({ message: '初始化成功' })
