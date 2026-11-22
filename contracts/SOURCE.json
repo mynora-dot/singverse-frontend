@@ -52,13 +52,15 @@
       "sha256": "a0232ef2abecd0bb6da591e05ca192530ce49139ad5cc9d2f96592180650d9ea"
     },
     "contracts/metadata/fields.md": {
-      "sha256": "79e339763da604d0f434fc9aa33ffe12114642cc1da99cff20e28d859bdde9f5"
+      "sha256": "74249e7d467d6c68163fa09da1389dddbe683a1f7b92b13892fa3ddb144520fc",
+      "revision": "de876ffff0b454504e21a7f3f45fcb4722361842"
     },
     "contracts/metadata/metadata.schema.json": {
       "sha256": "57bf9957affce3fd8416339156094b969d64a4133aed0536157603e1a32be68f"
     },
     "contracts/metadata/package-v4.md": {
-      "sha256": "31768c8df32d1d1678dced03a4259ec47871e951571a07c4448e66efbaa0fb60"
+      "sha256": "c33ca63acce11893b546031030db2405cfdfe31d258e6aa77c0a0e154439d347",
+      "revision": "de876ffff0b454504e21a7f3f45fcb4722361842"
     },
     "contracts/metadata/package-v4.schema.json": {
       "sha256": "ff3481deba183bb5cc295dccc185abc37d9b80da0de53b48b59dc5503f220095"
@@ -67,8 +69,8 @@
       "sha256": "69043de4096f7df473cca354364b9e6ae4451780d9ece54b15e5ffc7e6d6733d"
     },
     "contracts/openapi/README.md": {
-      "sha256": "4a5bf3dbf14f1fec7d5a6627789d9457ebac9b64b101424dd52c12f33711572b",
-      "revision": "9e92439fb2000d3c2d026c01691716510d79d149"
+      "sha256": "75a14e2feb1c70a3587764886e0728f607a8fcf70003300b5fb55bc12f9c5cf6",
+      "revision": "de876ffff0b454504e21a7f3f45fcb4722361842"
     },
     "contracts/openapi/auth-test-vectors.json": {
       "sha256": "d1d9cca13627c3c54cbb97a3cc57c8e592721ac50db1390ccd54977912109e04"
@@ -78,8 +80,8 @@
       "revision": "9e92439fb2000d3c2d026c01691716510d79d149"
     },
     "contracts/openapi/singverse.openapi.json": {
-      "sha256": "2b0b2e8f70b9569127a3518b0a25e9873474a2c1e88afb9f54246588adcc6294",
-      "revision": "9e92439fb2000d3c2d026c01691716510d79d149"
+      "sha256": "b4448a5109a5487091d93505ee65ffaf34529a06bbf8f234887cb8cdeb2365cf",
+      "revision": "de876ffff0b454504e21a7f3f45fcb4722361842"
     },
     "contracts/song-activity.md": {
       "sha256": "ec2b7ded6f3d84993231321f0ef611c8b25a288efbda6d99e3cf8febffb6ba30"

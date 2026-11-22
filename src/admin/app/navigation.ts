@@ -1,4 +1,4 @@
-import { Clock, Collection, CollectionTag, Connection, Download, Files, FolderOpened, Headset, House, Key, MagicStick, Microphone, Monitor, Odometer, Setting, ChatLineSquare } from '@element-plus/icons-vue'
+import { Clock, Collection, CollectionTag, Connection, Download, Files, FolderOpened, Headset, House, Key, MagicStick, Microphone, Monitor, Setting, ChatLineSquare } from '@element-plus/icons-vue'
 
 /** 以普通用户的任务组织入口；既有 hash 地址、查询参数及 activeMenu 继续生效。 */
 export const overviewEntry = { path: '/overview', label: '首页', icon: House }
@@ -31,7 +31,6 @@ export const navigationGroups = [
     { path: '/system/compute', label: '计算服务', icon: Connection },
     { path: '/system/ai', label: 'AI 与助手', icon: MagicStick },
     { path: '/system/parameters', label: '账号与安全', icon: Key },
-    { path: '/system', label: '服务状态', icon: Odometer },
   ] },
 ]
 export function navigationContext(path: string) {

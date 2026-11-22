@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ElCheckbox, ElTag } from 'element-plus'
+import { ElButton, ElCheckbox, ElTag } from 'element-plus'
 import { fieldNames } from '../types'
 import { reviewFields } from '../single-types'
-import type { Values, ReviewField } from '../single-types'
-import { equal, present } from '../composables/useSingleSongScrape'
-const props = defineProps<{ before: Values; draft: Values; fields: ReviewField[]; edits: Partial<Values>; disabled?: boolean; compact?: boolean }>()
-const emit = defineEmits<{ change: [fields: ReviewField[]] }>()
+import type { Values, ReviewField, ReviewEdits, LyricsState } from '../single-types'
+import { fieldEqual, fieldPresent, present } from '../composables/useSingleSongScrape'
+import ReviewLyricsPreview from './ReviewLyricsPreview.vue'
+const props = defineProps<{ before: Values; draft: Values; fields: ReviewField[]; edits: ReviewEdits; lyricsState: LyricsState; lyricsError: string; disabled?: boolean; compact?: boolean }>()
+const emit = defineEmits<{ change: [fields: ReviewField[]]; retryLyrics: [] }>()
 const differences = computed(() => reviewFields.filter(field => hasChange(field)).length)
-function hasChange(field: ReviewField) { return present(props.draft[field]) && !equal(props.before[field], props.draft[field]) }
+const lyricMessage = computed(() => ({ IDLE: '选择候选后获取歌词', LOADING: '正在获取歌词…', AVAILABLE: '', MISSING: '平台未提供歌词', UNSUPPORTED: '该平台暂未接入歌词', ERROR: props.lyricsError || '歌词获取失败' })[props.lyricsState])
+function hasChange(field: ReviewField) { return fieldPresent(props.draft, field) && !fieldEqual(props.before, props.draft, field) }
 function selected(field: ReviewField) { return props.fields.includes(field) && hasChange(field) }
 function toggle(field: ReviewField, checked: unknown) { emit('change', checked ? [...new Set([...props.fields, field])] : props.fields.filter(f => f !== field)) }
-function state(field: ReviewField) { if (present(props.draft[field]) && !equal(props.before[field], props.draft[field]) && !props.fields.includes(field)) return '不应用'; return !present(props.draft[field]) ? '无候选值' : equal(props.before[field], props.draft[field]) ? '无变化' : present(props.before[field]) ? '将修改' : '待补全' }
+function state(field: ReviewField) {
+  if (!fieldPresent(props.draft, field)) return '无候选值'
+  if (fieldEqual(props.before, props.draft, field)) return '无变化'
+  if (!props.fields.includes(field)) return '不应用'
+  return fieldPresent(props.before, field) ? '将修改' : '待补全'
+}
 function compactState(field: ReviewField) { return ({ '不应用': '不应用', '无候选值': '跳过', '无变化': '相同', '将修改': '修改', '待补全': '补全' })[state(field)] }
 function displayValue(value: unknown, field: string): string {
   if (!present(value)) return '—'
@@ -23,9 +30,35 @@ function displayValue(value: unknown, field: string): string {
 </script>
 <template>
   <div class="field-comparison" :class="{ compact }"><table><caption class="sr-only">核对当前值和候选值，勾选需要应用的字段</caption><thead><tr><th scope="col">应用字段</th><th scope="col">{{ compact ? '当前信息' : '当前值' }}</th><th scope="col">{{ compact ? '候选信息' : '候选 / 编辑值' }}<span v-if="compact" class="difference-count">{{ differences }} 项差异</span></th><th v-if="!compact" scope="col">状态</th></tr></thead><tbody>
-    <tr v-for="field in reviewFields" :key="field" :data-field="field" :class="{ 'field-selected': selected(field), 'cover-row': field === 'cover' }"><th scope="row"><ElCheckbox :aria-label="`应用${fieldNames[field]}`" :model-value="compact ? selected(field) : fields.includes(field)" :disabled="disabled || !hasChange(field)" @change="value => toggle(field, value)">{{ compact && field === 'durationMs' ? '平台时长' : fieldNames[field] }}</ElCheckbox></th>
-      <td data-label="当前值"><slot v-if="compact && field === 'cover'" name="before-cover">{{ displayValue(before[field], field) }}</slot><span v-else :class="{ 'missing-value': !present(before[field]) }">{{ compact && !present(before[field]) ? '未填写' : displayValue(before[field], field) }}</span></td><td data-label="候选 / 编辑值"><slot v-if="compact && field === 'cover'" name="draft-cover">{{ displayValue(draft[field], field) }}</slot><div v-else class="proposed-value"><div><span :class="{ 'missing-value': !present(draft[field]) }">{{ compact && !present(draft[field]) ? '未填写' : displayValue(draft[field], field) }}</span><small v-if="Object.hasOwn(edits, field)" class="edited">手工编辑</small></div><span v-if="compact" class="field-status" :class="{ pending: selected(field) }">{{ compactState(field) }}</span></div></td>
-      <td v-if="!compact"><ElTag :type="state(field) === '将修改' ? 'warning' : state(field) === '待补全' ? 'success' : 'info'" size="small">{{ state(field) }}</ElTag></td></tr>
+    <tr v-for="field in reviewFields" :key="field" :data-field="field" :class="{ 'field-selected': selected(field), 'cover-row': field === 'cover', 'lyrics-row': field === 'lyrics' }">
+      <th scope="row"><ElCheckbox :aria-label="`应用${fieldNames[field]}`" :model-value="compact ? selected(field) : fields.includes(field)" :disabled="disabled || !hasChange(field)" @change="value => toggle(field, value)">{{ compact && field === 'durationMs' ? '平台时长' : fieldNames[field] }}</ElCheckbox></th>
+      <td data-label="当前值">
+        <slot v-if="compact && field === 'cover'" name="before-cover">{{ displayValue(before[field], field) }}</slot>
+        <template v-else-if="field === 'lyrics'">
+          <ReviewLyricsPreview v-if="fieldPresent(before, field)" :value="before.lyrics" label="当前歌词" />
+          <span v-else class="missing-value">{{ compact ? '未填写' : '—' }}</span>
+        </template>
+        <span v-else :class="{ 'missing-value': !fieldPresent(before, field) }">{{ compact && !fieldPresent(before, field) ? '未填写' : displayValue(before[field], field) }}</span>
+      </td>
+      <td data-label="候选 / 编辑值">
+        <slot v-if="compact && field === 'cover'" name="draft-cover">{{ displayValue(draft[field], field) }}</slot>
+        <div v-else class="proposed-value">
+          <div v-if="field === 'lyrics'" class="lyric-proposal">
+            <ReviewLyricsPreview v-if="lyricsState === 'AVAILABLE'" :value="draft.lyrics" label="候选歌词" />
+            <template v-else>
+              <span class="missing-value" role="status">{{ lyricMessage }}</span>
+              <ElButton v-if="lyricsState === 'ERROR'" link type="primary" :disabled="disabled" @click="emit('retryLyrics')">重试歌词</ElButton>
+            </template>
+          </div>
+          <div v-else>
+            <span :class="{ 'missing-value': !present(draft[field]) }">{{ compact && !present(draft[field]) ? '未填写' : displayValue(draft[field], field) }}</span>
+            <small v-if="Object.hasOwn(edits, field)" class="edited">手工编辑</small>
+          </div>
+          <span v-if="compact && (field !== 'lyrics' || lyricsState === 'AVAILABLE')" class="field-status" :class="{ pending: selected(field) }">{{ compactState(field) }}</span>
+        </div>
+      </td>
+      <td v-if="!compact"><ElTag v-if="field !== 'lyrics' || lyricsState === 'AVAILABLE'" :type="state(field) === '将修改' ? 'warning' : state(field) === '待补全' ? 'success' : 'info'" size="small">{{ state(field) }}</ElTag></td>
+    </tr>
   </tbody></table></div>
 </template>
 <style scoped>
@@ -82,6 +115,31 @@ td {
   display: block;
   color: var(--el-color-primary);
   margin-top: 4px;
+}
+
+.lyric-proposal .el-button {
+  display: flex;
+  min-height: 44px;
+  padding-inline: 0;
+}
+
+.lyrics-row:has(details[open]) > th,
+.lyrics-row:has(details[open]) > td {
+  vertical-align: top;
+}
+
+.lyrics-row:has(details[open]) .proposed-value {
+  align-items: flex-start;
+}
+
+.lyric-proposal {
+  flex: 1;
+}
+
+@media (min-width: 701px) {
+  .lyrics-row:has(details[open]) .field-status {
+    margin-top: 9px;
+  }
 }
 
 @media (max-width: 560px) {

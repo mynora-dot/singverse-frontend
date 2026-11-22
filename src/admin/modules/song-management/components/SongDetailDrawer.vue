@@ -6,10 +6,11 @@ import { VideoPlay, EditPen } from '@element-plus/icons-vue'
 import SongCover from './SongCover.vue'
 import EmbeddedMetadataPanel from '../../media-library/components/EmbeddedMetadataPanel.vue'
 import type { FormalLyrics } from '../../metadata/types'
+import { lyricText } from '../../metadata/lyrics'
 import type { EmbeddedDetail } from '../../media-library/api/embeddedMetadata'
 import { songTitle, songArtists, songCoverUrl } from '../../metadata/utils'
 import type { Tag } from '../../classification/types'
-import { confirmedField, fileFormat, fileSize, platformDuration, displayTime, songTags, songReviewLabel, needsSongReview, languageLabels, versionLabels } from '../presentation'
+import { confirmedField, fileFormat, fileSize, platformDuration, displayTime, songTags, filenameReviewLabel, songReviewLabel, needsSongReview, languageLabels, versionLabels } from '../presentation'
 import type { MediaSong } from '../../media-library/types'
 import { authRequest } from '../../../core/auth/api'
 import { songRoles, type AudioRoles } from '../../audio-processing/api'
@@ -64,12 +65,7 @@ const lyricData = computed(() => {
   if (variant && Object.hasOwn(variant, 'lyricsAsset')) return assetLyrics.value
   return fileLyrics.value ?? embedded.value?.result?.lyrics
 })
-const lyrics = computed(() => {
-  const value = lyricData.value
-  if (!value) return ''
-  if (value.lines?.length) return value.lines.map(line => line.text).join('\n').trim()
-  return (value.text ?? '').replace(/^\[(?:ti|ar|al|by|offset|length):.*\]\s*$/gmi, '').replace(/\[\d{1,3}:\d{2}(?:[.:]\d{1,3})?\]/g, '').trim()
-})
+const lyrics = computed(() => lyricText(lyricData.value))
 const syncedLyrics = computed(() => ['milliseconds', 'lrc', 'mpeg-frames'].includes(lyricData.value?.timing ?? ''))
 const classifications = computed(() => props.song ? songTags(props.song, props.tags) : [])
 const facts = computed(() => {
@@ -85,7 +81,7 @@ const facts = computed(() => {
 const origin = computed(() => {
   if (props.song?.metadata?.stale) return '已有信息待重新核对'
   const labels: Record<string, string> = { FILE: '文件内嵌标签', SHARED: '共享曲库', PLATFORM: '平台信息', MANUAL: '人工整理', UPLOAD: '上传图片' }
-  return [...new Set(Object.values(props.song?.metadata?.origins ?? {}).map(item => labels[item.kind ?? ''] || '已保存信息'))].join('、') || '文件名解析'
+  return [...new Set(Object.values(props.song?.metadata?.origins ?? {}).map(item => labels[item.kind ?? ''] || '已保存信息'))].join('、') || (props.song?.result.parseStatus === 'SKIPPED' ? '文件内嵌标签' : '文件名解析')
 })
 </script>
 
@@ -102,10 +98,10 @@ const origin = computed(() => {
       </section>
       <p v-if="song.metadata?.stale" class="song-notice" role="status">媒体属性需要重新核验，已保存的歌曲资料会保留。</p>
       <dl v-if="facts.length" class="song-facts"><div v-for="fact in facts" :key="fact.label"><dt>{{ fact.label }}</dt><dd>{{ fact.value }}</dd></div></dl>
-      <section class="classification-section audio-summary" aria-label="原唱与伴奏"><div class="section-heading"><h3>原唱与伴奏</h3><RouterLink :to="{ path: '/library/audio-processing', query: { song: song.id } }" @click="emit('close')">{{ audio.tone === 'warning' ? '去处理' : '管理音轨' }}</RouterLink></div><p v-if="rolesError" class="classification-empty">暂时无法读取音轨信息</p><p v-else class="audio-status"><ElTag :type="audio.tone" effect="light" round size="small">{{ audio.tag }}</ElTag><span>{{ audio.title }}</span></p></section>
+      <section class="classification-section audio-summary" aria-label="原唱与伴奏"><div class="section-heading"><h3>原唱与伴奏</h3><RouterLink :to="{ path: '/library/audio-processing', query: { song: song.id } }" @click="emit('close')">{{ audio.tone === 'warning' ? '去处理' : '管理音轨' }}</RouterLink></div><p v-if="rolesError" class="classification-empty">暂时无法读取音轨信息</p><p v-else class="audio-status"><ElTag :type="audio.tone" effect="light" round size="small">{{ audio.tag }}</ElTag><span>{{ audio.title }}</span><span v-if="roles?.packageRoleHint && roles.state !== 'CONFIRMED'">{{ audio.hint }}</span></p></section>
       <section class="lyrics-card" aria-label="歌曲歌词"><div class="section-heading"><h3>歌词</h3><span v-if="lyrics && syncedLyrics" class="section-caption">同步歌词</span></div><div v-if="lyrics" class="lyrics-content" tabindex="0" aria-label="歌词内容"><p>{{ lyrics }}</p></div><p v-else class="lyrics-empty">{{ lyricsError ? '本机歌词资源暂时无法读取' : '暂无可显示的歌词' }}</p></section>
       <section class="classification-section" aria-label="歌曲分类"><div class="section-heading"><h3>分类标签</h3><ElButton text @click="emit('classify')">编辑标签</ElButton></div><div v-if="classifications.length" class="song-tag-list"><span v-for="tag in classifications" :key="tag.dimension + tag.id" class="song-tag" :class="{ inactive: !tag.active }" :title="tag.dimension + (tag.locked ? ' · 已锁定' : '')">{{ tag.name }}</span></div><p v-else class="classification-empty">还没有分类标签</p></section>
-      <details class="file-details"><summary>文件与技术信息</summary><div class="file-details-content"><p class="file-path">{{ song.relativePath }}</p><dl class="file-facts"><div><dt>文件大小</dt><dd>{{ fileSize(song.fileSize) }}</dd></div><div><dt>信息来源</dt><dd>{{ origin }}</dd></div><div><dt>修改时间</dt><dd>{{ displayTime(song.modifiedAt) }}</dd></div><div><dt>扫描时间</dt><dd>{{ displayTime(song.scannedAt) }}</dd></div><div><dt>整理状态</dt><dd>{{ songReviewLabel(song) }}</dd></div><div><dt>原始解析</dt><dd>{{ song.result.needsReview ? '文件名待核对' : '文件名完整' }}</dd></div></dl>
+      <details class="file-details"><summary>文件与技术信息</summary><div class="file-details-content"><p class="file-path">{{ song.relativePath }}</p><dl class="file-facts"><div><dt>文件大小</dt><dd>{{ fileSize(song.fileSize) }}</dd></div><div><dt>信息来源</dt><dd>{{ origin }}</dd></div><div><dt>修改时间</dt><dd>{{ displayTime(song.modifiedAt) }}</dd></div><div><dt>扫描时间</dt><dd>{{ displayTime(song.scannedAt) }}</dd></div><div><dt>整理状态</dt><dd>{{ songReviewLabel(song) }}</dd></div><div><dt>原始解析</dt><dd>{{ filenameReviewLabel(song) }}</dd></div></dl>
       <EmbeddedMetadataPanel :key="song.id" :song-id="visible ? song.id : null" compact @loaded="embedded = $event" /></div></details>
     </template>
   </ElDrawer>

@@ -2,8 +2,8 @@
 import { reactive, ref, watch } from 'vue'
 import { ElDialog, ElButton, ElInput, ElTabs, ElTabPane, ElMessageBox } from 'element-plus'
 import { fieldNames } from '../types'
-import { reviewFields } from '../single-types'
-import type { Values, ReviewField } from '../single-types'
+import { editableReviewFields } from '../single-types'
+import type { Values } from '../single-types'
 const props = defineProps<{ open: boolean; before: Values; draft: Values; original: Values | null }>()
 const emit = defineEmits<{ close: []; save: [values: Values]; cover: [] }>()
 let baseline = ''
@@ -11,7 +11,7 @@ const inputs = reactive<Record<string, string>>({}), errors = ref<Record<string,
 watch(() => props.open, open => {
   if (!open) return
   errors.value = {}; tab.value = 'fields'
-  for (const field of reviewFields) {
+  for (const field of editableReviewFields) {
     const value = props.draft[field]
     inputs[field] = Array.isArray(value) ? value.join('、') : field === 'durationMs' && value ? String(Number(value) / 1000) : value == null ? '' : String(value)
   }
@@ -26,8 +26,7 @@ async function close() {
 function show(value: unknown) { return value == null || value === '' || (Array.isArray(value) && !value.length) ? '—' : Array.isArray(value) ? value.join('、') : String(value) }
 function save() {
   const values = { ...props.draft }, invalid: Record<string, string> = {}
-  for (const field of reviewFields) {
-    if (field === 'cover') continue
+  for (const field of editableReviewFields) {
     const value = (inputs[field] ?? '').trim()
     if (/[\x00-\x1f\x7f]/.test(value)) invalid[field] = '不能包含控制字符'
     if (field === 'artists' || field === 'aliases') {
@@ -47,7 +46,7 @@ function save() {
           if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) invalid[field] = '日期不存在'
         }
       }
-      values[field as Exclude<ReviewField, 'artists' | 'aliases' | 'durationMs' | 'cover'>] = value || null
+      values[field] = value || null
     }
   }
   errors.value = invalid
@@ -57,7 +56,7 @@ function save() {
 <template>
   <ElDialog :model-value="open" title="预览与编辑歌曲资料" width="min(760px, calc(100vw - 32px))" append-to-body :close-on-click-modal="false" :before-close="close">
     <ElTabs v-model="tab"><ElTabPane label="字段对比与编辑" name="fields"><div class="editor-scroll"><table><thead><tr><th>字段 / 当前值</th><th>平台原始值</th><th>编辑值</th></tr></thead><tbody>
-      <tr v-for="field in reviewFields.filter(f => f !== 'cover')" :key="field"><td><strong>{{ fieldNames[field] }}</strong><small>{{ show(before[field]) }}{{ field === 'durationMs' && before[field] ? ' ms' : '' }}</small></td><td>{{ original ? show(original[field]) : '无平台候选' }}{{ field === 'durationMs' && original?.durationMs ? ' ms' : '' }}</td>
+      <tr v-for="field in editableReviewFields" :key="field"><td><strong>{{ fieldNames[field] }}</strong><small>{{ show(before[field]) }}{{ field === 'durationMs' && before[field] ? ' ms' : '' }}</small></td><td>{{ original ? show(original[field]) : '无平台候选' }}{{ field === 'durationMs' && original?.durationMs ? ' ms' : '' }}</td>
         <td><ElInput v-model="inputs[field]" :aria-label="`编辑${fieldNames[field]}`" :maxlength="field === 'artists' || field === 'aliases' ? 4100 : 500" :placeholder="field === 'releaseDate' ? 'YYYY-MM-DD，可只填年/月' : field === 'durationMs' ? '秒，支持三位小数' : field === 'artists' || field === 'aliases' ? '多项用顿号分隔' : '留空保留当前值'" :aria-invalid="!!errors[field]" /><small v-if="errors[field]" role="alert" class="field-error">{{ errors[field] }}</small></td></tr>
     </tbody></table></div></ElTabPane><ElTabPane label="封面" name="cover"><ElButton @click="emit('cover')">选择或上传封面</ElButton></ElTabPane></ElTabs>
     <template #footer><ElButton @click="close">取消编辑</ElButton><ElButton type="primary" @click="save">保存编辑到草稿</ElButton></template>

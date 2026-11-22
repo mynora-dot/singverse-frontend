@@ -26,9 +26,9 @@ it('标题、数量与操作直接可用，导航链接保留真实地址', asyn
 })
 
 it('没有操作时不生成空操作栏', () => {
-  const wrapper = mount(PageHeader, { props: { title: '服务状态' } })
+  const wrapper = mount(PageHeader, { props: { title: '计算服务' } })
   try {
-    expect(wrapper.get('h1').text()).toBe('服务状态')
+    expect(wrapper.get('h1').text()).toBe('计算服务')
     expect(wrapper.find('.sv-page-header-actions').exists()).toBe(false)
     expect(wrapper.classes()).not.toContain('has-controls')
   } finally { wrapper.unmount() }

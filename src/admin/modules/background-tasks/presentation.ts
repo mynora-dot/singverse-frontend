@@ -19,7 +19,7 @@ const stages: Record<string, string> = {
   DISCOVERING: '发现待处理歌曲', RECOGNIZING: '处理扫描后的音轨任务', WAITING_RECOGNITION: '等待后续音轨处理', LEGACY: '未记录原始批次',
   ...statusNames, SCANNING: '遍历目录', READING_TAGS: '读取文件标签', COMMITTING: '保存索引', MATCHING: '匹配元数据',
   CLASSIFYING: '生成分类建议', PREPARING: '准备批次', PREVIEW: '等待确认开始', PROCESSING: '处理歌曲',
-  PARSING: '解析资料包', APPLYING: '保存共享资料', VERIFYING: '核对媒体路径', WAITING: '准备资料快照', STARTING: '正在启动', SUCCEEDED: '处理完成', CLEAR: '清理全部', POLICY: '按策略回收', DELETE: '清理指定缓存',
+  PARSING: '解析资料包', APPLYING: '保存共享资料', IMPORTED: '资料已导入', VERIFYING: '核对媒体路径', WAITING: '准备资料快照', STARTING: '正在启动', SUCCEEDED: '处理完成', CLEAR: '清理全部', POLICY: '按策略回收', DELETE: '清理指定缓存',
   probe: '读取歌曲', extract: '准备音频', separate: '生成伴奏', encode: '保存结果', validate: '校验结果', hash: '校验结果',
   download: '读取素材', transcode: '转换媒体', analyze: '分析音轨', inference: '模型推理',
 }

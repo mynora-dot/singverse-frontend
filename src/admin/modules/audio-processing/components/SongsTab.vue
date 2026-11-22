@@ -49,6 +49,7 @@ function stateHint(row: AudioRow) {
   if (reading) return reading.state === 'QUEUED' ? '等待识别音轨' : '正在识别音轨'
   const issue = audioIssue(audio)
   if (issue) return issue.text
+  if (audio.packageRoleHint && audio.state !== 'CONFIRMED') return rolesSummary(audio).hint
   if (audio.backingResource) return '已生成，可在点歌时切换'
   if (audio.originalSelection?.kind === 'UNIQUE_AUDIO') return '唯一音频作为原唱，按需生成伴奏'
   if (!streams) return '读取后确认原唱与伴奏'
@@ -70,12 +71,14 @@ const filtered = computed(() => Object.entries(applied.value).some(([key, value]
 const singleTitle = computed(() => rows.value.find(row => row.id === applied.value.songId)?.title || '')
 
 function tracks(row: AudioRow) {
+  if (row.audio.packageRoleHint && row.audio.state !== 'CONFIRMED') return rolesSummary(row.audio).title
   const streams = row.audio.streams
   if (!streams) return row.audio.originalSelection?.kind === 'UNIQUE_AUDIO' ? '唯一原唱音频' : '音轨待识别'
   if (!streams.length) return '没有音轨'
   return `${streams.length} 条音轨`
 }
 function actionLabel(row: AudioRow) {
+  if (row.audio.packageRoleHint && row.audio.state !== 'CONFIRMED') return '查看包内标记'
   const unique = row.audio.state === 'CONFIRMED' && row.audio.originalSelection?.kind === 'UNIQUE_AUDIO'
   if (!row.audio.streams && !unique) return '读取音轨'
   if (row.category === 'READY') return '试听伴奏'

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Headset as SongPlaceholderIcon } from '@element-plus/icons-vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElIcon, ElAlert, ElButton, ElInput, ElMessageBox, ElPagination, ElSkeleton, ElSkeletonItem } from 'element-plus'
 import { requestId as newRequestId } from '../../../shared/request-id'
 import PageHeader from '../../shared/ui/PageHeader.vue'
@@ -15,6 +15,7 @@ import PlaylistEditorDialog from './components/PlaylistEditorDialog.vue'
 import PlaylistDetailDialog from './components/PlaylistDetailDialog.vue'
 import { confirmedField } from '../song-management/presentation'
 
+const route = useRoute(), router = useRouter()
 const coverFailures = ref(new Set<string>())
 const items = ref<Playlist[]>([]), query = ref(''), sort = ref('UPDATED_DESC')
 const page = ref(1), total = ref(0), loading = ref(false), busy = ref(false), error = ref('')
@@ -166,6 +167,10 @@ function useProposal() {
 }
 onMounted(() => {
   window.addEventListener('beforeunload', beforeUnload)
+  if (route.query.create === '1') {
+    create()
+    void router.replace({ query: { ...route.query, create: undefined }, hash: route.hash })
+  }
   void load()
   void ai.services('MODEL').then(value => {
     if (active) { models.value = value.filter(model => model.enabled); generation.modelServiceId = models.value[0]?.id || '' }

@@ -78,7 +78,8 @@ const reviewCount = computed(() => items.value.filter(song => song.result.needsR
 const metadataReviewCount = computed(() => items.value.filter(needsSongReview).length)
 const unclassifiedCount = computed(() => items.value.filter(s => !songTags(s, tagIndex.value).some(tag => tag.active)).length)
 const reviewedCount = computed(() => items.value.filter(identityReviewed).length)
-const matchedCount = computed(() => items.value.filter(s => !s.result.needsReview).length)
+const matchedCount = computed(() => items.value.filter(song => song.result.parseStatus === 'SUCCESS').length)
+const skippedCount = computed(() => items.value.filter(song => song.result.parseStatus === 'SKIPPED').length)
 
 let active = true, generation = 0, detailGeneration = 0
 watch(() => route.query.detailSongId, async id => {
@@ -219,7 +220,7 @@ onBeforeUnmount(() => { active = false; generation++ })
       <div id="song-extra-filters" class="songs-filter-selects" :class="{ expanded: mobileFiltersOpen }">
         <ElSelect v-model="sourceId" aria-label="歌曲来源" placeholder="全部来源" filterable clearable @change="apply()"><ElOption label="全部来源" value="" /><ElOption v-for="source in sources" :key="source.id" :label="sourceLabels[source.id] || source.name" :value="source.id" /></ElSelect>
         <ElSelect v-model="tagIds" aria-label="分类标签" placeholder="按分类筛选" filterable multiple collapse-tags clearable @change="apply()"><ElOption v-for="tag in tags.filter(t => t.active)" :key="tag.id" :label="tag.name" :value="tag.id" /></ElSelect>
-        <ElSelect v-model="status" aria-label="文件名识别状态" @change="apply()"><ElOption label="全部识别状态" value="ALL" /><ElOption label="文件名识别不完整" value="REVIEW" /><ElOption label="文件名完整" value="MATCHED" /></ElSelect>
+        <ElSelect v-model="status" aria-label="文件名识别状态" @change="apply()"><ElOption label="全部识别状态" value="ALL" /><ElOption label="文件名识别不完整" value="REVIEW" /><ElOption label="无需文件名复核" value="MATCHED" /></ElSelect>
       </div>
       <p v-if="sourcesError" class="filter-load-error">{{ sourcesError }} <ElButton link @click="loadSources">重试来源</ElButton></p>
       <p v-if="classificationError" class="filter-load-error">{{ classificationError }} <ElButton link @click="loadTags">重试分类</ElButton></p>
@@ -234,7 +235,7 @@ onBeforeUnmount(() => { active = false; generation++ })
       <div class="toolbar-left">
         <span class="sr-only">{{ filtered ? '筛选结果' : '歌曲列表' }}</span>
         <span v-if="loaded && items.length" class="page-range">第 {{ visibleRange }} 首</span>
-        <div v-if="loaded && items.length && !loading" id="song-page-summary" class="page-summary" :class="{ expanded: mobileSummaryOpen }" aria-label="当前页歌曲统计"><span>仅本页</span><span><b>{{ reviewCount }}</b> 文件名识别不完整</span><span v-if="metadataReviewCount"><b>{{ metadataReviewCount }}</b> 资料待复核</span><span><b>{{ matchedCount }}</b> 文件名完整</span><span v-if="reviewedCount"><b>{{ reviewedCount }}</b> 资料已确认</span><span v-if="tagsLoaded"><b>{{ unclassifiedCount }}</b> 未分类</span></div>
+        <div v-if="loaded && items.length && !loading" id="song-page-summary" class="page-summary" :class="{ expanded: mobileSummaryOpen }" aria-label="当前页歌曲统计"><span>仅本页</span><span><b>{{ reviewCount }}</b> 文件名识别不完整</span><span v-if="metadataReviewCount"><b>{{ metadataReviewCount }}</b> 资料待复核</span><span><b>{{ matchedCount }}</b> 文件名完整</span><span v-if="skippedCount"><b>{{ skippedCount }}</b> 已跳过文件名识别</span><span v-if="reviewedCount"><b>{{ reviewedCount }}</b> 资料已确认</span><span v-if="tagsLoaded"><b>{{ unclassifiedCount }}</b> 未分类</span></div>
       </div>
       <div class="toolbar-right">
         <select v-model="sort" class="song-sort" aria-label="歌曲排序" :disabled="loading" @change="apply()"><option value="SCANNED_DESC">最近扫描</option><option value="UPDATED_DESC">最新更新</option></select>

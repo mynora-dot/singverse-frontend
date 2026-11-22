@@ -9,6 +9,24 @@ const result = { state: 'UNKNOWN', revision: 0, streams: [{ id: 'stream:1' }, { 
 let wrapper: ReturnType<typeof mount> | undefined
 beforeEach(() => { mockMediaElements(); vi.useFakeTimers(); vi.mocked(authRequest).mockReset(); vi.mocked(authRequest).mockResolvedValue(result) })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks(); vi.useRealTimers() })
+it.each([
+  ['DECLARED', 'PENDING', '资料包已标记', '待核对媒体路径'],
+  ['STREAM_TITLES', 'PRESENT', '据包内音轨标题推断', '目录已核对'],
+  ['DECLARED', 'MISMATCH', '资料包已标记', '媒体大小不符'],
+])('离线展示包内流编号及来源 %s，路径状态 %s', async (basis, verification, source, pathState) => {
+  vi.mocked(authRequest).mockResolvedValue({
+    state: 'UNKNOWN', jobs: [], packageRoleHint: { originalId: 'stream:7', backingId: 'stream:3', basis, verification },
+  })
+  wrapper = mount(AudioRolesPanel, { props: { songId: 'imported' } })
+  await flushPromises()
+  const status = wrapper.get('.roles-status').text()
+  expect(status).toContain(source)
+  expect(status).toContain('原唱 stream:7 · 伴奏 stream:3')
+  expect(status).toContain(pathState)
+  expect(status).toContain('本机尚未启用')
+  expect(wrapper.find('audio, input[type=radio]').exists()).toBe(false)
+  expect(vi.mocked(authRequest).mock.calls.some(([, method]) => method === 'POST' || method === 'PUT')).toBe(false)
+})
 it('唯一音频原唱无需探测，仍可显式生成独立伴奏且不编造流索引', async () => {
   vi.mocked(authRequest).mockResolvedValue({ state: 'CONFIRMED', origin: 'SOURCE', revision: 0, originalSelection: { kind: 'UNIQUE_AUDIO' }, jobs: [{ id: 'done', kind: 'FAST', state: 'SUCCEEDED', cleanupState: 'PENDING' }] })
   wrapper = mount(AudioRolesPanel, { props: { songId: 'single' } }); await flushPromises()

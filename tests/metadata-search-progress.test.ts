@@ -10,7 +10,7 @@ import type { SingleReview } from '../src/admin/modules/metadata/single-types'
 import { preview } from './fixtures/filename-workspace'
 
 vi.mock('../src/admin/modules/metadata/api/metadata', () => ({ metadata: { settings: vi.fn(), search: vi.fn(), candidateCover: (id: string) => `/api/v1/metadata/candidates/${id}/cover` } }))
-vi.mock('../src/admin/modules/metadata/api/single-review', () => ({ singleReview: { load: vi.fn(), apply: vi.fn() } }))
+vi.mock('../src/admin/modules/metadata/api/single-review', () => ({ singleReview: { load: vi.fn(), apply: vi.fn(), lyrics: vi.fn() } }))
 
 const review: SingleReview = {
   song: { id: 'song-1', sourceId: 'source', sourceName: '曲库', relativePath: '歌名.mkv', fileSize: 2000, modifiedAt: null, scannedAt: '', parserProfileId: 'default', parserRevision: 0, selectedRuleId: null, result: preview().result },
@@ -27,6 +27,7 @@ function deferred<T>() {
 let wrapper: VueWrapper | undefined
 beforeEach(() => {
   vi.mocked(singleReview.load).mockResolvedValue(structuredClone(review))
+  vi.mocked(singleReview.lyrics).mockResolvedValue({ status: 'MISSING', lyrics: null })
   vi.mocked(metadata.settings).mockResolvedValue({ enabled: true, providers: ['QQ', 'QISHUI'], autoApply: false, threshold: .95 })
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.resetAllMocks() })

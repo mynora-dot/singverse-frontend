@@ -85,6 +85,24 @@ describe('歌曲管理集中展示扫描数据及详情', () => {
   })
   afterEach(() => { wrapper.unmount(); vi.clearAllMocks() })
 
+  it('文件标签已识别的歌曲单独统计，卡片展示标签来源', async () => {
+    const row = song()
+    row.result = { ...row.result, title: null, artists: [], confidence: 0, parseStatus: 'SKIPPED', parserRule: 'NONE' }
+    row.selectedRuleId = null
+    const origin = { provider: null, externalId: null, appliedAt: '', kind: 'FILE' } as const
+    row.metadata = {
+      track: { provider: null, externalId: null, title: '标签歌名', artists: ['标签歌手'], album: null, releaseDate: null, durationMs: null, aliases: [], coverUrl: null, availability: 'UNKNOWN', fetchedAt: '' },
+      fields: ['title', 'artists'], appliedAt: '', stale: false, origins: { title: origin, artists: origin },
+    }
+    vi.mocked(songs.list).mockResolvedValue(result([row]))
+    await router.replace('/library/songs?status=MATCHED')
+    await flushPromises()
+    expect(wrapper.get('.page-summary').text()).toContain('1 已跳过文件名识别')
+    expect(wrapper.get('.page-summary').text()).toContain('0 文件名完整')
+    expect(wrapper.get('.song-card-title').attributes('aria-label')).toContain('已从文件标签识别')
+    expect(wrapper.get('.song-card-title').text()).toContain('标签歌名')
+  })
+
   it('最新更新排序回到第一页，保留搜索筛选并随翻页和刷新保持', async () => {
     await router.replace('/library/songs?sourceId=source-1&search=晴天&unclassified=true&page=3')
     await flushPromises()

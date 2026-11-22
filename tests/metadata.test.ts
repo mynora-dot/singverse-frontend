@@ -12,7 +12,7 @@ import { singleReview } from '../src/admin/modules/metadata/api/single-review'
 import type { MetadataBatch, MetadataCandidate } from '../src/admin/modules/metadata/types'
 vi.mock('../src/admin/modules/metadata/api/metadata', () => ({ metadata: Object.fromEntries(['settings', 'saveSettings', 'latest', 'batch', 'start', 'pause', 'resume', 'cancel', 'retry', 'search', 'candidateCover'].map(name => [name, vi.fn()])) }))
 vi.mock('../src/admin/modules/media-library/api/media', () => ({ media: { list: vi.fn() } }))
-vi.mock('../src/admin/modules/metadata/api/single-review', () => ({ singleReview: { load: vi.fn(), apply: vi.fn(), applyBatch: vi.fn() } }))
+vi.mock('../src/admin/modules/metadata/api/single-review', () => ({ singleReview: { load: vi.fn(), apply: vi.fn(), applyBatch: vi.fn(), lyrics: vi.fn().mockResolvedValue({ status: 'MISSING', lyrics: null }) } }))
 let wrapper: VueWrapper
 const config = { enabled: true, providers: ['NETEASE' as const], autoApply: false, threshold: .95, minIntervalSeconds: 3, maxIntervalSeconds: 8 }
 const candidate: MetadataCandidate = { id: 'candidate-1', score: .95, track: { provider: 'NETEASE', externalId: '1', title: '晴天', artists: ['周杰伦'], album: '叶惠美', aliases: [], releaseDate: '2003-07-31', durationMs: 270000, coverUrl: null, availability: 'UNKNOWN', fetchedAt: '2026-10-28T00:00:00Z' } }
@@ -112,7 +112,7 @@ it('歌曲信息页只展示已保存的平台与间隔，不再内嵌配置表�
   vi.mocked(metadata.settings).mockResolvedValue({ ...config, minIntervalSeconds: 10, maxIntervalSeconds: 20 })
   await page()
   expect(wrapper.get('.platform-entry').attributes('title')).toContain('间隔 10～20 秒')
-  expect(wrapper.find('input[aria-label="批量最小间隔秒"]').exists()).toBe(false)
+  expect(wrapper.find('input[name="minIntervalSeconds"]').exists()).toBe(false)
   expect(metadata.saveSettings).not.toHaveBeenCalled()
 })
 it('歌曲信息页准确展示零秒等待配置', async () => {

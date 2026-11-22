@@ -56,7 +56,7 @@ export interface RulePreview {
     extension: string | null
     qualityTags: string[]
     confidence: number
-    parseStatus: 'SUCCESS' | 'PARTIAL' | 'NEEDS_REVIEW' | 'FAILED'
+    parseStatus: 'SUCCESS' | 'PARTIAL' | 'NEEDS_REVIEW' | 'FAILED' | 'SKIPPED'
     parserRule: string
     unparsedTokens: string[]
     needsReview: boolean

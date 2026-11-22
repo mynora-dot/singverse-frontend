@@ -16,7 +16,7 @@ const emit = defineEmits<{ search: []; settings: []; choose: [candidate: Metadat
 // The existing review model remains the sole source of truth for drafts and writes.
 const { review, draft, keyword, providers, available, enabled, loading, searching, applying,
   warning, searchError, candidates, selected, fields, edits, cover, changed, autoSelected,
-  canSearch, searched, settingsStatus, pendingProviders, searchProgress } = props.state
+  canSearch, searched, settingsStatus, pendingProviders, searchProgress, lyricsState, lyricsError, loadLyrics } = props.state
 const pane = ref<'review' | 'candidates'>('review')
 const coverFailed = ref(false), retryKey = ref(0)
 const uid = useId()
@@ -120,7 +120,7 @@ function closeDisclosure(event: KeyboardEvent) {
         <ElAlert v-if="versionWarning" class="version-warning" :title="versionWarning" type="warning" :closable="false" />
         <p v-else-if="!selected && candidates[0] && hasCloseAlternative(candidates, candidates[0])" class="alternative-note">多个候选分数接近，请核对专辑、年份与时长后选择录音版本。</p>
         <div class="preview-scroll">
-          <MetadataFieldComparison compact :before="review.values" :draft="draft" :fields="fields" :edits="edits" :disabled="applying" @change="fields = $event">
+          <MetadataFieldComparison compact :before="review.values" :draft="draft" :fields="fields" :edits="edits" :lyrics-state="lyricsState" :lyrics-error="lyricsError" :disabled="applying" @change="fields = $event" @retry-lyrics="loadLyrics">
             <template #before-cover><div class="cover-value"><MetadataCover :src="currentCover" alt="当前有效封面" empty-text="暂无封面" retryable :retry-key="retryKey" /><span><strong>当前封面</strong><small>{{ currentCover ? '已保存' : '未填写' }}</small></span></div></template>
             <template #draft-cover><div class="cover-proposal"><div class="cover-value"><MetadataCover :src="draftCover" alt="待核对封面" empty-text="尚未选择封面" retryable :retry-key="retryKey" @failed="coverFailed = true" /><span><strong>{{ cover?.label || '当前封面' }}</strong><small>{{ coverStatus }}</small></span></div><ElButton class="cover-action" plain type="primary" :disabled="applying" @click="emit('cover')">选择封面</ElButton></div></template>
           </MetadataFieldComparison>

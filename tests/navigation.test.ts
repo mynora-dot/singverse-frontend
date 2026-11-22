@@ -5,6 +5,8 @@ import App from '../src/admin/App.vue'
 import { router } from '../src/admin/app/router/index'
 import { navigationGroups, navigationContext } from '../src/admin/app/navigation'
 
+const settingsLabels = ['音乐平台', '存储与缓存', '计算服务', 'AI 与助手', '账号与安全']
+
 async function settleLayout() { await vi.dynamicImportSettled(); await flushPromises() }
 beforeEach(() => {
   vi.stubGlobal('scrollTo', vi.fn())
@@ -45,14 +47,14 @@ it('精简主导航与当前分区提供全部现有管理功能', async () => {
   await router.push('/library/songs'); const wrapper = mount(App, { global: { plugins: [router] } }); await settleLayout()
   expect(wrapper.findAll('.primary-navigation a').map(a => a.text())).toEqual(['首页','曲库','加歌','整理','客厅'])
   expect(wrapper.findAll('.section-navigation a').map(a => a.text())).toEqual(['歌曲','歌手','歌单','收藏'])
-  const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/favorites','/library/classification','/library/media','/library/downloads','/library/songs/metadata','/library/audio-processing','/system/tv-settings','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai','/system']
+  const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/favorites','/library/classification','/library/media','/library/downloads','/library/songs/metadata','/library/audio-processing','/system/tv-settings','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai']
   expect(navigationGroups.flatMap(g => g.children.map(e => e.path)).sort()).toEqual(expected.sort())
   await wrapper.get('.mobile-nav-toggle').trigger('click')
   const entries = (group: string) => wrapper.findAll(`[aria-labelledby="nav-group-${group}"] a`).map(a => a.text())
   expect(entries('add')).toEqual(['歌曲来源','下载歌曲','缺歌心愿'])
   expect(entries('tidy')).toEqual(['歌曲信息','歌曲分类','原唱与伴奏'])
   expect(entries('living')).toEqual(['播放与热门','电视首页','客户端下载'])
-  expect(entries('settings')).toEqual(['音乐平台','存储与缓存','计算服务','AI 与助手','账号与安全','服务状态'])
+  expect(entries('settings')).toEqual(settingsLabels)
   expect(wrapper.findAll('#admin-navigation a').some(a => a.text() === '文件名识别')).toBe(false)
   wrapper.unmount()
 })
@@ -66,10 +68,21 @@ it('客厅与设置入口打开分区第一项，账号与安全仍在设置中�
     expect(wrapper.get('.section-navigation a').attributes('aria-current')).toBe('page')
     await wrapper.get('.settings-link').trigger('click'); await settleLayout()
     expect(router.currentRoute.value.path).toBe('/system/music-platforms')
+    expect(wrapper.findAll('.section-navigation a').map(a => a.text())).toEqual(settingsLabels)
     expect(wrapper.get('.section-navigation a').attributes('aria-current')).toBe('page')
     await wrapper.findAll('.section-navigation a').find(a => a.text() === '账号与安全')!.trigger('click'); await settleLayout()
     expect(router.currentRoute.value.path).toBe('/system/parameters')
     expect(wrapper.get('.section-navigation [aria-current="page"]').text()).toBe('账号与安全')
+  } finally { wrapper.unmount() }
+})
+it('旧服务状态地址跳转到首页概览并保留查询参数与锚点', async () => {
+  await router.push('/system?source=bookmark#main-content')
+  const wrapper = mount(App, { global: { plugins: [router] } })
+  try {
+    await settleLayout()
+    expect(router.currentRoute.value.fullPath).toBe('/overview?source=bookmark#main-content')
+    expect(wrapper.get('h1').text()).toBe('曲库概览')
+    expect(wrapper.find('a[href="#/system"]').exists()).toBe(false)
   } finally { wrapper.unmount() }
 })
 it('设置子路由与任务批次深链接高亮所属入口', async () => {
@@ -123,9 +136,10 @@ it('音乐平台在设置中直接可达并高亮，六个选项保留真实五�
   expect(wrapper.get('.settings-link').attributes('aria-current')).toBe('page')
   expect(wrapper.get('.section-navigation [aria-current="page"]').text()).toBe('音乐平台')
   expect(wrapper.get('h1').text()).toBe('音乐平台')
-  expect(wrapper.findAll('.platform-options input[type="checkbox"]')).toHaveLength(6)
-  expect((wrapper.get('input[value="MIGU"]').element as HTMLInputElement).checked).toBe(false)
-  expect(wrapper.text()).toContain('已开启 5 个平台')
+  const platforms = wrapper.findAll<HTMLInputElement>('.platform-options input[type="checkbox"]')
+  expect(platforms).toHaveLength(6)
+  expect(platforms.filter(platform => platform.element.checked).map(platform => platform.element.value))
+    .toEqual(['NETEASE', 'QQ', 'KUGOU', 'KUWO', 'QISHUI'])
   wrapper.unmount()
 })
 

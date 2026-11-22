@@ -44,4 +44,4 @@ export const shareImports = {
     return result
   },
 }
-export const mediaVerification = (state?: string) => ({ PENDING: '待核对媒体路径', PRESENT: '目录已核对', MISSING: '未找到媒体文件', MISMATCH: '媒体大小不符', UNREACHABLE: '无法连接或读取目录' }[state ?? ''] ?? '')
+export const mediaVerification = (state?: string) => ({ PENDING: '待核对媒体路径', PRESENT: '目录已核对', MISSING: '未找到媒体文件', MISMATCH: '媒体大小不符', SUPERSEDED: '此条目的位置或文件信息已变更', UNREACHABLE: '无法连接或读取目录' }[state ?? ''] ?? '')

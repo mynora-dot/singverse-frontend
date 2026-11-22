@@ -6,11 +6,14 @@ import { highSimilarityCandidate } from '../candidate-selection'
 import { metadataDefaults, providerNames } from '../types'
 import { coverValue } from '../cover-quality'
 import type { MetadataCandidate, MusicProvider, SearchResult } from '../types'
-import { reviewFields } from '../single-types'
-import type { Values, ReviewField, SingleReview, ReviewResult, ReviewApply, CoverSelection } from '../single-types'
+import { editableReviewFields, reviewFields } from '../single-types'
+import type { Values, ReviewField, SingleReview, ReviewResult, ReviewApply, CoverSelection, LyricsState, ReviewEdits } from '../single-types'
+import { hasLyrics, sameLyrics } from '../lyrics'
 export const present = (value: unknown) => value !== null && value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0)
 export const equal = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 export const copyValues = (values: Values): Values => JSON.parse(JSON.stringify(values)) as Values
+export function fieldPresent(values: Values, field: ReviewField) { return field === 'lyrics' ? hasLyrics(values.lyrics) : present(values[field]) }
+export function fieldEqual(before: Values, draft: Values, field: ReviewField) { return field === 'lyrics' ? sameLyrics(before.lyrics, draft.lyrics) : equal(before[field], draft[field]) }
 export function candidateValues(candidate: MetadataCandidate): Values {
   const t = candidate.track
   return { title: t.title, artists: [...t.artists], album: t.album, releaseDate: t.releaseDate, aliases: [...t.aliases], durationMs: t.durationMs, cover: t.coverUrl ? coverValue(t.provider, t.coverUrl, 'ORIGINAL') : null }
@@ -23,24 +26,29 @@ export function useSingleSongScrape() {
   const pendingProviders = ref<MusicProvider[]>([]), searchProgress = ref({ completed: 0, total: 0 })
   const error = ref(''), searchError = ref(''), warning = ref(''), candidates = ref<MetadataCandidate[]>([])
   const selected = ref<MetadataCandidate | null>(null), draft = ref<Values | null>(null), fields = ref<ReviewField[]>([])
-  const edits = ref<Partial<Values>>({}), cover = ref<CoverSelection | null>(null), result = ref<ReviewResult | null>(null)
+  const edits = ref<ReviewEdits>({}), cover = ref<CoverSelection | null>(null), result = ref<ReviewResult | null>(null)
+  const lyricsState = ref<LyricsState>('IDLE'), lyricsError = ref('')
   let session = 0, searchGeneration = 0, attempt: { signature: string; input: ReviewApply } | null = null
-  let searchController: AbortController | null = null, selectionGeneration = 0
-  const changed = computed(() => review.value && draft.value ? reviewFields.filter(f => fields.value.includes(f) && present(draft.value![f]) && !equal(review.value!.values[f], draft.value![f])) : [])
-  const draftSignature = computed(() => JSON.stringify({ draft: draft.value, fields: fields.value, edits: edits.value, cover: cover.value }))
+  let searchController: AbortController | null = null, lyricsController: AbortController | null = null, selectionGeneration = 0
+  const changed = computed(() => review.value && draft.value ? reviewFields.filter(f => fields.value.includes(f) && fieldPresent(draft.value!, f) && !fieldEqual(review.value!.values, draft.value!, f)) : [])
+  const draftSignature = computed(() => JSON.stringify({ fields: fields.value, edits: edits.value, cover: cover.value }))
   const dirty = computed(() => !!review.value && !!draft.value && !result.value
     && (changed.value.length > 0 || Object.keys(edits.value).length > 0)
-    && reviewFields.some(f => !equal(review.value!.values[f], draft.value![f]))
+    && reviewFields.some(f => !fieldEqual(review.value!.values, draft.value!, f))
     && (!autoSelected.value || draftSignature.value !== automaticDraft.value))
   const canSearch = computed(() => !!review.value && settingsStatus.value === 'ready' && enabled.value && providers.value.some(p => available.value.includes(p)) && !!keyword.value.trim() && !loading.value && !searching.value && !applying.value)
   const preview = computed(() => {
     if (!review.value || !draft.value) return null
     const values = copyValues(review.value.values)
-    for (const field of changed.value) values[field] = draft.value[field]
+    for (const field of changed.value) {
+      if (field === 'lyrics') values.lyrics = draft.value.lyrics
+      else values[field] = draft.value[field]
+    }
     return values
   })
   function clearSelection() {
     selectionGeneration++
+    stopLyrics()
     autoSelected.value = false; selected.value = null; draft.value = review.value ? copyValues(review.value.values) : null
     edits.value = {}; cover.value = null; fields.value = []; result.value = null; attempt = null
   }
@@ -48,7 +56,11 @@ export function useSingleSongScrape() {
     searchGeneration++; searchController?.abort(); searchController = null
     searching.value = false; pendingProviders.value = []
   }
-  function invalidate() { session++; stopSearch() }
+  function stopLyrics() {
+    lyricsController?.abort(); lyricsController = null
+    lyricsState.value = 'IDLE'; lyricsError.value = ''
+  }
+  function invalidate() { session++; stopSearch(); stopLyrics() }
   function beginEditing() { selectionGeneration++ }
   async function open(songId: string, initialCandidates?: MetadataCandidate[], threshold?: number) {
     invalidate(); const token = session
@@ -128,19 +140,37 @@ export function useSingleSongScrape() {
   }
   function choose(candidate: MetadataCandidate, automatic = false) {
     selectionGeneration++
+    stopLyrics()
     autoSelected.value = false; selected.value = candidate; draft.value = candidateValues(candidate); edits.value = {}; result.value = null; error.value = ''; attempt = null
     cover.value = candidate.track.coverUrl ? { kind: 'candidate', id: candidate.id, value: coverValue(candidate.track.provider, candidate.track.coverUrl, 'ORIGINAL'), originalValue: candidate.track.coverUrl, provider: candidate.track.provider, quality: 'ORIGINAL', url: metadata.candidateCover(candidate.id, 'ORIGINAL'), label: providerNames[candidate.track.provider] } : null
     // Filling missing data is convenient; overwriting existing values always requires an explicit field choice.
-    fields.value = reviewFields.filter(f => !present(review.value!.values[f]) && present(draft.value![f]))
+    fields.value = reviewFields.filter(f => f !== 'lyrics' && !present(review.value!.values[f]) && present(draft.value![f]))
     if (automatic) {
       autoSelected.value = true; automaticDraft.value = draftSignature.value
+    }
+    void loadLyrics()
+  }
+  async function loadLyrics() {
+    if (!selected.value || !review.value || applying.value || lyricsController) return
+    const controller = new AbortController()
+    lyricsController = controller; lyricsState.value = 'LOADING'; lyricsError.value = ''
+    try {
+      const preview = await singleReview.lyrics(review.value.song.id, selected.value.id, controller.signal)
+      if (lyricsController !== controller || !draft.value) return
+      draft.value.lyrics = preview.lyrics
+      lyricsState.value = preview.status
+    } catch (failure) {
+      if (lyricsController !== controller) return
+      lyricsState.value = 'ERROR'
+      lyricsError.value = failure instanceof Error ? failure.message : '歌词获取失败'
+    } finally {
+      if (lyricsController === controller) lyricsController = null
     }
   }
   function saveEdits(values: Values) {
     if (!draft.value || !review.value) return
     selectionGeneration++
-    for (const field of reviewFields) {
-      if (field === 'cover') continue
+    for (const field of editableReviewFields) {
       if (!equal(draft.value[field], values[field])) {
         draft.value[field] = values[field]
         const original = selected.value ? candidateValues(selected.value)[field] : review.value.values[field]
@@ -167,10 +197,14 @@ export function useSingleSongScrape() {
     const signature = JSON.stringify(base)
     if (!attempt || attempt.signature !== signature) attempt = { signature, input: { ...base, requestId: newRequestId() } }
     applying.value = true; error.value = ''
-    try { const response = await execute(review.value.song.id, attempt.input); if (token === session) result.value = response }
+    try {
+      const response = await execute(review.value.song.id, attempt.input)
+      if (token === session) { stopLyrics(); result.value = response }
+    }
     catch (failure) { if (token === session) error.value = failure instanceof Error ? failure.message : '应用失败，请重试' }
     finally { if (token === session) applying.value = false }
   }
   return { review, keyword, providers, available, enabled, loading, searching, applying, error, searchError, warning, candidates,
-    selected, draft, fields, edits, cover, result, changed, dirty, autoSelected, preview, canSearch, searched, settingsStatus, pendingProviders, searchProgress, clearSelection, open, invalidate, beginEditing, search, choose, saveEdits, chooseCover, apply }
+    selected, draft, fields, edits, cover, result, changed, dirty, autoSelected, preview, canSearch, searched, settingsStatus, pendingProviders, searchProgress,
+    lyricsState, lyricsError, loadLyrics, clearSelection, open, invalidate, beginEditing, search, choose, saveEdits, chooseCover, apply }
 }

@@ -113,7 +113,7 @@ onBeforeUnmount(() => { generation++; clearTimeout(timer) })
     <ElAlert v-if="error && !deleting" :title="error" type="error" show-icon :closable="false" role="alert" />
     <p v-if="notice" class="roles-notice" role="status">{{ notice }}</p>
     <AccompanimentPreview v-if="detail?.backingResource" ref="currentPreview" :song-id="songId" :version="detail.backingResource" :duration="detail.duration" />
-    <div v-else class="roles-status" :class="'is-' + summary.tone"><ElTag :type="summary.tone" effect="light" round>{{ summary.tag }}</ElTag><div><h3>{{ summary.title }}</h3></div></div>
+    <div v-if="!detail?.backingResource || detail.packageRoleHint" class="roles-status" :class="'is-' + summary.tone"><ElTag :type="summary.tone" effect="light" round>{{ summary.tag }}</ElTag><div><h3>{{ summary.title }}</h3><p v-if="detail?.packageRoleHint && detail.state !== 'CONFIRMED'">{{ summary.hint }}</p></div></div>
 
     <dl v-if="detail?.state === 'CONFIRMED' && detail.origin" class="roles-origin"><dt>标记来源</dt><dd>{{ originLabel(detail.origin) }}</dd></dl>
     <div v-if="detail && !detail.streams && !uniqueOriginal" class="roles-actions"><ElButton type="primary" :disabled="busy || reading" @click="submit('PROBE', '已开始读取音轨')">读取音轨</ElButton></div>

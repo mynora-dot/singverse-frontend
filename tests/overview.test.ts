@@ -53,7 +53,15 @@ it('使用聚合接口统计真实数字，并把待办链接到对应页面', a
   const wrapper = mount(OverviewView, { global: { plugins: [router] } })
   try {
     await flushPromises()
-    expect(wrapper.get('.feature-actions .solid-link').text()).toBe('添加来源')
+    const shortcuts = wrapper.get('nav[aria-labelledby="shortcut-title"]').findAll('a')
+    expect(shortcuts.map(link => [link.get('strong').text(), link.attributes('href')])).toEqual([
+      ['添加来源', '/library/media?add=LOCAL'],
+      ['扫描来源', '/library/media'],
+      ['下载歌曲', '/library/downloads'],
+      ['创建歌单', '/library/playlists?create=1'],
+      ['整理歌曲信息', '/library/songs/metadata'],
+      ['原唱与伴奏', '/library/audio-processing'],
+    ])
     expect(wrapper.get('.library-summary').text()).toContain('900 首歌曲')
     expect(wrapper.get('.library-details').text()).toContain('1,280 个文件，950 个媒体版本')
     expect(wrapper.get('.review-strip').text()).toContain('12 首文件名识别不完整')
@@ -290,7 +298,7 @@ it('加载期间保留真实入口，不把未知状态显示成零或已整理�
     expect(wrapper.text()).not.toContain('0 首歌曲')
     expect(wrapper.find('.shelf-song').exists()).toBe(false)
     expect(wrapper.find('[aria-label="正在读取最近入库"]').exists()).toBe(true)
-    expect(wrapper.get('.feature-actions .solid-link').attributes('href')).toBe('/library/media?add=LOCAL')
+    expect(wrapper.get('.shortcut-grid a').attributes('href')).toBe('/library/media?add=LOCAL')
     expect(wrapper.get('.family-actions a').attributes('href')).toBe('/party/')
   } finally { wrapper.unmount() }
 })

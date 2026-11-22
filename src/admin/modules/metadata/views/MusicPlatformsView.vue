@@ -1,55 +1,104 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
-import { ElAlert, ElButton, ElMessage, ElMessageBox, ElSwitch, ElSkeleton } from 'element-plus'
+import { ElAlert, ElButton, ElMessage, ElMessageBox, ElSkeleton } from 'element-plus'
 import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { metadata } from '../api/metadata'
-import { metadataDefaults, providerNames, type MetadataBatch, type MetadataSettings, type MusicProvider } from '../types'
+import { metadataDefaults, providerNames, type MetadataSettings, type MusicProvider } from '../types'
 
-const route = useRoute(), router = useRouter()
+const route = useRoute()
+const router = useRouter()
 const platforms = Object.keys(providerNames) as MusicProvider[]
-const marks: Record<MusicProvider, string> = { NETEASE: '云', QQ: 'Q', KUGOU: '酷', KUWO: '我', QISHUI: '汽', MIGU: '咪' }
-const config = ref<MetadataSettings>({ enabled: true, providers: [...platforms], autoApply: false, ...metadataDefaults })
-const ready = ref(false), loading = ref(false), busy = ref(false), error = ref(''), baseline = ref('')
-const latest = ref<MetadataBatch | null>(null), taskUnknown = ref(false)
+type SettingsDraft = MetadataSettings & Required<Pick<MetadataSettings, 'minIntervalSeconds' | 'maxIntervalSeconds'>>
+const config = ref<SettingsDraft>({ enabled: true, providers: [...platforms], autoApply: false, ...metadataDefaults })
+const ready = ref(false)
+const loading = ref(false)
+const busy = ref(false)
+const error = ref('')
+const baseline = ref('')
+const locked = computed(() => busy.value || loading.value)
 const dirty = computed(() => ready.value && JSON.stringify(config.value) !== baseline.value)
-const invalid = computed(() => config.value.enabled && !config.value.providers.length ? '请至少选择一个平台，或关闭平台查询。' :
-  !Number.isFinite(config.value.threshold) || config.value.threshold < .8 || config.value.threshold > 1 ? '自动应用阈值需要在 80%～100% 之间。' :
-  !Number.isInteger(config.value.minIntervalSeconds) || !Number.isInteger(config.value.maxIntervalSeconds) || config.value.minIntervalSeconds! < 0 || config.value.maxIntervalSeconds! > 300 || config.value.maxIntervalSeconds! < config.value.minIntervalSeconds! ? '请求间隔需要在 0～300 秒之间，最大值不能小于最小值。' : '')
-const thresholdPercent = computed({ get: () => Math.round(config.value.threshold * 100), set: value => { config.value.threshold = Number(value) / 100 } })
+const validation = computed(() => {
+  const { enabled, providers, threshold, minIntervalSeconds, maxIntervalSeconds } = config.value
+  const intervalValid = Number.isInteger(minIntervalSeconds) && Number.isInteger(maxIntervalSeconds)
+    && minIntervalSeconds >= 0 && maxIntervalSeconds <= 300 && minIntervalSeconds <= maxIntervalSeconds
+  return {
+    providers: enabled && !providers.length ? '请至少选择一个平台，或关闭平台查询。' : '',
+    threshold: Number.isFinite(threshold) && threshold >= .8 && threshold <= 1 ? '' : '阈值需要在 80%～100% 之间。',
+    interval: intervalValid ? '' : '请求间隔需要在 0～300 秒之间，最大值不能小于最小值。',
+  }
+})
+const invalid = computed(() => Object.values(validation.value).some(Boolean))
+const thresholdPercent = computed({
+  get: () => Math.round(config.value.threshold * 100),
+  set: value => { config.value.threshold = Number(value) / 100 },
+})
 const returnTo = computed(() => typeof route.query.returnTo === 'string' && /^\/(library(?:\/|\?|$)|system\/tasks(?:\/|\?|$))/.test(route.query.returnTo) ? route.query.returnTo : '/library/songs/metadata')
-let active = true, generation = 0
-async function load() {
-  if (loading.value || busy.value || dirty.value) return
-  const token = ++generation; loading.value = true; error.value = ''
-  const [settings, batch] = await Promise.allSettled([metadata.settings(), metadata.latest()])
-  if (!active || token !== generation) return
-  if (settings.status === 'fulfilled') {
-    config.value = { ...settings.value, providers: [...settings.value.providers], minIntervalSeconds: settings.value.minIntervalSeconds ?? metadataDefaults.minIntervalSeconds, maxIntervalSeconds: settings.value.maxIntervalSeconds ?? metadataDefaults.maxIntervalSeconds }
-    baseline.value = JSON.stringify(config.value); ready.value = true
-  } else { ready.value = false; error.value = settings.reason instanceof Error ? settings.reason.message : '音乐平台读取失败，请重试。' }
-  latest.value = batch.status === 'fulfilled' ? batch.value ?? null : null
-  taskUnknown.value = batch.status === 'rejected'
-  loading.value = false
+let active = true
+
+function applySavedSettings(settings: MetadataSettings) {
+  config.value = {
+    ...settings,
+    providers: [...settings.providers],
+    minIntervalSeconds: settings.minIntervalSeconds ?? metadataDefaults.minIntervalSeconds,
+    maxIntervalSeconds: settings.maxIntervalSeconds ?? metadataDefaults.maxIntervalSeconds,
+  }
+  baseline.value = JSON.stringify(config.value)
+  ready.value = true
 }
-function enableAll() { config.value.enabled = true; config.value.providers = [...platforms] }
-async function save() {
-  if (!ready.value || busy.value || loading.value || !dirty.value || invalid.value) return
-  busy.value = true; error.value = ''
+
+async function load() {
+  if (locked.value || dirty.value) return
+  loading.value = true
+  error.value = ''
   try {
-    if (latest.value?.status === 'RUNNING' || taskUnknown.value) {
-      try { await ElMessageBox.confirm('保存设置会暂停正在运行的歌曲信息匹配批次；已写入结果保留，之后可在歌曲信息页继续。', '保存并暂停批次', { confirmButtonText: '保存设置', cancelButtonText: '继续编辑' }) } catch { return }
+    const settings = await metadata.settings()
+    if (active) applySavedSettings(settings)
+  } catch (failure) {
+    if (active) error.value = failure instanceof Error ? failure.message : '音乐平台读取失败，请重试。'
+  } finally {
+    if (active) loading.value = false
+  }
+}
+
+function enableAll() {
+  config.value.enabled = true
+  config.value.providers = [...platforms]
+}
+
+async function save() {
+  if (locked.value || !dirty.value || invalid.value) return
+  busy.value = true
+  error.value = ''
+  try {
+    const status = await metadata.latest().then(batch => batch?.status, () => 'UNKNOWN')
+    if (!active) return
+    if (status === 'RUNNING' || status === 'UNKNOWN') {
+      const running = status === 'RUNNING'
+      const message = running
+        ? '保存会暂停当前匹配批次。已写入的结果会保留，可在歌曲信息页继续。'
+        : '暂时无法读取匹配任务状态。保存会暂停正在运行的匹配批次，可在歌曲信息页继续。'
+      try {
+        await ElMessageBox.confirm(message, running ? '保存并暂停批次' : '确认保存设置', {
+          confirmButtonText: running ? '保存并暂停' : '保存设置',
+          cancelButtonText: '继续编辑',
+        })
+      } catch {
+        return
+      }
     }
     if (!active) return
     const result = await metadata.saveSettings({ ...config.value, providers: [...config.value.providers] })
     if (!active) return
-    config.value = { ...result, providers: [...result.providers], minIntervalSeconds: result.minIntervalSeconds ?? metadataDefaults.minIntervalSeconds, maxIntervalSeconds: result.maxIntervalSeconds ?? metadataDefaults.maxIntervalSeconds }
-    baseline.value = JSON.stringify(config.value)
-    if (latest.value?.status === 'RUNNING') latest.value = { ...latest.value, status: 'PAUSED' }
+    applySavedSettings(result)
     ElMessage.success('音乐平台设置已保存')
-  } catch (failure) { if (active) error.value = failure instanceof Error ? failure.message : '保存失败，修改已保留，可重试。' }
-  finally { if (active) busy.value = false }
+  } catch (failure) {
+    if (active) error.value = failure instanceof Error ? failure.message : '保存失败，修改已保留，可重试。'
+  } finally {
+    if (active) busy.value = false
+  }
 }
+
 async function canLeave() {
   if (busy.value) { ElMessage.info('正在保存设置，请稍候'); return false }
   if (!dirty.value) return true
@@ -58,68 +107,273 @@ async function canLeave() {
 function beforeUnload(event: BeforeUnloadEvent) { if (dirty.value || busy.value) event.preventDefault() }
 onBeforeRouteLeave(canLeave)
 onMounted(() => { void load(); window.addEventListener('beforeunload', beforeUnload) })
-onBeforeUnmount(() => { active = false; generation++; window.removeEventListener('beforeunload', beforeUnload) })
+onBeforeUnmount(() => { active = false; window.removeEventListener('beforeunload', beforeUnload) })
 </script>
 
 <template>
-  <section class="music-platforms-page management-page">
+  <section class="music-platforms-page">
     <PageHeader title="音乐平台">
-      <template #actions><ElButton :disabled="busy" @click="router.push(returnTo)">{{ route.query.returnTo ? '返回原页面' : '查看歌曲信息' }}</ElButton></template>
+      <template #actions>
+        <ElButton :disabled="busy" @click="router.push(returnTo)">
+          {{ route.query.returnTo ? '返回原页面' : '查看歌曲信息' }}
+        </ElButton>
+      </template>
     </PageHeader>
-    <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton v-if="!ready" text :loading="loading" @click="load">重新读取</ElButton></ElAlert>
-    <div v-if="loading && !ready" class="platform-form" role="status"><span class="platform-loading">正在读取音乐平台设置…</span><ElSkeleton v-for="index in 2" :key="index" class="platform-panel sv-glass" :rows="6" animated aria-hidden="true" /></div>
-    <form v-if="ready" aria-label="音乐平台设置" @submit.prevent="save">
-      <fieldset :disabled="busy || loading" class="platform-form">
-        <section class="platform-panel sv-glass" aria-labelledby="platform-heading">
-          <div class="platform-heading"><div><h2 id="platform-heading">歌曲信息与封面</h2></div><ElSwitch v-model="config.enabled" :disabled="busy || loading" aria-label="启用音乐平台查询" /></div>
-          <div class="platform-selection-heading"><span>{{ config.enabled ? `已开启 ${config.providers.length} 个平台` : '平台查询已关闭' }}</span><ElButton text :disabled="config.enabled && config.providers.length === platforms.length" @click="enableAll">启用全部平台</ElButton></div>
-          <div class="platform-options"><label v-for="platform in platforms" :key="platform" class="platform-option" :class="{ selected: config.providers.includes(platform) }"><span class="platform-mark" :data-platform="platform" aria-hidden="true">{{ marks[platform] }}</span><span class="platform-name">{{ providerNames[platform] }}</span><input v-model="config.providers" type="checkbox" :value="platform" :aria-label="providerNames[platform]" /></label></div>
+    <ElAlert v-if="error && !ready" :title="error" type="error" :closable="false" show-icon>
+      <ElButton text @click="load">重新读取</ElButton>
+    </ElAlert>
+    <div v-if="loading" class="platform-loading sv-glass" role="status">
+      <span class="sr-only">正在读取音乐平台设置</span>
+      <ElSkeleton :rows="5" animated aria-hidden="true" />
+    </div>
+    <form v-if="ready" class="platform-form sv-glass" aria-label="音乐平台设置" :aria-busy="busy" @submit.prevent="save">
+      <fieldset class="platform-sections" :disabled="locked">
+        <section class="platform-panel" aria-labelledby="platform-query-title">
+          <div class="platform-heading">
+            <h2 id="platform-query-title"><label for="platform-query">平台查询</label></h2>
+            <div class="platform-switch">
+              <input id="platform-query" v-model="config.enabled" type="checkbox" name="enabled" role="switch" />
+              <span class="platform-switch-track" aria-hidden="true"></span>
+            </div>
+          </div>
+          <div class="platform-options" role="group" aria-label="查询平台" :aria-describedby="validation.providers ? 'platform-provider-error' : undefined">
+            <label v-for="platform in platforms" :key="platform" class="platform-option">
+              <img :src="`/assets/music-platforms/${platform.toLowerCase()}.png`" alt="" width="18" height="18" />
+              <span>{{ providerNames[platform] }}</span>
+              <input v-model="config.providers" type="checkbox" name="providers" :value="platform" />
+            </label>
+          </div>
+          <p v-if="validation.providers" id="platform-provider-error" class="platform-error" role="alert">{{ validation.providers }}</p>
+          <div class="platform-selection-action">
+            <ElButton text type="primary" :disabled="locked || (config.enabled && config.providers.length === platforms.length)" @click="enableAll">
+              启用全部平台
+            </ElButton>
+          </div>
         </section>
-        <section class="platform-panel sv-glass" aria-labelledby="automation-heading">
-          <div class="platform-heading"><div><h2 id="automation-heading">批量匹配后的应用方式</h2></div></div>
-          <label class="platform-switch-row"><span><strong>唯一高相似度候选自动应用</strong></span><ElSwitch v-model="config.autoApply" :disabled="busy || loading" aria-label="唯一高相似度候选自动应用" /></label>
-          <details class="platform-advanced"><summary>匹配阈值与请求节奏</summary><div class="platform-fields"><label>自动应用阈值<span class="platform-number"><input v-model.number="thresholdPercent" aria-label="自动应用阈值百分比" type="number" min="80" max="100" step="1" required /><span>%</span></span><small>同分或分差不足 8 个百分点时保留待审核。</small></label><label>每首歌曲完成后等待<span class="platform-interval"><input v-model.number="config.minIntervalSeconds" aria-label="批量最小间隔秒" type="number" min="0" max="300" step="1" required /><span>至</span><input v-model.number="config.maxIntervalSeconds" aria-label="批量最大间隔秒" type="number" min="0" max="300" step="1" required /><span>秒</span></span></label></div></details>
+        <section class="platform-panel" aria-labelledby="platform-batch-title">
+          <div class="platform-heading">
+            <h2 id="platform-batch-title">批量匹配</h2>
+          </div>
+          <div class="platform-setting">
+            <label for="platform-auto-apply">自动应用高相似度候选</label>
+            <div class="platform-switch">
+              <input id="platform-auto-apply" v-model="config.autoApply" type="checkbox" name="autoApply" role="switch" />
+              <span class="platform-switch-track" aria-hidden="true"></span>
+            </div>
+          </div>
+          <div class="platform-setting">
+            <label for="platform-threshold">匹配阈值<span class="sr-only">（百分比）</span></label>
+            <div class="platform-value">
+              <input
+                id="platform-threshold" v-model.number="thresholdPercent" name="threshold"
+                type="number" inputmode="numeric" min="80" max="100" step="1" required
+                :aria-invalid="!!validation.threshold"
+                :aria-describedby="validation.threshold ? 'platform-threshold-error' : undefined"
+              />
+              <span aria-hidden="true">%</span>
+            </div>
+            <p v-if="validation.threshold" id="platform-threshold-error" class="platform-error" role="alert">{{ validation.threshold }}</p>
+          </div>
+          <div class="platform-setting" role="group" aria-labelledby="platform-interval-label">
+            <span id="platform-interval-label">每首歌后等待</span>
+            <div class="platform-value">
+              <input
+                v-model.number="config.minIntervalSeconds" name="minIntervalSeconds" aria-label="最短请求间隔（秒）"
+                type="number" inputmode="numeric" min="0" max="300" step="1" required
+                :aria-invalid="!!validation.interval"
+                :aria-describedby="validation.interval ? 'platform-interval-error' : undefined"
+              />
+              <span aria-hidden="true">至</span>
+              <input
+                v-model.number="config.maxIntervalSeconds" name="maxIntervalSeconds" aria-label="最长请求间隔（秒）"
+                type="number" inputmode="numeric" min="0" max="300" step="1" required
+                :aria-invalid="!!validation.interval"
+                :aria-describedby="validation.interval ? 'platform-interval-error' : undefined"
+              />
+              <span aria-hidden="true">秒</span>
+            </div>
+            <p v-if="validation.interval" id="platform-interval-error" class="platform-error" role="alert">{{ validation.interval }}</p>
+          </div>
         </section>
       </fieldset>
-      <ElAlert v-if="taskUnknown" title="暂时无法读取匹配任务状态；保存设置仍会暂停正在运行的批次。" type="warning" :closable="false" />
-      <p v-if="invalid" role="alert" class="platform-validation">{{ invalid }}</p>
-      <div class="platform-save sv-glass"><p>{{ dirty ? '有未保存的修改' : '当前设置已保存' }}<small>保存会暂停运行中的匹配批次。</small></p><ElButton type="primary" native-type="submit" :loading="busy" :disabled="!dirty || !!invalid || loading">保存设置</ElButton></div>
+      <footer class="platform-save">
+        <p v-if="error" class="platform-error" role="alert">{{ error }}</p>
+        <ElButton type="primary" native-type="submit" :loading="busy" :disabled="locked || !dirty || invalid">保存设置</ElButton>
+      </footer>
     </form>
   </section>
 </template>
 
 <style scoped>
-.music-platforms-page { max-width: 1120px; }
-.platform-form { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; gap: 20px; padding: 0; margin: 0; border: 0; min-width: 0; }
-.platform-loading { grid-column: 1 / -1; }
-.platform-panel { padding: 24px; min-width: 0; margin: 0; }
-.platform-heading,.platform-selection-heading,.platform-switch-row,.platform-save { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.platform-heading { align-items: flex-start; margin-bottom: 20px; }
-.platform-heading h2 { margin: 0 0 6px; font-size: 15px; }
-.platform-heading p,.platform-note,.platform-loading { margin: 0; color: var(--sv-text-secondary); font-size: 13px; line-height: 1.8; }
-.platform-selection-heading { margin-bottom: 12px; color: var(--sv-text-secondary); font-size: 13px; }
-.platform-options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 12px; }
-.platform-option { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 72px; padding: 12px; border: 1px solid var(--sv-border-subtle); border-radius: var(--sv-radius-md); background: var(--sv-surface-1); cursor: pointer; }
-.platform-option.selected { border-color: var(--sv-accent-primary); background: var(--sv-accent-soft); }.platform-option.selected .platform-mark { background: var(--sv-accent-soft); }
-.platform-mark { display: grid; place-items: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 8px; background: var(--sv-surface-2); color: var(--sv-accent-primary); font-size: 16px; font-weight: 600; }
-.platform-name { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; }
-.platform-name small,.platform-switch-row small,.platform-save small { display: block; color: var(--sv-text-secondary); font-size: 12px; font-weight: 400; margin-top: 4px; line-height: 1.6; }
-.platform-option input { width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--sv-accent-primary); }
-.platform-note { margin-top: 16px; }
-.platform-switch-row { font-size: 14px; }
-.platform-switch-row :deep(.el-switch) { flex-shrink: 0; }
-.platform-advanced { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--sv-border-subtle); }
-.platform-advanced summary { cursor: pointer; font-size: 13px; padding: 4px 0; }
-.platform-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 20px; }
-.platform-fields > label { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
-.platform-fields small { color: var(--sv-text-secondary); line-height: 1.7; }
-.platform-number,.platform-interval { display: flex; align-items: center; gap: 12px; }
-.platform-fields input { width: 90px; min-width: 0; padding: 12px; border: 1px solid var(--sv-border-default); border-radius: var(--sv-radius-sm); background: var(--sv-surface-2); color: var(--sv-text-primary); font: inherit; }
-.platform-save { margin-top: 20px; padding: 20px 24px; }
-.platform-save p { font-size: 13px; margin: 0; }
-.platform-validation { color: var(--el-color-danger); font-size: 13px; }
-@media(max-width: 1000px) { .platform-form { grid-template-columns: minmax(0, 1fr); } }
-@media(max-width: 850px) { .platform-options { grid-template-columns: repeat(2,minmax(0,1fr)); }.platform-fields { grid-template-columns: 1fr; } }
-@media(max-width: 520px) { .platform-panel { padding: 20px; }.platform-options { grid-template-columns: 1fr; }.platform-heading { gap: 12px; }.platform-selection-heading { align-items: flex-start; gap: 8px; }.platform-save { align-items: stretch; flex-direction: column; }.platform-save :deep(.el-button) { min-height: 44px; } }
-@media(max-width:768px) { .music-platforms-page :deep(.el-button), .platform-advanced summary { min-height:44px; }.platform-advanced summary { align-content:center; }.platform-heading :deep(.el-switch), .platform-switch-row :deep(.el-switch) { min-height:44px; } }
+.music-platforms-page {
+  --platform-gutter: clamp(12px, 2.4vw, 28px);
+  max-width: 1120px;
+}
+
+.platform-loading { padding: var(--platform-gutter); }
+
+.platform-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.platform-panel {
+  min-width: 0;
+  padding: 16px var(--platform-gutter);
+}
+
+.platform-panel + .platform-panel { border-inline-start: 1px solid var(--sv-border-subtle); }
+
+.platform-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  margin-bottom: 8px;
+}
+
+.platform-heading h2 { font-size: 17px; }
+.platform-heading label, .platform-setting label { cursor: pointer; }
+.platform-switch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+}
+.platform-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.platform-switch-track {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 22px;
+  padding: 2px;
+  border: 1px solid var(--sv-border-strong);
+  border-radius: var(--sv-radius-full);
+  background: var(--sv-surface-3);
+  pointer-events: none;
+}
+.platform-switch-track::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--sv-text-secondary);
+}
+.platform-switch input:checked + .platform-switch-track {
+  justify-content: flex-end;
+  border-color: var(--sv-accent-primary);
+  background: var(--sv-accent-primary);
+}
+.platform-switch input:checked + .platform-switch-track::before { background: var(--sv-on-accent); }
+.platform-switch input:focus-visible + .platform-switch-track { outline: 2px solid var(--sv-accent-primary); outline-offset: 3px; }
+.platform-switch input:disabled { cursor: default; }
+.platform-switch input:disabled + .platform-switch-track { opacity: .55; }
+
+@media (forced-colors: active) {
+  .platform-switch input { opacity: 1; }
+  .platform-switch-track { display: none; }
+}
+
+.platform-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--sv-border-subtle);
+  border-radius: var(--sv-radius-md);
+  background: var(--sv-border-subtle);
+}
+
+.platform-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 8px 12px;
+  background: var(--sv-surface-2);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.platform-option img { object-fit: contain; border-radius: 4px; }
+.platform-option span { overflow-wrap: anywhere; }
+.platform-option input { width: 17px; height: 17px; margin: 0; accent-color: var(--sv-accent-primary); cursor: inherit; }
+.platform-option:has(:disabled) { cursor: default; }
+.platform-option:hover:not(:has(:disabled)) { background: var(--sv-surface-1); }
+.platform-option:has(:focus-visible) { outline: 2px solid var(--sv-accent-primary); outline-offset: -2px; }
+.platform-option input:focus-visible { outline: none; }
+
+.platform-selection-action { display: flex; justify-content: flex-end; margin-top: 4px; }
+
+.platform-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 64px;
+  padding-block: 8px;
+  border-top: 1px solid var(--sv-border-subtle);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.platform-value { display: flex; align-items: center; gap: 8px; }
+.platform-value span { min-width: 1em; color: var(--sv-text-secondary); font-size: 13px; text-align: center; }
+.platform-value input {
+  width: clamp(56px, 7vw, 76px);
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--sv-border-strong);
+  border-radius: var(--sv-radius-md);
+  background: var(--sv-surface-2);
+  color: var(--sv-text-primary);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.platform-value input:focus-visible { outline-offset: 2px; }
+.platform-value input[aria-invalid='true'] { border-color: var(--sv-semantic-danger); }
+.platform-error { margin-block: 6px 0; color: var(--sv-semantic-danger); font-size: 13px; overflow-wrap: anywhere; }
+.platform-setting > .platform-error { grid-column: 1 / -1; margin-block: 0; }
+
+.platform-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px var(--platform-gutter);
+  border-top: 1px solid var(--sv-border-subtle);
+}
+
+.platform-save .platform-error { flex: 1 1 200px; margin-block: 0; }
+.music-platforms-page :deep(.el-button) { min-height: 44px; }
+
+@media (max-width: 760px) {
+  .platform-sections { grid-template-columns: minmax(0, 1fr); }
+  .platform-panel + .platform-panel { border-inline-start: 0; border-top: 1px solid var(--sv-border-subtle); }
+}
+
+@media (max-width: 420px) {
+  .platform-option { gap: 6px; padding-inline: 6px; }
+  .platform-option img, .platform-option input { width: 16px; height: 16px; }
+  .platform-value { gap: 6px; }
+  .platform-save :deep(.el-button) { flex: 1 1 auto; }
+}
 </style>

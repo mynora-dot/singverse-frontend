@@ -326,7 +326,7 @@ async function save(startScan = !editing.value && !importMode.value) {
       items.value = items.value.some(item => item.id === saved.id) ? items.value.map(item => item.id === saved.id ? saved : item) : [saved, ...items.value]
       if (metadataSource.value?.id === saved.id) metadataSource.value = saved
     }
-    dialog.value = false; draft.password = ''; ElMessage.success(importing ? '歌曲来源已保存，接下来上传资料包并核对路径' : startScan ? '已保存，后台将自动扫描入库，可以离开页面' : profileChanged ? '已保存解析方案，请重新扫描以更新文件名识别结果' : '歌曲来源配置已保存')
+    dialog.value = false; draft.password = ''; ElMessage.success(importing ? '歌曲来源已保存，正在准备上传资料包' : startScan ? '已保存，后台将自动扫描入库，可以离开页面' : profileChanged ? '已保存解析方案，请重新扫描以更新文件名识别结果' : '歌曲来源配置已保存')
     if (saved && importing) { metadataImportFile.value = file; metadataSource.value = saved }
     await load(false, !importing)
   } catch (e) { formError.value = e instanceof Error ? e.message : '保存失败' }
@@ -430,7 +430,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
             <option v-for="profile in profileWorkspace?.profiles ?? []" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
           </select><ElButton :disabled="saving || profilesLoading || !!profilesError || !selectedProfile" @click="showRecognition()">试验与调整</ElButton></div>
 
-          <p v-if="selectedProfile && !enabledEntries.length" class="profile-help">此方案没有启用规则，扫描结果会标记为文件名识别不完整，不会使用其他方案补充。</p>
+          <p v-if="selectedProfile && !enabledEntries.length" class="profile-help">此方案没有启用规则。需要从文件名补充信息的歌曲将标记为待复核。</p>
           <p v-if="!profilesLoading && !profilesError && !selectedProfile" class="profile-help">所选方案已不可用，请重新选择。</p>
         </ElFormItem>
         <details :open="advanced" class="source-advanced" @toggle="advanced = ($event.target as HTMLDetailsElement).open"><summary>定时扫描</summary>
@@ -445,7 +445,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
             <div v-if="draft.type === 'WEBDAV' && draft.username"><dt>访问账号</dt><dd>{{ draft.username }}</dd></div>
             <div><dt>添加方式</dt><dd>{{ importingSource ? '导入已有资料包' : '直接扫描目录' }}<span v-if="importingSource && importFile" class="source-confirm-detail">{{ importFile.name }}</span></dd></div>
             <div><dt>文件名识别</dt><dd>{{ selectedProfile?.name || '方案不可用' }}</dd></div>
-            <div><dt>文件内信息</dt><dd>{{ draft.type === 'LOCAL' ? '优先读取，缺失时用文件名补充' : importingSource ? '复用资料包，不自动读取媒体内容' : draft.autoExtractEmbedded ? '扫描后在后台按需读取' : '暂不开启，优先使用文件名' }}</dd></div>
+            <div><dt>文件内信息</dt><dd>{{ draft.type === 'LOCAL' ? '先读文件标签，缺歌名或歌手时才解析文件名' : importingSource ? '从资料包导入，后台自动核对 WebDAV 路径和已知文件大小' : draft.autoExtractEmbedded ? '扫描后在后台按需读取' : '暂不开启，优先使用文件名' }}</dd></div>
             <div><dt>定时扫描</dt><dd>{{ !importingSource && draft.scanEnabled ? draft.scanCron : '未开启' }}<span v-if="!importingSource && draft.scanEnabled" class="source-confirm-detail">时区 Asia/Shanghai；仅保存也会保留此定时设置。</span></dd></div>
             <div v-if="draft.type === 'LOCAL' && draft.useForLxDownloads"><dt>下载保存位置</dt><dd>使用此目录保存新下载</dd></div>
           </dl>

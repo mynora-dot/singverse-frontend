@@ -22,6 +22,7 @@ export interface AudioJob extends AudioExecution, SeparationRecipe { id: string;
 /** `/api/v1/media-songs/{id}/audio-roles` 与列表行 `audio` 共用的音轨角色视图。 */
 export interface AudioRoles {
   state: string; revision?: number; origin?: string; originalId?: string; backingId?: string
+  packageRoleHint?: { originalId: string; backingId?: string; basis: 'DECLARED' | 'STREAM_TITLES'; verification: string }
   /** 已知唯一音频，不代表已经探测到实际流索引。 */
   originalSelection?: { kind: 'UNIQUE_AUDIO' }
   backingResource?: AudioVersion

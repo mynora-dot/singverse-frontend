@@ -2,7 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElAlert, ElButton, ElIcon, ElSkeleton, ElSkeletonItem } from 'element-plus'
-import { ArrowRight, ChatDotRound, Clock, Collection, Cpu, DocumentChecked, FolderOpened, Headset, Plus, RefreshRight, Search, Cellphone } from '@element-plus/icons-vue'
+import { ArrowRight, ChatDotRound, Clock, Collection, Cpu, Download, DocumentChecked, FolderOpened, Headset, Plus, RefreshRight, Search, MagicStick, Microphone, TopRight } from '@element-plus/icons-vue'
 import SongCover from '../../song-management/components/SongCover.vue'
 import EmptyState from '../../../shared/ui/EmptyState.vue'
 import { songTitle, songArtists } from '../../metadata/utils'
@@ -10,6 +10,15 @@ import { backgroundTasks, type BackgroundTask } from '../../background-tasks/api
 import { statusNames, progressText } from '../../background-tasks/presentation'
 import { auth } from '../../../core/auth/api'
 import { loadOverview, type AdminOverview } from '../api/overview'
+
+const shortcuts = [
+  { title: '添加来源', detail: '连接新的歌曲目录', to: '/library/media?add=LOCAL', icon: Plus },
+  { title: '扫描来源', detail: '选择要扫描的目录', to: '/library/media', icon: FolderOpened },
+  { title: '下载歌曲', detail: '搜索平台曲目', to: '/library/downloads', icon: Download },
+  { title: '创建歌单', detail: '选歌并编排顺序', to: '/library/playlists?create=1', icon: Collection },
+  { title: '整理歌曲信息', detail: '匹配歌手与封面', to: '/library/songs/metadata', icon: MagicStick },
+  { title: '原唱与伴奏', detail: '分离和处理音轨', to: '/library/audio-processing', icon: Headset },
+]
 
 type Load<T> = { state: 'loading' | 'ready' | 'error'; value?: T; error?: string }
 let active = true
@@ -94,36 +103,52 @@ function songLink(id: string) {
 
 <template>
   <section class="overview-page">
-    <header class="overview-heading">
-      <h1>曲库概览</h1>
-      <ElButton class="overview-refresh" text :icon="RefreshRight" :loading="todoLoading" aria-label="刷新曲库概览" @click="refresh">刷新</ElButton>
-    </header>
     <ElAlert v-if="data.state === 'error'" class="overview-error" type="warning" :closable="false" show-icon :title="data.value ? '曲库概览更新失败，正在显示上次读取的结果' : '曲库概览暂时无法读取'">
       <span>{{ data.error }}</span><ElButton link type="primary" @click="refreshOverview">重新读取</ElButton>
     </ElAlert>
 
-    <section class="home-feature sv-glass" aria-label="曲库搜索与概况" :aria-busy="todoLoading">
-      <div class="feature-copy">
+    <div class="overview-top">
+      <section class="home-feature sv-glass" aria-labelledby="overview-title">
+        <header class="overview-heading">
+          <h1 id="overview-title">曲库概览</h1>
+          <ElButton class="overview-refresh" text :icon="RefreshRight" :loading="todoLoading" aria-label="刷新曲库概览" @click="refresh">刷新</ElButton>
+        </header>
         <form class="home-search" role="search" aria-label="搜索家庭曲库" @submit.prevent="submitSearch">
           <ElIcon aria-hidden="true"><Search /></ElIcon>
           <input v-model="searchTerm" type="search" name="search" placeholder="搜索歌名、歌手" aria-label="搜索家庭曲库中的歌曲或歌手" maxlength="500">
-          <button class="search-submit" type="submit" aria-label="搜索曲库"><ElIcon aria-hidden="true"><ArrowRight /></ElIcon></button>
+          <button class="search-submit" type="submit" aria-label="搜索曲库">搜索</button>
         </form>
-        <div class="feature-actions">
-          <RouterLink class="solid-link" to="/library/media?add=LOCAL"><ElIcon aria-hidden="true"><Plus /></ElIcon>添加来源</RouterLink>
-          <RouterLink class="outline-link" to="/library/media"><ElIcon aria-hidden="true"><FolderOpened /></ElIcon>扫描来源</RouterLink>
+        <div class="overview-summary" :aria-busy="todoLoading">
+          <p class="library-summary">
+            <strong v-if="library">{{ fmt(library.formalSongs) }} 首歌曲</strong>
+            <span v-else-if="todoLoading" role="status">正在读取曲库…</span>
+            <span v-else>歌曲数量读取失败</span>
+          </p>
+          <p v-if="library" class="library-details">{{ fmt(library.totalSongs) }} 个文件，{{ fmt(library.formalVariants) }} 个媒体版本</p>
+          <RouterLink v-if="ok('sources')" class="source-summary" to="/library/media">{{ fmt(ov!.sources!.total) }} 个媒体来源<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink>
         </div>
+      </section>
+
+      <section class="family-invitation" aria-labelledby="family-title">
+        <span class="family-record" aria-hidden="true"></span>
+        <ElIcon class="family-icon" aria-hidden="true"><Microphone /></ElIcon>
+        <h2 id="family-title">客厅点歌</h2>
+        <div class="family-actions">
+          <a class="party-link" href="/party/" target="_blank" rel="noopener">打开亲友点歌<ElIcon aria-hidden="true"><TopRight /></ElIcon></a>
+          <RouterLink class="family-settings" to="/system/tv-settings">客厅设置</RouterLink>
+        </div>
+      </section>
+    </div>
+
+    <nav class="overview-shortcuts" aria-labelledby="shortcut-title">
+      <h2 id="shortcut-title">常用功能</h2>
+      <div class="shortcut-grid">
+        <RouterLink v-for="item in shortcuts" :key="item.to" :to="item.to" class="shortcut-link">
+          <span class="shortcut-icon"><ElIcon aria-hidden="true"><component :is="item.icon" /></ElIcon></span>
+          <span class="shortcut-copy"><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></span>
+        </RouterLink>
       </div>
-      <div class="overview-summary">
-        <p class="library-summary">
-          <strong v-if="library">{{ fmt(library.formalSongs) }} 首歌曲</strong>
-          <span v-else-if="todoLoading" role="status">正在读取曲库…</span>
-          <span v-else>歌曲数量读取失败</span>
-        </p>
-        <p v-if="library" class="library-details">{{ fmt(library.totalSongs) }} 个文件，{{ fmt(library.formalVariants) }} 个媒体版本</p>
-        <RouterLink v-if="ok('sources')" class="source-summary" to="/library/media">{{ fmt(ov!.sources!.total) }} 个媒体来源<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink>
-      </div>
-    </section>
+    </nav>
 
     <div class="overview-grid">
       <div class="overview-main">
@@ -132,12 +157,6 @@ function songLink(id: string) {
           <div class="review-copy"><h2 id="review-heading">{{ reviewHeading }}</h2><p v-if="primaryTodo?.detail">{{ primaryTodo.detail }}</p></div>
           <RouterLink v-if="primaryTodo" class="outline-link todo-action" :to="primaryTodo.to">{{ primaryTodo.action }}</RouterLink>
           <ElButton v-else-if="!todoLoading" @click="refresh">重新读取</ElButton>
-        </section>
-
-        <section v-if="secondaryTodos.length || (todoErrors && !todoLoading)" class="home-todos sv-glass" aria-labelledby="overview-todo-title">
-          <div class="home-section-heading"><h2 id="overview-todo-title">待办事项</h2><span class="sv-count-pill">{{ secondaryTodos.length }}</span></div>
-          <ul v-if="secondaryTodos.length" class="todo-list"><li v-for="todo in secondaryTodos" :key="todo.key" class="todo-item"><span class="sv-status-dot" :class="todo.level" aria-hidden="true" /><div class="todo-copy"><strong>{{ todo.title }}</strong><p v-if="todo.detail">{{ todo.detail }}</p></div><RouterLink :to="todo.to" class="todo-action">{{ todo.action }}<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink></li></ul>
-          <p v-if="todoErrors && !todoLoading" class="todo-note" role="alert">有 {{ todoErrors }} 项状态读取失败，待办可能不完整。<ElButton link type="primary" @click="refresh">重新读取</ElButton></p>
         </section>
 
         <section class="home-library sv-glass" aria-labelledby="recent-title" :aria-busy="todoLoading">
@@ -150,6 +169,12 @@ function songLink(id: string) {
             </RouterLink>
           </div>
           <EmptyState v-else title="暂无歌曲" :icon="Headset"><template #action><RouterLink class="solid-link" to="/library/media?add=LOCAL">连接歌曲来源</RouterLink></template></EmptyState>
+        </section>
+
+        <section v-if="secondaryTodos.length || (todoErrors && !todoLoading)" class="home-todos sv-glass" aria-labelledby="overview-todo-title">
+          <div class="home-section-heading"><h2 id="overview-todo-title">待办事项</h2><span class="sv-count-pill">{{ secondaryTodos.length }}</span></div>
+          <ul v-if="secondaryTodos.length" class="todo-list"><li v-for="todo in secondaryTodos" :key="todo.key" class="todo-item"><span class="sv-status-dot" :class="todo.level" aria-hidden="true" /><div class="todo-copy"><strong>{{ todo.title }}</strong><p v-if="todo.detail">{{ todo.detail }}</p></div><RouterLink :to="todo.to" class="todo-action">{{ todo.action }}<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink></li></ul>
+          <p v-if="todoErrors && !todoLoading" class="todo-note" role="alert">有 {{ todoErrors }} 项状态读取失败，待办可能不完整。<ElButton link type="primary" @click="refresh">重新读取</ElButton></p>
         </section>
 
         <section v-if="homePlaylists?.length" class="playlist-section sv-glass" aria-labelledby="collection-title">
@@ -170,16 +195,11 @@ function songLink(id: string) {
         </section>
 
         <section class="home-status sv-glass" aria-label="计算与 AI 就绪状态">
-          <div class="home-section-heading"><h2>服务状态</h2><RouterLink class="text-link" to="/system">查看<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink></div>
+          <div class="home-section-heading"><h2>服务状态</h2></div>
           <div class="readiness-row"><template v-if="readiness"><RouterLink class="readiness-chip" :class="{ warn: !readiness.compute.configured }" to="/system/compute"><ElIcon aria-hidden="true"><Cpu /></ElIcon>{{ readiness.compute.configured ? `计算节点 ${readiness.compute.mode || '已配置'}` : '计算节点未配置，去设置' }}<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink><RouterLink class="readiness-chip" :class="{ warn: !readiness.ai.configured }" to="/system/ai"><ElIcon aria-hidden="true"><ChatDotRound /></ElIcon>{{ readiness.ai.configured ? `AI 已启用 ${readiness.ai.enabledFeatures.length} 项能力` : 'AI 未配置，去设置' }}<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></RouterLink></template><span v-else class="support-note" :role="todoLoading ? 'status' : undefined">{{ todoLoading ? '正在读取服务状态…' : '节点与 AI 状态读取失败' }}</span></div>
           <RouterLink v-if="playback" class="playback-link" to="/library/playback-history"><ElIcon aria-hidden="true"><Clock /></ElIcon>近 30 天 {{ fmt(playback.totalPlays) }} 次播放</RouterLink>
         </section>
 
-        <section class="family-invitation sv-glass" aria-labelledby="family-title">
-          <ElIcon class="family-icon" aria-hidden="true"><Cellphone /></ElIcon>
-          <h2 id="family-title">客厅</h2>
-          <div class="family-actions"><a class="text-link" href="/party/" target="_blank" rel="noopener">打开亲友点歌<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></a><RouterLink class="text-link" to="/system/tv-settings">客厅设置</RouterLink></div>
-        </section>
       </aside>
     </div>
   </section>
@@ -187,29 +207,28 @@ function songLink(id: string) {
 
 <style scoped>
 .overview-page { min-width: 0; }
-.overview-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.overview-top { display: grid; grid-template-columns: minmax(0, 2fr) minmax(310px, 1fr); gap: 20px; }
+.overview-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .overview-heading h1 { font-size: 28px; font-weight: 600; }
 .overview-error { margin-bottom: 20px; }
 .overview-error :deep(.el-alert__description) { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.home-feature { padding: 24px; margin-bottom: 24px; }
-.feature-copy { display: flex; align-items: center; gap: 24px; }
+.home-feature { min-width: 0; padding: 20px 24px 16px; }
 .home-search { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; min-height: 48px; padding: 0 4px 0 16px; border: 1px solid var(--sv-border-default); border-radius: var(--sv-radius-md); background: var(--sv-surface-2); }
 .home-search:focus-within { outline: 2px solid var(--sv-accent-primary); outline-offset: 3px; }
 .home-search > .el-icon { flex: none; color: var(--sv-text-secondary); font-size: 20px; }
 .home-search input { width: 100%; min-width: 0; min-height: 48px; border: 0; outline: 0; background: transparent; color: var(--sv-text-primary); font-size: 16px; }
 .home-search input::placeholder { color: var(--sv-text-tertiary); }
-.search-submit { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 8px; background: var(--sv-accent-soft); color: var(--sv-accent-primary); cursor: pointer; }
-.feature-actions, .family-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.feature-actions { flex: none; }
+.search-submit { align-self: center; flex: none; min-width: 64px; min-height: 44px; padding: 0 14px; border: 0; border-radius: 7px; background: var(--sv-accent-primary); color: var(--sv-on-accent); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.search-submit:hover { background: var(--sv-accent-muted); }
 .solid-link, .outline-link, .text-link, .todo-action { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; font-size: 14px; font-weight: 500; }
 .solid-link, .outline-link { padding: 10px 18px; border: 1px solid var(--sv-border-default); border-radius: var(--sv-radius-md); }
 .solid-link { border-color: var(--sv-accent-primary); background: var(--sv-accent-primary); color: var(--sv-on-accent); }
 .solid-link:hover { background: var(--sv-accent-muted); color: var(--sv-on-accent); }
 .outline-link { background: var(--sv-surface-2); color: var(--sv-text-primary); }
 .outline-link:hover { background: var(--sv-accent-soft); border-color: var(--sv-accent-primary); color: var(--sv-accent-primary); }
-.overview-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--sv-border-subtle); font-size: 13px; }
+.overview-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; margin-top: 12px; font-size: 13px; }
 .library-summary { color: var(--sv-text-secondary); }
-.library-summary strong { color: var(--sv-text-primary); font-size: 16px; font-weight: 600; }
+.library-summary strong { color: var(--sv-text-primary); font-size: 14px; font-weight: 600; }
 .library-details { color: var(--sv-text-secondary); }
 .source-summary { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; margin-left: auto; }
 .overview-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; align-items: start; gap: 24px; }
@@ -266,18 +285,84 @@ function songLink(id: string) {
 .readiness-chip > .el-icon:last-child { margin-left: auto; font-size: 14px; }
 .readiness-chip.warn { color: var(--sv-semantic-warn); }
 .playback-link { display: flex; align-items: center; gap: 10px; min-height: 44px; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--sv-border-subtle); color: var(--sv-text-secondary); font-size: 13px; }
-.family-icon { font-size: 24px; color: var(--sv-accent-primary); margin-bottom: 12px; }
-.family-invitation h2 { font-size: 17px; }
-.family-invitation > p { color: var(--sv-text-secondary); font-size: 13px; margin-top: 6px; }
-.family-actions { gap: 4px 12px; margin-top: 12px; }
-.family-actions .text-link { font-size: 13px; }
-@media (max-width: 1200px) { .overview-grid { grid-template-columns: minmax(0, 1fr) 290px; gap: 20px; }.recent-shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 900px) { .overview-grid { grid-template-columns: minmax(0, 1fr); }.overview-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }.family-invitation { grid-column: 1 / -1; }.recent-shelf { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.family-invitation {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 24px;
+  border-radius: var(--sv-radius-lg);
+  background: linear-gradient(115deg, #142958 8%, #23478d 82%, #355ba2);
+  color: white;
+}
+.family-record {
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  right: -96px;
+  width: 260px;
+  aspect-ratio: 1;
+  transform: translateY(-43%);
+  border: 1px solid rgb(171 202 255 / 35%);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, #142958 0 3%, #89abec 3.5% 17%, transparent 17.5%),
+    repeating-radial-gradient(circle, transparent 0 4px, rgb(196 220 255 / 18%) 4.5px 5.5px),
+    conic-gradient(from 25deg, #284984, #5382cc 12%, #193469 33%, #284984 54%, #4877be 64%, #203d76 88%, #284984);
+}
+.family-icon { font-size: 22px; }
+.family-invitation h2 { font-size: 24px; line-height: 1.3; font-weight: 650; }
+.family-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin-top: 4px; }
+.family-actions a { display: inline-flex; align-items: center; min-height: 44px; gap: 8px; font-size: 14px; }
+.party-link { padding: 0 14px; border-radius: var(--sv-radius-md); background: white; color: #142958; font-weight: 600; }
+.party-link:hover { background: #e4eeff; color: #142958; }
+.family-settings, .family-settings:hover { color: white; }
+.family-settings:hover { text-decoration: underline; }
+
+.overview-shortcuts { margin: 24px 0; }
+.overview-shortcuts h2 { margin-bottom: 12px; font-size: 18px; font-weight: 600; }
+.shortcut-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.shortcut-link { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 16px; border: 1px solid var(--sv-glass-border); border-radius: var(--sv-radius-lg); background: var(--sv-surface-2); color: var(--sv-text-primary); box-shadow: var(--sv-shadow-sm); }
+.shortcut-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--sv-accent-soft); color: var(--sv-accent-primary); font-size: 19px; }
+.shortcut-copy { display: grid; gap: 2px; }
+.shortcut-copy strong { font-size: 15px; font-weight: 600; }
+.shortcut-copy small { color: var(--sv-text-secondary); font-size: 12px; }
+.shortcut-link:is(:hover, :focus-visible) { border-color: var(--sv-accent-primary); color: var(--sv-accent-primary); }
+.shortcut-link:active { background: var(--sv-accent-soft); }
+.overview-page :is(a, button):focus-visible { outline: 2px solid var(--sv-accent-primary); outline-offset: 2px; }
+.family-invitation a:focus-visible { outline-color: white; }
+@media (max-width: 1200px) {
+  .overview-grid { grid-template-columns: minmax(0, 1fr) 290px; gap: 20px; }
+  .recent-shelf { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 1050px) {
+  .shortcut-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .shortcut-link { flex-direction: row; align-items: center; }
+  .shortcut-icon { flex: none; }
+}
+@media (max-width: 900px) {
+  .overview-grid { grid-template-columns: minmax(0, 1fr); }
+  .overview-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recent-shelf { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@media (max-width: 740px) {
+  .overview-top { grid-template-columns: 1fr; gap: 12px; }
+  .family-invitation { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: flex-start; padding: 12px 16px; }
+  .family-invitation h2 { font-size: 18px; }
+  .family-actions { margin: 0 0 0 auto; gap: 10px; }
+  .family-record { opacity: .35; }
+}
 @media (max-width: 650px) {
-  .overview-heading { margin-bottom: 20px; }.overview-heading h1 { font-size: 24px; }
-  .home-feature, .overview-main > section, .overview-side > section { padding: 20px; }
-  .feature-copy { flex-wrap: wrap; gap: 16px; }.home-search { flex-basis: 100%; }.feature-actions { width: 100%; }.feature-actions > a { flex: 1; }
-  .overview-summary { gap: 8px; }.library-details { width: 100%; }.source-summary { margin-left: 0; min-height: 44px; }
+  .overview-heading h1 { font-size: 24px; }
+  .home-feature, .overview-main > section, .overview-side > section { padding: 16px; }
+  .overview-shortcuts { margin: 20px 0; }
+  .shortcut-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .shortcut-link { padding: 12px; gap: 8px; }
+  .overview-summary { gap: 2px 12px; }.source-summary { min-height: 44px; margin-left: 0; }
   .overview-side { grid-template-columns: minmax(0, 1fr); }.recent-shelf { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .overview-main > .review-strip { flex-wrap: wrap; gap: 12px; }.review-mark { display: none; }.review-copy { flex-basis: 100%; }.review-strip > .todo-action { min-height: 44px; }
   .home-playlists { grid-template-columns: minmax(0, 1fr); }.todo-item { flex-wrap: wrap; }.todo-copy { flex-basis: calc(100% - 20px); }.todo-item > .todo-action { margin-left: 20px; }

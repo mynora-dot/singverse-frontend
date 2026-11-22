@@ -9,19 +9,22 @@ import { candidateDetails, hasCloseAlternative } from '../candidate-selection'
 import { metadata } from '../api/metadata'
 import { singleReview } from '../api/single-review'
 import { candidateValues, present, useSingleSongScrape } from '../composables/useSingleSongScrape'
-import type { CoverSelection, Values, ReviewField } from '../single-types'
+import type { CoverSelection, Values } from '../single-types'
 import MetadataFieldComparison from './MetadataFieldComparison.vue'
 import SingleMetadataEditor from './SingleMetadataEditor.vue'
 import SingleCoverPicker from './SingleCoverPicker.vue'
 import MetadataCover from './MetadataCover.vue'
 import SingleSongReviewWorkspace from './SingleSongReviewWorkspace.vue'
+import ReviewLyricsPreview from './ReviewLyricsPreview.vue'
 import { songCoverUrl } from '../utils'
+import { hasLyrics } from '../lyrics'
 const props = defineProps<{ song?: MediaSong | null; songId?: string | null; initialCandidates?: MetadataCandidate[]; batchId?: string; itemId?: string; autoSelectThreshold?: number; presentation?: 'dialog' | 'drawer' }>()
 const emit = defineEmits<{ close: []; applied: [song: MediaSong] }>()
 const isDrawer = computed(() => props.presentation === 'drawer')
 const state = useSingleSongScrape()
 const { review, keyword, providers, available, enabled, loading, searching, applying, error, searchError, warning, candidates,
-  selected, draft, fields, edits, cover, result, changed, dirty, preview, canSearch, searched, settingsStatus, pendingProviders, searchProgress } = state
+  selected, draft, fields, edits, cover, result, changed, dirty, preview, canSearch, searched, settingsStatus, pendingProviders, searchProgress,
+  lyricsState, lyricsError, loadLyrics } = state
 const mobilePane = ref<'candidates' | 'review'>('candidates')
 const editorOpen = ref(false), coverOpen = ref(false), resultCoverFailed = ref(false)
 const coverFailed = ref(false), coverRetryKey = ref(0)
@@ -103,13 +106,38 @@ async function apply() {
   await state.apply(props.batchId && props.itemId ? (_songId, input) => singleReview.applyBatch(props.batchId!, props.itemId!, input) : singleReview.apply)
   if (result.value && review.value) {
     const song = review.value.song
-    emit('applied', { ...song, metadata: result.value.metadata ? { ...song.metadata, ...result.value.metadata } : song.metadata })
+    const applied = result.value.metadata
+    const metadata = applied ? { ...song.metadata, ...applied } : song.metadata
+    if (metadata && applied?.variant) metadata.variant = { ...song.metadata?.variant, ...applied.variant }
+    emit('applied', { ...song, metadata })
   }
 }
 </script>
 <template>
   <component :is="isDrawer ? ElDrawer : ElDialog" :model-value="!!activeSongId" title="核对歌曲信息" :width="isDrawer ? undefined : result ? 'min(780px, calc(100vw - 32px))' : 'min(1368px, calc(100vw - 48px))'" :size="isDrawer ? 'min(680px, 100vw)' : undefined" top="3vh" :class="['single-scrape-dialog', { 'single-scrape-success': !!result, 'single-scrape-drawer': isDrawer, 'single-review-dialog': !isDrawer }]" :close-on-click-modal="false" :close-on-press-escape="!applying" :show-close="!applying" :before-close="close">
-    <div v-if="result" class="review-success" role="status"><CircleCheckFilled class="success-icon" /><h2>歌曲资料已应用成功</h2><p>本次更新 {{ result.updated.length }} 项，跳过 {{ result.skipped.length }} 项，保留 {{ result.retained.length }} 项。</p><table><thead><tr><th>字段</th><th>应用前</th><th>应用后</th></tr></thead><tbody><tr v-for="field in result.updated" :key="field"><td>{{ fieldNames[field] }}</td><td>{{ display(result.before[field as ReviewField], field) }}</td><td><template v-if="field === 'cover' && resultCover && !resultCoverFailed"><img class="result-cover" :src="resultCover" alt="已实际应用的歌曲封面" @error="resultCoverFailed = true" /><span>封面已应用</span></template><template v-else>{{ field === 'cover' && resultCoverFailed ? '封面已应用，图片暂不可预览' : display(result.after[field as ReviewField], field) }}</template></td></tr></tbody></table><p v-if="result.skipped.length">跳过（无变化或无值）：{{ skippedLabels }}</p><p>保留：{{ retainedLabels || '无' }}。原始媒体文件未修改。</p></div>
+    <div v-if="result" class="review-success" role="status">
+      <CircleCheckFilled class="success-icon" />
+      <h2>歌曲资料已应用成功</h2>
+      <p>本次更新 {{ result.updated.length }} 项，跳过 {{ result.skipped.length }} 项，保留 {{ result.retained.length }} 项。</p>
+      <table><thead><tr><th>字段</th><th>应用前</th><th>应用后</th></tr></thead><tbody>
+        <tr v-for="field in result.updated" :key="field">
+          <td>{{ fieldNames[field] }}</td>
+          <template v-if="field === 'lyrics'">
+            <td><ReviewLyricsPreview v-if="hasLyrics(result.before.lyrics)" :value="result.before.lyrics" label="应用前的歌词" /><span v-else>—</span></td>
+            <td><ReviewLyricsPreview :value="result.after.lyrics" label="已应用的歌词" /></td>
+          </template>
+          <template v-else>
+            <td>{{ display(result.before[field], field) }}</td>
+            <td>
+              <template v-if="field === 'cover' && resultCover && !resultCoverFailed"><img class="result-cover" :src="resultCover" alt="已实际应用的歌曲封面" @error="resultCoverFailed = true" /><span>封面已应用</span></template>
+              <template v-else>{{ field === 'cover' && resultCoverFailed ? '封面已应用，图片暂不可预览' : display(result.after[field], field) }}</template>
+            </td>
+          </template>
+        </tr>
+      </tbody></table>
+      <p v-if="result.skipped.length">跳过（无变化或无值）：{{ skippedLabels }}</p>
+      <p>保留：{{ retainedLabels || '无' }}。原始媒体文件未修改。</p>
+    </div>
     <div v-else class="review-body" :class="{ 'review-mode': isDrawer, 'drawer-mode': isDrawer, 'review-dialog-mode': !isDrawer }">
       <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon><ElButton text :disabled="applying" @click="reload">重新加载歌曲</ElButton><span>重新加载会提示放弃草稿；网络失败可直接重试应用。</span></ElAlert>
       <p v-if="loading" class="workspace-hint" role="status">正在读取当前歌曲与确认歌曲资料…</p>
@@ -134,7 +162,7 @@ async function apply() {
           <div v-else class="candidate-scroll"><button v-for="candidate in candidates" :key="candidate.id" type="button" class="review-candidate" :class="{ chosen: selected?.id === candidate.id }" :aria-pressed="selected?.id === candidate.id" :disabled="applying" @click="choose(candidate)"><span class="candidate-radio">{{ selected?.id === candidate.id ? '◉' : '○' }}</span><MetadataCover :src="candidate.track.coverUrl ? metadata.candidateCover(candidate.id, 'ORIGINAL') : null" alt="候选歌曲封面" :retry-key="coverRetryKey" @failed="coverFailed = true" /><span class="candidate-info"><strong>{{ candidate.track.title }}</strong><span>{{ candidate.track.artists.join('、') || '未知歌手' }}</span><small>{{ candidateDetails(candidate) }}</small><ElTag size="small" effect="plain">{{ providerNames[candidate.track.provider] }}</ElTag></span><span class="candidate-score"><strong>{{ Math.round(candidate.score * 100) }}%</strong></span></button></div>
         </section><section class="preview-pane" aria-label="歌曲资料预览与审核"><div class="pane-title"><h3>{{ selected ? '选中候选与应用预览' : manualDraft ? '手工编辑草稿 · 尚未应用' : '当前入库信息 · 尚未选择候选' }}</h3><div><ElButton v-if="selected" link :disabled="applying" @click="clearSelection">取消候选</ElButton><ElButton link type="primary" :icon="Edit" :disabled="applying" @click="editMetadata">编辑歌曲资料</ElButton><ElButton link type="primary" :icon="Picture" :disabled="applying" @click="editCover">选择封面</ElButton></div></div>
           <div class="preview-scroll"><div v-if="!isDrawer" class="selected-preview"><MetadataCover :src="previewCover" alt="审核草稿封面" empty-text="尚未选择封面" retryable :retry-key="coverRetryKey" @failed="coverFailed = true" /><div class="preview-copy"><h3>{{ display(preview?.title) }}</h3><p>{{ display(preview?.artists) }}</p><p>{{ display(preview?.album) }} · {{ display(preview?.releaseDate) }}</p><ElTag v-if="selected" size="small">{{ providerNames[selected.track.provider] }}</ElTag><ElTag v-else size="small" type="info">{{ manualDraft ? '手工草稿 · 尚未应用' : '当前有效值' }}</ElTag><small v-if="cover?.kind === 'asset' && changed.includes('cover')" class="upload-note">本地封面已上传，尚未应用</small></div><div v-if="selected" class="preview-score">{{ Math.round(selected.score * 100) }}%<small>相似度</small></div></div>
-          <div class="comparison-title"><strong>将更新的字段</strong><span>共 {{ changed.length }} 项</span></div><MetadataFieldComparison :before="review.values" :draft="draft" :fields="fields" :edits="edits" :disabled="applying" @change="fields = $event" />
+          <div class="comparison-title"><strong>将更新的字段</strong><span>共 {{ changed.length }} 项</span></div><MetadataFieldComparison :before="review.values" :draft="draft" :fields="fields" :edits="edits" :lyrics-state="lyricsState" :lyrics-error="lyricsError" :disabled="applying" @change="fields = $event" @retry-lyrics="loadLyrics" />
         </div></section></div>
         </template>
         <SingleSongReviewWorkspace v-else :state="state" :version-warning="versionWarning" @search="search" @settings="openSettings" @choose="choose" @clear="clearSelection" @edit="editMetadata" @cover="editCover" />

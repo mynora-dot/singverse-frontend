@@ -112,7 +112,7 @@ if (classificationPicker.value) { void loadSources(); void loadTags() }
     <template v-if="classificationPicker">
       <div v-if="moreFilters" id="classification-picker-more-filters" class="picker-filters" :class="{ 'unclassified-only': unclassified }" aria-label="更多歌曲筛选">
         <ElSelect v-if="!unclassified" v-model="tagIds" class="picker-tag-filter" aria-label="已有分类标签" placeholder="已有分类标签" multiple filterable clearable collapse-tags collapse-tags-tooltip :multiple-limit="40" :loading="tagsLoading" :disabled="tagsLoading || !!tagsError" @change="filterTags"><ElOptionGroup v-for="group in tagGroups" :key="group.dimension" :label="group.label"><ElOption v-for="tag in group.tags" :key="tag.id" :value="tag.id" :label="tag.name" /></ElOptionGroup></ElSelect>
-        <ElSelect v-model="status" class="picker-status-filter" aria-label="文件名识别状态" @change="query"><ElOption label="全部识别状态" value="ALL" /><ElOption label="文件名待复核" value="REVIEW" /><ElOption label="文件名完整" value="MATCHED" /></ElSelect>
+        <ElSelect v-model="status" class="picker-status-filter" aria-label="文件名识别状态" @change="query"><ElOption label="全部识别状态" value="ALL" /><ElOption label="文件名待复核" value="REVIEW" /><ElOption label="无需文件名复核" value="MATCHED" /></ElSelect>
       </div>
       <div v-if="sourcesError || moreFilters && !unclassified && tagsError" class="picker-filter-errors" role="status"><span v-if="sourcesError">{{ sourcesError }}<ElButton link :loading="sourcesLoading" @click="loadSources">重试媒体库</ElButton></span><span v-if="moreFilters && !unclassified && tagsError">{{ tagsError }}<ElButton link :loading="tagsLoading" @click="loadTags">重试标签</ElButton></span></div>
     </template>

@@ -1,39 +1,177 @@
-.sv-home { min-height: 100dvh; background: var(--sv-surface-1); color: var(--sv-text-primary); font: 400 16px/1.5 var(--sv-font-sans); }
+.sv-home {
+  --home-paper: #f8f8f5;
+  --home-card: #fff;
+  --home-line: #dedfd8;
+  --home-ink: #20251f;
+  --home-muted: #5d655e;
+  min-height: 100dvh;
+  background: var(--home-paper);
+  color: var(--home-ink);
+  font: 400 16px/1.5 var(--sv-font-sans);
+}
+[data-theme='dark'] .sv-home {
+  --home-paper: #181b19;
+  --home-card: #232724;
+  --home-line: #3c413d;
+  --home-ink: #f2f3ed;
+  --home-muted: #b5beb6;
+}
 .sv-home :where(button, a) { touch-action: manipulation; }
 .sv-home :where(button) { font: inherit; cursor: pointer; }
-.sv-home :where(a) { color: inherit; text-decoration: none; }
-.sv-home :focus-visible { outline: 2px solid var(--sv-accent-primary); outline-offset: 4px; }
+.sv-home a { color: inherit; text-decoration: none; }
+.sv-home :focus-visible { outline: 3px solid var(--sv-accent-primary); outline-offset: 4px; }
 .sv-home [tabindex='-1']:focus { outline: none; }
-.sv-home-wrap { width: min(960px, calc(100% - 64px)); margin-inline: auto; }
-.sv-home-skip { position: fixed; z-index: 10; top: 12px; left: 12px; padding: 12px 18px; background: var(--sv-surface-2); color: var(--sv-text-primary); transform: translateY(-150%); }
+.sv-home-wrap { width: min(1120px, calc(100% - 80px)); margin-inline: auto; }
+.sv-home-skip {
+  position: fixed;
+  z-index: 10;
+  top: 12px;
+  left: 12px;
+  padding: 12px 18px;
+  border-radius: 8px;
+  background: var(--home-card);
+  transform: translateY(-160%);
+}
 .sv-home-skip:focus { transform: translateY(0); }
-.sv-home-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; min-height: 96px; border-bottom: 1px solid var(--sv-border-subtle); padding-block: 16px; }
-.sv-home-brand { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
-.sv-home-wordmark { font-size: 24px; font-weight: 650; line-height: 1; }
+.sv-home-header { border-bottom: 1px solid var(--home-line); background: var(--home-card); }
+.sv-home-bar, .sv-home-nav, .sv-home-brand, .sv-home-nav > a {
+  display: flex;
+  align-items: center;
+}
+.sv-home-bar { min-height: 72px; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sv-home-brand { min-height: 44px; gap: 6px; }
+.sv-home-wordmark { font-size: 23px; font-weight: 700; letter-spacing: -.8px; }
 .sv-home-wordmark span { color: var(--sv-accent-primary); }
-.sv-home .theme-switcher { display: inline-flex; }
-.sv-home-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
-.sv-home-nav > a { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; }
-.sv-home-nav > a:hover { color: var(--sv-accent-primary); text-decoration: underline; text-underline-offset: 4px; }
-.sv-home-main { padding-block: 64px; }
-.sv-home-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
-.sv-home-heading h1 { font-size: 28px; font-weight: 600; }
-.sv-home-primary { min-height: 44px; padding: 8px 28px; border: 1px solid transparent; border-radius: var(--sv-radius-md); background: var(--sv-accent-primary); color: var(--sv-on-accent); font-weight: 600; }
-.sv-home-primary:hover { background: var(--sv-accent-muted); }
-.sv-home-entries { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.sv-home-entries > button { display: flex; align-items: center; gap: 16px; min-width: 0; min-height: 96px; padding: 24px; border: 1px solid var(--sv-border-subtle); border-radius: var(--sv-radius-lg); background: var(--sv-surface-2); color: var(--sv-text-primary); text-align: left; transition: border-color .16s var(--sv-ease-smooth), background .16s var(--sv-ease-smooth); }
-.sv-home-entries > button:hover { background: var(--sv-surface-3); border-color: var(--sv-accent-primary); }
-.sv-home-entry-icon { flex: none; width: 24px; height: 24px; color: var(--sv-accent-primary); }
-.sv-home-entry-arrow { flex: none; width: 16px; height: 16px; margin-left: auto; color: var(--sv-text-secondary); }
-@media (max-width: 650px) {
+.sv-home-nav { gap: 22px; color: var(--home-muted); }
+.sv-home-nav > a { min-height: 44px; gap: 7px; font-size: 14px; font-weight: 550; }
+.sv-home-nav > a:hover { color: var(--sv-accent-primary); }
+.sv-home-nav svg { width: 17px; height: 17px; }
+.sv-home .theme-switcher {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--home-line);
+  border-radius: 50%;
+  color: var(--home-muted);
+}
+.sv-home-main { padding-block: 30px 52px; }
+.sv-home-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  min-height: 288px;
+  padding: 40px clamp(24px, 4vw, 52px);
+  border-radius: 20px;
+  background: #171e1d;
+  color: white;
+}
+.sv-home-hero::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0 0 0 31%;
+  background: linear-gradient(90deg, #171e1d, transparent 45%),
+    url('./assets/night-room.webp') center 61% / cover no-repeat;
+}
+.sv-home-heading h1 {
+  font: 700 clamp(36px, 4vw, 52px)/1.18 var(--sv-font-sans);
+  letter-spacing: -.035em;
+}
+.sv-home-heading p { margin-top: 14px; color: #e0e3dd; font-size: 15px; }
+.sv-home-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 44px;
+  margin-top: 28px;
+  padding: 10px 17px;
+  border: 0;
+  border-radius: 8px;
+  background: #f9faf3;
+  color: #20251f;
+  font-size: 14px;
+  font-weight: 650;
+}
+.sv-home-primary:hover { background: #e4e9df; }
+.sv-home-primary:active { background: #d4dbce; }
+.sv-home-primary svg { width: 17px; height: 17px; }
+.sv-home-section-title { margin-block: 30px 14px; font-size: 21px; font-weight: 650; }
+.sv-home-entries { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.sv-home-entries > button {
+  --entry-accent: #435fb3;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 15px;
+  min-width: 0;
+  padding: 20px 23px;
+  border: 1px solid var(--home-line);
+  border-radius: 14px;
+  background: var(--home-card);
+  color: var(--home-ink);
+  text-align: left;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.sv-home-entries [data-tone='amber'] { --entry-accent: #98621f; }
+.sv-home-entries [data-tone='green'] { --entry-accent: #527342; }
+.sv-home-entries [data-tone='purple'] { --entry-accent: #8259aa; }
+.sv-home-entries [data-tone='teal'] { --entry-accent: #3a7782; }
+.sv-home-entries [data-tone='slate'] { --entry-accent: #626c7c; }
+.sv-home-entry-icon {
+  display: grid;
+  place-items: center;
+  width: 39px;
+  height: 39px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--entry-accent) 12%, var(--home-card));
+  color: var(--entry-accent);
+}
+[data-theme='dark'] .sv-home-entry-icon { color: color-mix(in srgb, var(--entry-accent) 50%, white); }
+.sv-home-entry-icon svg { width: 23px; height: 23px; }
+.sv-home-entry-arrow { width: 14px; height: 14px; color: var(--home-muted); }
+.sv-home-entry-copy { grid-column: 1 / -1; display: grid; gap: 3px; }
+.sv-home-entry-copy strong { font-size: 18px; line-height: 1.4; }
+.sv-home-entry-copy > span { color: var(--home-muted); font-size: 14px; }
+.sv-home-entries > button:is(:hover, :focus-visible) {
+  border-color: var(--entry-accent);
+  box-shadow: 0 3px 12px rgb(20 27 23 / 7%);
+}
+.sv-home-entries > button:active { background: var(--home-paper); }
+@media (max-width: 850px) {
+  .sv-home-wrap { width: calc(100% - 48px); }
+  .sv-home-entries { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
   .sv-home-wrap { width: calc(100% - 32px); }
-  .sv-home-header { gap: 8px; }
-  .sv-home .theme-switcher { display: inline-flex; }
-.sv-home-nav { gap: 12px; }
-  .sv-home-main { padding-block: 32px; }
-  .sv-home-heading h1 { font-size: 24px; }
-  .sv-home-entries { grid-template-columns: 1fr; gap: 12px; }
-  .sv-home-entries > button { min-height: 72px; padding: 16px; }
+  .sv-home-bar { min-height: 64px; gap: 0 6px; }
+  .sv-home-brand { gap: 3px; }
+  .sv-home-brand img { width: 28px; height: 28px; }
+  .sv-home-wordmark { font-size: 19px; }
+  .sv-home-nav { gap: 9px; }
+  .sv-home-nav > a { font-size: 13px; }
+  .sv-home-nav > a svg { display: none; }
+  .sv-home .theme-switcher { border: 0; }
+  .sv-home-main { padding-block: 16px 32px; }
+  .sv-home-hero { min-height: 240px; padding: 28px 22px; border-radius: 15px; }
+  .sv-home-hero::before {
+    inset: 0;
+    background-image: linear-gradient(90deg, rgb(12 20 19 / 92%), rgb(12 20 19 / 68%) 55%, rgb(12 20 19 / 12%)),
+      url('./assets/night-room.webp');
+  }
+  .sv-home-heading p { max-width: 15em; font-size: 14px; }
+  .sv-home-primary { margin-top: 20px; }
+  .sv-home-section-title { margin-block: 22px 12px; font-size: 19px; }
+  .sv-home-entries { grid-template-columns: 1fr; gap: 9px; }
+  .sv-home-entries > button { grid-template-columns: auto 1fr auto; gap: 12px; padding: 14px; }
+  .sv-home-entry-copy { grid-area: 1 / 2; }
+  .sv-home-entry-copy strong { font-size: 16px; }
+  .sv-home-entry-copy > span { font-size: 13px; }
+}
+@media (max-width: 360px) {
+  .sv-home-nav { gap: 4px; }
+  .sv-home-wordmark { font-size: 17px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sv-home-entries > button { transition: none; }

@@ -1,4 +1,5 @@
 import type { AudioExecution, AudioRoles, AudioStream, Batch, Node, SeparationCapabilities, SeparationProfile } from './api'
+import { mediaVerification } from '../media-library/api/shareImports'
 
 /** 原唱与伴奏的用户文案集中在这里，列表、单曲面板和歌曲详情共用同一套说法。 */
 export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'primary'
@@ -59,9 +60,26 @@ export function latestAnalysis(roles: AudioRoles | undefined) {
   return jobs?.find(job => active(job.state)) || jobs?.[0]
 }
 
+function streamRoles(originalId: string, backingId?: string) {
+  return backingId ? `原唱 ${originalId} · 伴奏 ${backingId}` : `原唱 ${originalId}`
+}
+
 /** 依据音轨数量、角色标记和最近一次任务，给出普通用户能看懂的状态。 */
 export function rolesSummary(roles: AudioRoles | undefined): RolesSummary {
   if (!roles) return { tag: '读取中', title: '正在读取音轨信息', hint: '', tone: 'info' }
+  const packageRole = roles.packageRoleHint
+  if (packageRole && roles.state !== 'CONFIRMED') {
+    const pathStatus = mediaVerification(packageRole.verification) || '媒体路径状态未知'
+    return {
+      tag: packageRole.basis === 'STREAM_TITLES' ? '据包内音轨标题推断' : '资料包已标记',
+      title: streamRoles(packageRole.originalId, packageRole.backingId),
+      hint: `${pathStatus}，本机尚未启用该音轨标记。`,
+      tone: ['MISSING', 'MISMATCH', 'UNREACHABLE', 'SUPERSEDED'].includes(packageRole.verification) ? 'warning' : 'info',
+    }
+  }
+  if (roles.state === 'CONFIRMED' && roles.origin === 'SHARED' && roles.originalId && roles.backingId) {
+    return { tag: '自带伴奏', title: streamRoles(roles.originalId, roles.backingId), hint: '已采用资料包的原唱与伴奏标记。', tone: 'success' }
+  }
   const streams = roles.streams, separate = latestJob(roles, 'SEPARATE'), analyze = latestAnalysis(roles), probe = latestJob(roles, 'PROBE')
   const uniqueOriginal = roles.state === 'CONFIRMED' && roles.originalSelection?.kind === 'UNIQUE_AUDIO'
   if (!streams && !uniqueOriginal) {

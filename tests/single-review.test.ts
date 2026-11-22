@@ -7,10 +7,10 @@ import { useSingleSongScrape } from '../src/admin/modules/metadata/composables/u
 import { metadata } from '../src/admin/modules/metadata/api/metadata'
 import { singleReview } from '../src/admin/modules/metadata/api/single-review'
 import { preview } from './fixtures/filename-workspace'
-import type { SingleReview, ReviewResult } from '../src/admin/modules/metadata/single-types'
+import type { CandidateLyrics, SingleReview, ReviewResult } from '../src/admin/modules/metadata/single-types'
 import type { MetadataCandidate } from '../src/admin/modules/metadata/types'
 import SingleCoverPicker from '../src/admin/modules/metadata/components/SingleCoverPicker.vue'
-vi.mock('../src/admin/modules/metadata/api/single-review', () => ({ singleReview: { load: vi.fn(), apply: vi.fn(), covers: vi.fn(), upload: vi.fn(), assetUrl: (id: string) => `/api/v1/metadata/cover-assets/${id}` } }))
+vi.mock('../src/admin/modules/metadata/api/single-review', () => ({ singleReview: { load: vi.fn(), apply: vi.fn(), applyBatch: vi.fn(), lyrics: vi.fn(), covers: vi.fn(), upload: vi.fn(), assetUrl: (id: string) => `/api/v1/metadata/cover-assets/${id}` } }))
 vi.mock('../src/admin/modules/metadata/api/metadata', () => ({ metadata: { settings: vi.fn(), search: vi.fn(), candidateCover: (id: string, quality?: string) => `/api/v1/metadata/candidates/${id}/cover${quality ? `?quality=${quality}` : ''}`, songCover: (id: string) => `/api/v1/metadata/songs/${id}/cover` } }))
 function context(): SingleReview { return { song: { id: 'song-1', sourceId: 'source', sourceName: '家庭曲库', relativePath: '歌手《歌名》.mkv', fileSize: 2000, modifiedAt: null, scannedAt: '', parserProfileId: 'default', parserRevision: 0, selectedRuleId: null, result: preview().result }, fingerprint: 'fingerprint', version: 'version', values: { title: '歌名', artists: ['歌手'], album: null, releaseDate: null, aliases: [], durationMs: null, cover: null } } }
 function result(): ReviewResult { return { metadata: null, before: context().values, after: { ...context().values, title: '手工歌名' }, updated: ['title'], skipped: [], retained: ['artists', 'album', 'releaseDate', 'aliases', 'durationMs', 'cover'] } }
@@ -21,6 +21,7 @@ beforeEach(() => {
   vi.mocked(metadata.settings).mockResolvedValue({ enabled: false, providers: ['QQ'], autoApply: false, threshold: .95 })
   vi.mocked(metadata.search).mockResolvedValue({ candidates: [candidate], errors: [] })
   vi.mocked(singleReview.apply).mockResolvedValue(result())
+  vi.mocked(singleReview.lyrics).mockResolvedValue({ status: 'MISSING', lyrics: null })
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; document.body.innerHTML = ''; vi.clearAllMocks(); vi.restoreAllMocks() })
 it('没有平台也能编辑并真实提交，成功使用服务端反馈', async () => {
@@ -51,6 +52,57 @@ it('候选高分仍需确认，计数排除未变化和缺失字段', async () =
   expect(singleReview.apply).not.toHaveBeenCalled()
   state.fields.value = []
   await state.apply(); expect(singleReview.apply).not.toHaveBeenCalled()
+})
+
+it('歌词异步显示在字段核对，预览后勾选才写入歌曲版本', async () => {
+  const current = context()
+  current.values.lyrics = { timing: 'none', text: '曲库已有歌词' }
+  const lyrics = { timing: 'lrc', text: '[00:01.20]平台歌词第一句\n[00:09.78]平台歌词第二句' }
+  const match: MetadataCandidate = { ...candidate, track: { ...candidate.track, album: null } }
+  let finish!: (value: CandidateLyrics) => void
+  vi.mocked(singleReview.load).mockResolvedValue(current)
+  vi.mocked(singleReview.lyrics).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  vi.mocked(singleReview.apply).mockResolvedValue({
+    metadata: { track: match.track, fields: ['title'], appliedAt: '', stale: false, origins: {}, variant: { lyrics } },
+    updated: ['lyrics'], skipped: [], retained: ['title'], before: current.values, after: { ...current.values, lyrics },
+  })
+  wrapper = mount(SingleSongScrapeDialog, { props: { song: current.song, initialCandidates: [match] }, global: { stubs: { teleport: true } } })
+  await flushPromises()
+  const row = wrapper.get('[data-field="lyrics"]')
+  expect(row.text()).toContain('正在获取歌词')
+  expect(row.get('input[type=checkbox]').attributes('disabled')).toBeDefined()
+  expect(row.find('summary[aria-label="当前歌词，纯文本歌词"]').exists()).toBe(true)
+  finish({ status: 'AVAILABLE', lyrics }); await flushPromises()
+  expect(row.find('summary[aria-label="候选歌词，同步歌词"]').exists()).toBe(true)
+  expect(row.get('[aria-label="候选歌词"]').text()).toContain('平台歌词第一句\n平台歌词第二句')
+  expect(row.text()).not.toContain('[00:01.20]')
+  expect(wrapper.get('.footer-actions .el-button--primary').attributes('disabled')).toBeDefined()
+  await row.get('input[type=checkbox]').setValue(true)
+  await wrapper.get('.footer-actions .el-button--primary').trigger('click'); await flushPromises()
+  expect(singleReview.apply).toHaveBeenCalledWith('song-1', expect.objectContaining({ candidateId: match.id, fields: ['lyrics'], edits: {} }))
+  expect(wrapper.find('summary[aria-label="已应用的歌词，同步歌词"]').exists()).toBe(true)
+  expect(wrapper.emitted('applied')?.[0]?.[0]).toMatchObject({ metadata: { variant: { lyrics } } })
+})
+
+it('换候选会中止旧歌词查询，失败后重试不采用迟到歌词', async () => {
+  const state = useSingleSongScrape(); await state.open('song-1')
+  let finish!: (value: CandidateLyrics) => void
+  const lyrics = { timing: 'none', text: '第二个候选的歌词' }
+  vi.mocked(singleReview.lyrics)
+    .mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    .mockRejectedValueOnce(new Error('平台暂不可用'))
+    .mockResolvedValueOnce({ status: 'AVAILABLE', lyrics })
+  state.choose(candidate)
+  const signal = vi.mocked(singleReview.lyrics).mock.calls[0]![2]!
+  state.choose({ ...candidate, id: 'other' }); await flushPromises()
+  expect(signal.aborted).toBe(true)
+  expect(state.lyricsState.value).toBe('ERROR')
+  expect(state.changed.value).toEqual(['album'])
+  await state.loadLyrics()
+  finish({ status: 'AVAILABLE', lyrics: { timing: 'none', text: '过期歌词' } }); await flushPromises()
+  expect(state.draft.value?.lyrics).toEqual(lyrics)
+  expect(state.lyricsState.value).toBe('AVAILABLE')
+  expect(state.changed.value).toEqual(['album'])
 })
 it('切换酷狗候选后，列表、待应用预览和提交使用同一封面候选与画质', async () => {
   vi.mocked(metadata.settings).mockResolvedValue({ enabled: true, providers: ['KUGOU'], autoApply: false, threshold: .95 })

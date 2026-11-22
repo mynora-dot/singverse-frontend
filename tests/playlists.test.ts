@@ -13,7 +13,28 @@ const playlist={id:'p1',name:'聚会歌单',description:'朋友相聚',count:1,m
 let wrapper:VueWrapper|undefined
 beforeEach(()=>{vi.mocked(playlists.list).mockResolvedValue({items:[playlist],totalElements:1});vi.mocked(playlists.get).mockResolvedValue(playlist);vi.mocked(playlists.save).mockResolvedValue({...playlist,revision:3});vi.mocked(ai.services).mockResolvedValue([{id:'m1',name:'已配置模型',enabled:true}] as never);vi.mocked(playlists.generate).mockResolvedValue({name:'AI聚会',description:'来自本地曲库',songIds:['song-1'],songs:[song],candidateCount:1,libraryCount:1});vi.mocked(playlists.remove).mockResolvedValue(undefined)})
 afterEach(()=>{wrapper?.unmount();wrapper=undefined;vi.clearAllMocks();vi.restoreAllMocks();document.body.innerHTML=''})
-async function page(){wrapper=mount(PlaylistsView,{global:{stubs:{teleport:true,SongPicker:{name:'SongPicker',props:['selectedIds','purpose'],emits:['confirm','selectedSongs','close'],template:'<div />'}}}});await flushPromises()}
+async function page(path = '/library/playlists') {
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/library/playlists', component: PlaylistsView }] })
+  await router.push(path)
+  wrapper = mount({ template: '<RouterView />' }, { global: { plugins: [router], stubs: {
+    teleport: true,
+    SongPicker: { name: 'SongPicker', props: ['selectedIds', 'purpose'], emits: ['confirm', 'selectedSongs', 'close'], template: '<div />' },
+  } } })
+  await flushPromises()
+  return router
+}
+it('首页创建入口直接打开空白歌单，取消后刷新保留列表', async () => {
+  const router = await page('/library/playlists?create=1&sort=NAME_ASC')
+  expect(wrapper!.get('input[aria-label="歌单名称"]').element).toHaveProperty('value', '')
+  expect(router.currentRoute.value.fullPath).toBe('/library/playlists?sort=NAME_ASC')
+  await wrapper!.get('button[aria-label="关闭歌单编辑"]').trigger('click')
+  await flushPromises()
+  expect(wrapper!.findComponent({ name: 'PlaylistEditorDialog' }).props('modelValue')).toBe(false)
+  wrapper!.unmount()
+  await page(router.currentRoute.value.fullPath)
+  expect(wrapper!.find('input[aria-label="歌单名称"]').exists()).toBe(false)
+  expect(playlists.save).not.toHaveBeenCalled()
+})
 it('编辑保存后卡片立即采用服务端名称，重读失败不回退', async () => {
   await page(); await button('编辑歌单').trigger('click'); await flushPromises()
   await wrapper!.get('input[aria-label="歌单名称"]').setValue('用户输入的名称')

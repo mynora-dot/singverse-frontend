@@ -51,8 +51,14 @@ export function identityReviewed(song: MediaSong): boolean {
     && !!metadata.track.title?.trim() && metadata.track.artists?.some(artist => !!artist.trim())
 }
 export function needsSongReview(song: MediaSong): boolean { return sharedIdentity(song) || song.result.needsReview && !identityReviewed(song) }
+export function filenameReviewLabel(song: MediaSong): string {
+  if (song.result.parseStatus === 'SKIPPED') return '已跳过文件名识别'
+  return song.result.needsReview ? '文件名待复核' : '文件名完整'
+}
 export function songReviewLabel(song: MediaSong): string {
-  return sharedIdentity(song) ? '共享信息待核对' : identityReviewed(song) ? '歌曲信息已复核' : song.result.needsReview ? '文件名待复核' : '文件名完整'
+  if (sharedIdentity(song)) return '共享信息待核对'
+  if (song.result.parseStatus === 'SKIPPED' && ['title', 'artists'].every(field => song.metadata?.origins[field]?.kind === 'FILE')) return '已从文件标签识别'
+  return identityReviewed(song) ? '歌曲信息已复核' : filenameReviewLabel(song)
 }
 
 export function songVersionSummary(song: MediaSong): string {

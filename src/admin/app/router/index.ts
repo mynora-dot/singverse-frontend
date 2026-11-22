@@ -5,7 +5,6 @@ import { songManagementRoutes } from '../../modules/song-management/routes'
 import { mediaLibraryRoutes } from '../../modules/media-library/routes'
 import { filenameParserRoutes } from '../../modules/filename-parser/routes'
 import { overviewRoutes } from '../../modules/overview/routes'
-import { systemStatusRoutes } from '../../modules/system-status/routes'
 import NotFoundView from '../views/NotFoundView.vue'
 import { authRoutes } from '../../modules/auth/routes'
 import { systemParametersRoutes } from '../../modules/system-parameters/routes'
@@ -21,7 +20,7 @@ export const router = createRouter({
     { path: '/library/downloads', component: () => import('../../modules/lx-downloads/DownloadsView.vue'), meta: { title: '歌曲下载' } },
     { path: '/system/tasks', component: () => import('../../modules/background-tasks/BackgroundTasksView.vue'), meta: { title: '后台任务' } },
     { path: '/system/tasks/:id', component: () => import('../../modules/background-tasks/BackgroundTasksView.vue'), meta: { title: '任务详情', activeMenu: '/system/tasks' } },
-    { path: '/library/cache', component: () => import('../../modules/song-cache/SongCacheView.vue'), meta: { title: '歌曲缓存' } },
+    { path: '/library/cache', component: () => import('../../modules/song-cache/SongCacheView.vue'), meta: { title: '存储与缓存' } },
     { path: '/system/tv-settings', component: () => import('../../modules/tv-settings/TvSettingsView.vue'), meta: { title: '电视设置' } },
     ...mediaLibraryRoutes,
     ...songManagementRoutes,
@@ -31,7 +30,8 @@ export const router = createRouter({
     ...aiSettingsRoutes,
     ...computeSettingsRoutes,
     ...overviewRoutes,
-    ...systemStatusRoutes,
+    // 兼容旧书签和管理助手工具目录中的运行概况链接。
+    { path: '/system', redirect: '/overview' },
     { path: '/:pathMatch(.*)*', component: NotFoundView, meta: { title: '页面不存在' } },
   ],
   scrollBehavior: () => ({ top: 0 }),

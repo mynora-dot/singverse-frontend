@@ -108,7 +108,7 @@ it('相同根地址更换账号后切换到新核验任务，不再显示旧完�
   expect(wrapper.emitted('updated')).toContainEqual(['new-verification'])
 })
 
-it('新建 WebDAV 选择资料包后自动上传，只预览不自动确认，并关闭所有自动解析入口', async () => {
+it('新建 WebDAV 使用资料包预览，确认后自动核对路径且不启动扫描和提取', async () => {
   await openWebDAV()
   await checkbox('自动读取文件内的歌曲信息').setValue(true)
   await wrapper.get('.source-advanced > summary').trigger('click'); await flushPromises()
@@ -123,6 +123,7 @@ it('新建 WebDAV 选择资料包后自动上传，只预览不自动确认，�
   await nextStep(3)
   expect(button('保存并导入资料包')).toBeDefined()
   expect(button('仅保存')).toBeUndefined()
+  expect(sourceStep(3).text()).toContain('后台自动核对 WebDAV 路径和已知文件大小')
   await submit()
   expect(media.save).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ type: 'WEBDAV', location: source.location, startScan: false, autoExtractEmbedded: false, scanEnabled: false }), undefined)
   expect(shareImports.upload).toHaveBeenCalledExactlyOnceWith(source.id, file, expect.any(AbortSignal))
@@ -134,10 +135,13 @@ it('新建 WebDAV 选择资料包后自动上传，只预览不自动确认，�
   noMediaParsing()
   expect(wrapper.findComponent(WebDavMetadataDialog).props('initialImportFile')).toBeUndefined()
 
-  vi.mocked(shareImports.action).mockResolvedValue(job('VERIFYING'))
-  vi.mocked(shareImports.get).mockResolvedValue(job('VERIFYING'))
+  vi.mocked(shareImports.action).mockResolvedValue(job('QUEUED'))
+  vi.mocked(shareImports.get).mockResolvedValue({ ...job('VERIFYING'), processedCount: 2 })
   await button('确认导入资料').trigger('click'); await flushPromises()
   expect(shareImports.action).toHaveBeenCalledExactlyOnceWith(source.id, 'import', 'apply')
+  expect(wrapper.text()).toContain('资料已保存，正在核对媒体路径')
+  expect(wrapper.text()).toContain('待核验 2')
+  expect(button('核验 WebDAV 路径')).toBeUndefined()
   expect(media.get).toHaveBeenCalledWith(source.id)
   expect(shareImports.upload).toHaveBeenCalledTimes(1)
   noMediaParsing()

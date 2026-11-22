@@ -12,6 +12,7 @@ const platforms = Object.keys(providerNames) as MusicProvider[]
 const initial: MetadataSettings = { enabled: true, providers: platforms, autoApply: false, threshold: .95, minIntervalSeconds: 3, maxIntervalSeconds: 8 }
 let wrapper: VueWrapper | undefined
 function button(name: string) { return wrapper!.findAll('button').find(b => b.text() === name)! }
+function field(name: string) { return wrapper!.get<HTMLInputElement>(`input[name="${name}"]`) }
 async function page(path = '/system/music-platforms') {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/system/music-platforms', component: MusicPlatformsView },
@@ -24,8 +25,8 @@ async function page(path = '/system/music-platforms') {
 }
 async function save() { await wrapper!.get('form[aria-label="音乐平台设置"]').trigger('submit'); await flushPromises() }
 async function interval(min: number, max: number) {
-  await wrapper!.get('input[aria-label="批量最小间隔秒"]').setValue(String(min))
-  await wrapper!.get('input[aria-label="批量最大间隔秒"]').setValue(String(max))
+  await field('minIntervalSeconds').setValue(String(min))
+  await field('maxIntervalSeconds').setValue(String(max))
 }
 beforeEach(() => {
   vi.mocked(metadata.settings).mockResolvedValue({ ...initial, providers: [...platforms] })
@@ -37,20 +38,20 @@ afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.restoreAllMocks();
 it('六个平台直接可见并展示服务端状态，自动应用保持关闭', async () => {
   await page()
   for (const provider of platforms) expect((wrapper!.get(`input[value="${provider}"]`).element as HTMLInputElement).checked).toBe(true)
-  expect(wrapper!.get('[aria-label="唯一高相似度候选自动应用"]').attributes('aria-checked')).toBe('false')
-  expect(wrapper!.text()).toContain('已开启 6 个平台')
+  expect(field('enabled').element.checked).toBe(true)
+  expect(field('autoApply').element.checked).toBe(false)
   expect(button('保存设置').attributes('disabled')).toBeDefined()
   expect(metadata.saveSettings).not.toHaveBeenCalled()
 })
 it('旧响应省略请求间隔时使用 1～2 秒，80% 阈值可直接编辑保存', async () => {
   vi.mocked(metadata.settings).mockResolvedValue({ enabled: true, providers: platforms, autoApply: false, threshold: .8 })
   await page()
-  expect((wrapper!.get('input[aria-label="自动应用阈值百分比"]').element as HTMLInputElement).value).toBe('80')
-  expect((wrapper!.get('input[aria-label="批量最小间隔秒"]').element as HTMLInputElement).value).toBe('1')
-  expect((wrapper!.get('input[aria-label="批量最大间隔秒"]').element as HTMLInputElement).value).toBe('2')
-  expect(wrapper!.find('.platform-note').exists()).toBe(false)
+  expect(field('threshold').element.value).toBe('80')
+  expect(field('minIntervalSeconds').element.value).toBe('1')
+  expect(field('maxIntervalSeconds').element.value).toBe('2')
+  expect(wrapper!.find('details').exists()).toBe(false)
   expect(button('保存设置').attributes('disabled')).toBeDefined()
-  await wrapper!.get('input[aria-label="自动应用阈值百分比"]').setValue('90')
+  await field('threshold').setValue('90')
   await save()
   expect(metadata.saveSettings).toHaveBeenCalledWith({ enabled: true, providers: platforms, autoApply: false, threshold: .9, minIntervalSeconds: 1, maxIntervalSeconds: 2 })
 })
@@ -60,7 +61,7 @@ it('启用全部平台后明确保存，保留原自动应用、阈值与间隔'
   expect(metadata.saveSettings).not.toHaveBeenCalled()
   await save()
   expect(metadata.saveSettings).toHaveBeenCalledWith({ ...initial, enabled: true, providers: platforms, autoApply: true, threshold: .96, minIntervalSeconds: 1, maxIntervalSeconds: 3 })
-  expect(wrapper!.text()).toContain('当前设置已保存')
+  expect(button('保存设置').attributes('disabled')).toBeDefined()
 })
 it('读取失败不冒充全部已开启，重试成功后才展示真实配置', async () => {
   vi.mocked(metadata.settings).mockRejectedValueOnce(new Error('网络暂不可用'))
@@ -68,14 +69,14 @@ it('读取失败不冒充全部已开启，重试成功后才展示真实配置'
   expect(wrapper!.text()).toContain('网络暂不可用')
   expect(wrapper!.find('form').exists()).toBe(false)
   await button('重新读取').trigger('click'); await flushPromises()
-  expect(wrapper!.text()).toContain('已开启 6 个平台')
+  expect(wrapper!.findAll('input[name="providers"]:checked')).toHaveLength(6)
 })
 it('保存失败保留平台选择与输入供重试', async () => {
   vi.mocked(metadata.saveSettings).mockRejectedValueOnce(new Error('保存连接超时'))
   await page(); await wrapper!.get('input[value="QQ"]').setValue(false); await interval(10, 20); await save()
   expect(wrapper!.text()).toContain('保存连接超时')
   expect((wrapper!.get('input[value="QQ"]').element as HTMLInputElement).checked).toBe(false)
-  expect((wrapper!.get('input[aria-label="批量最小间隔秒"]').element as HTMLInputElement).value).toBe('10')
+  expect(field('minIntervalSeconds').element.value).toBe('10')
   await save()
   expect(metadata.saveSettings).toHaveBeenLastCalledWith({ ...initial, providers: platforms.filter(p => p !== 'QQ'), minIntervalSeconds: 10, maxIntervalSeconds: 20 })
 })
@@ -84,31 +85,34 @@ it('零秒间隔有效，倒置间隔和空平台不能保存', async () => {
   expect(metadata.saveSettings).toHaveBeenCalledWith({ ...initial, minIntervalSeconds: 0, maxIntervalSeconds: 0 })
   await interval(20, 10); await save()
   expect(metadata.saveSettings).toHaveBeenCalledTimes(1)
-  expect(wrapper!.text()).toContain('最大值不能小于最小值')
+  const intervalError = field('maxIntervalSeconds').attributes('aria-describedby')
+  expect(wrapper!.get(`#${intervalError}`).text()).toContain('最大值不能小于最小值')
   await interval(3, 8)
   for (const platform of platforms) await wrapper!.get(`input[value="${platform}"]`).setValue(false)
   await save(); expect(metadata.saveSettings).toHaveBeenCalledTimes(1)
   expect(wrapper!.text()).toContain('至少选择一个平台')
 })
 it('百分比阈值正确转换为服务端比例', async () => {
-  await page(); await wrapper!.get('input[aria-label="自动应用阈值百分比"]').setValue('96'); await save()
+  await page(); await field('threshold').setValue('96'); await save()
   expect(metadata.saveSettings).toHaveBeenCalledWith({ ...initial, threshold: .96 })
 })
 it('保存运行中配置先确认暂停，取消保持草稿，确认后才写入', async () => {
-  vi.mocked(metadata.latest).mockResolvedValue({ id: 'running', status: 'RUNNING' } as MetadataBatch)
   const confirm = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValueOnce('cancel')
-  await page(); await interval(10, 20); await save()
+  await page()
+  expect(metadata.latest).not.toHaveBeenCalled()
+  vi.mocked(metadata.latest).mockResolvedValue({ id: 'running', status: 'RUNNING' } as MetadataBatch)
+  await interval(10, 20); await save()
   expect(confirm).toHaveBeenCalledWith(expect.stringContaining('暂停'), '保存并暂停批次', expect.any(Object))
   expect(metadata.saveSettings).not.toHaveBeenCalled()
   confirm.mockResolvedValueOnce('confirm' as never); await save()
   expect(metadata.saveSettings).toHaveBeenCalledWith({ ...initial, minIntervalSeconds: 10, maxIntervalSeconds: 20 })
 })
 it('任务状态未知时明确提示，保存仍确认暂停语义', async () => {
-  vi.mocked(metadata.latest).mockRejectedValue(new Error('unknown'))
+  vi.mocked(metadata.latest).mockRejectedValueOnce(new Error('unknown'))
   const confirm = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValueOnce('cancel')
   await page(); await interval(1, 2); await save()
-  expect(wrapper!.text()).toContain('暂时无法读取匹配任务状态')
-  expect(confirm).toHaveBeenCalled(); expect(metadata.saveSettings).not.toHaveBeenCalled()
+  expect(confirm).toHaveBeenCalledWith(expect.stringContaining('暂时无法读取匹配任务状态'), '确认保存设置', expect.any(Object))
+  expect(metadata.saveSettings).not.toHaveBeenCalled()
 })
 it('离页与刷新保护未保存的修改，取消离开保留输入', async () => {
   const confirm = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValueOnce('cancel')
@@ -133,7 +137,7 @@ it('离开后迟到的配置不能覆盖重新进入读取的状态', async () =
   const router = await page(); expect(wrapper!.text()).toContain('正在读取')
   await router.push('/library/songs'); await router.push('/system/music-platforms'); await flushPromises()
   resolve({ ...initial, enabled: false, providers: ['QQ'] }); await flushPromises()
-  expect(wrapper!.text()).toContain('已开启 6 个平台')
+  expect(wrapper!.findAll('input[name="providers"]:checked')).toHaveLength(6)
   expect(metadata.saveSettings).not.toHaveBeenCalled()
 })
 
@@ -141,12 +145,12 @@ it('保留旧五平台配置，咪咕可以单独启用并保存', async () => {
   const previous = platforms.filter(provider => provider !== 'MIGU')
   vi.mocked(metadata.settings).mockResolvedValue({ ...initial, providers: previous })
   await page()
-  expect(wrapper!.text()).toContain('已开启 5 个平台')
-  const migu = wrapper!.get('input[aria-label="咪咕音乐"]')
-  expect((migu.element as HTMLInputElement).checked).toBe(false)
+  expect(wrapper!.findAll('input[name="providers"]:checked')).toHaveLength(5)
+  const migu = wrapper!.get<HTMLInputElement>('input[value="MIGU"]')
+  expect(migu.element.checked).toBe(false)
   expect(metadata.saveSettings).not.toHaveBeenCalled()
   await migu.setValue(true)
   await save()
   expect(metadata.saveSettings).toHaveBeenCalledWith({ ...initial, providers: platforms })
-  expect(wrapper!.text()).toContain('已开启 6 个平台')
+  expect(wrapper!.findAll('input[name="providers"]:checked')).toHaveLength(6)
 })

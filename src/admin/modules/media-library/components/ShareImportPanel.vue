@@ -13,9 +13,21 @@ const cursor = ref(0), more = ref(false), showingDifferences = ref(false)
 let timer: ReturnType<typeof setTimeout> | undefined, controller: AbortController | undefined, generation = 0
 const working = computed(() => ['PARSING', 'QUEUED', 'RUNNING', 'VERIFYING', 'PREVIEW'].includes(job.value?.state ?? ''))
 watch(() => uploading.value || working.value, value => emit('active', value), { immediate: true })
-const stage = computed(() => ({ PARSING: '正在解析资料包', PREVIEW: '请核对自己的媒体目录', QUEUED: '等待导入', RUNNING: '正在保存资料', VERIFYING: '资料已保存，正在核对媒体路径', SUCCEEDED: '资料处理结束', FAILED: '处理暂未完成', CANCELLED: '已取消，已完成的资料保留' }[job.value?.state ?? ''] ?? ''))
+const legacyPendingVerification = computed(() => props.source.type === 'WEBDAV' && job.value?.state === 'SUCCEEDED' && job.value.phase === 'IMPORTED' && job.value.totalCount > job.value.verifiedCount)
+const stage = computed(() => {
+  const current = job.value
+  if (current?.state === 'SUCCEEDED') {
+    return current.phase === 'VERIFYING' ? '曲库资料已导入，路径核验已结束' : '曲库资料已导入'
+  }
+  return ({ PARSING: '正在解析资料包', PREVIEW: '请核对自己的媒体目录', QUEUED: '等待导入', RUNNING: '正在保存资料', VERIFYING: '资料已保存，正在核对媒体路径', FAILED: '处理暂未完成', CANCELLED: '已取消，已完成的资料保留' }[current?.state ?? ''] ?? '')
+})
 const progress = computed(() => job.value?.phase === 'VERIFYING' ? job.value.verifiedCount : job.value?.processedCount ?? 0)
 const percent = computed(() => Math.min(100, Math.round(progress.value * 100 / Math.max(1, job.value?.totalCount ?? 0))))
+const supersededCount = computed(() => {
+  const current = job.value
+  if (!current) return 0
+  return Math.max(0, current.verifiedCount - current.presentCount - current.missingCount - current.mismatchCount - current.unreachableCount)
+})
 function accept(value: ShareImportJob) {
   const changed = job.value?.state !== value.state
   job.value = value
@@ -66,6 +78,7 @@ async function action(value: 'apply' | 'cancel' | 'retry') {
   try {
     const result = await shareImports.action(props.source.id, job.value.id, value)
     if (token !== generation) return
+    if (value === 'retry') { differences.value = []; showingDifferences.value = false }
     accept(result); void load()
   }
   catch (e) { if (token === generation) error.value = e instanceof Error ? e.message : '操作失败' }
@@ -120,6 +133,7 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
       <p v-if="job.error">{{ job.error }}</p>
       <template v-if="job.state === 'PREVIEW'">
         <p>共 {{ job.totalCount }} 首 · 预计新增 {{ job.preview?.newSongs ?? 0 }} 首 · 为已有 {{ job.preview?.existingSongs ?? 0 }} 首合并资料</p>
+        <p v-if="source.type === 'WEBDAV'">确认导入后，后台会按目录读取 WebDAV 文件列表，自动核对路径和已知文件大小。核验通过的歌曲可用于点歌。</p>
         <ul class="samples"><li v-for="sample in job.samples" :key="sample.originalPath"><span>包内：{{ sample.originalPath }}</span><span>自己的地址：{{ sample.mediaURL }}</span><span v-if="sample.incoming">资料预览：{{ display(sample.incoming.title) }} / {{ display(sample.incoming.artists) }}<template v-if="sample.local">；本机现有：{{ display(sample.local.title) }} / {{ display(sample.local.artists) }}</template></span></li></ul>
         <details><summary>目录前缀</summary><label>移除包内前缀<ElInput v-model="remove" placeholder="如 原曲库/华语，不填表示保留" /></label><label>添加自己的目录前缀<ElInput v-model="add" placeholder="如 KTV/华语，不填表示不添加" /></label><ElButton :loading="busy" @click="map">更新路径预览</ElButton></details>
         <ElButton type="primary" :loading="busy" :disabled="mappingChanged" @click="action('apply')">确认导入资料</ElButton>
@@ -128,11 +142,16 @@ onBeforeUnmount(() => { generation++; controller?.abort(); clearTimeout(timer); 
         <ElProgress v-if="working" :percentage="percent" :indeterminate="job.state === 'PARSING'" />
         <p>新增 {{ job.addedCount }} · 更新 {{ job.updatedCount }} · 保留本地修改 {{ job.preservedCount }} · 未变化 {{ job.unchangedCount }}</p>
         <p>已核对 {{ job.presentCount }} · 待核验 {{ Math.max(0, job.totalCount - job.verifiedCount) }} · 缺失 {{ job.missingCount }} · 大小不符 {{ job.mismatchCount }} · 连接问题 {{ job.unreachableCount }}</p>
+        <p v-if="supersededCount">已跳过 {{ supersededCount }} 个位置或文件信息发生变更的条目。</p>
         <p v-if="job.pathOnlyCount">其中 {{ job.pathOnlyCount }} 条仅核对了路径，文件大小未知，尚未验证大小一致。</p>
         <p v-if="job.inputState === 'PENDING'">临时资料包待清理，后台会独立重试，不影响已保存资料，也不会重新导入或识别。<span v-if="job.inputCleanupError"> {{ job.inputCleanupError }}</span></p>
         <p v-else-if="job.inputState === 'RELEASED'">临时资料包已清理，核验记录与恢复检查点已保留。</p>
-        <ElButton v-if="job.preservedCount || job.missingCount || job.mismatchCount || job.unreachableCount" :loading="busy" @click="showDifferences()">查看差异与待处理项</ElButton>
-        <ElButton v-if="['FAILED', 'CANCELLED'].includes(job.state) || job.state === 'SUCCEEDED' && (job.missingCount || job.mismatchCount || job.unreachableCount)" :loading="busy" @click="action('retry')">{{ job.phase === 'VERIFYING' ? '重试未通过的核验' : '继续处理' }}</ElButton>
+        <ElButton v-if="job.preservedCount || job.missingCount || job.mismatchCount || job.unreachableCount || supersededCount" :loading="busy" @click="showDifferences()">查看差异与待处理项</ElButton>
+        <template v-if="legacyPendingVerification">
+          <p>这次导入尚有路径待核验。可现在核对 WebDAV 路径和已知文件大小。</p>
+          <ElButton :loading="busy" @click="action('retry')">核验 WebDAV 路径</ElButton>
+        </template>
+        <ElButton v-else-if="['FAILED', 'CANCELLED'].includes(job.state) || job.state === 'SUCCEEDED' && (job.missingCount || job.mismatchCount || job.unreachableCount)" :loading="busy" @click="action('retry')">{{ job.phase === 'VERIFYING' ? '重试未通过的核验' : '继续处理' }}</ElButton>
       </template>
       <ElButton v-if="working" :loading="busy" @click="action('cancel')">取消任务</ElButton>
       <div v-if="showingDifferences" class="differences"><p v-if="!differences.length">没有需要处理的差异。</p><article v-for="item in differences" :key="item.ordinal"><strong>{{ item.relativePath }}</strong><p>{{ mediaVerification(item.verification) }}<span v-if="item.verificationError"> · {{ item.verificationError }}</span></p><p v-for="field in item.fields" :key="field"><template v-if="field === 'cover'">封面：本地封面已保留，共享封面已另存。</template><template v-else>{{ fieldName(field) }}：保留本地「{{ display(item.local?.[field]) }}」；共享「{{ display(item.incoming?.[field]) }}」</template></p></article><ElButton v-if="more" :loading="busy" @click="showDifferences(true)">显示更多差异</ElButton></div>

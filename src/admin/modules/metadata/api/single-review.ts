@@ -1,11 +1,12 @@
 import { authRequest, ApiError } from '../../../core/auth/api'
 import type { MusicProvider, SearchResult } from '../types'
-import type { SingleReview, ReviewApply, ReviewResult, CoverAsset, CoverChoice } from '../single-types'
+import type { SingleReview, ReviewApply, ReviewResult, CoverAsset, CoverChoice, CandidateLyrics } from '../single-types'
 const base = '/api/v1/metadata', segment = encodeURIComponent
 export const singleReview = {
   load: (id: string) => authRequest<SingleReview>(`${base}/songs/${segment(id)}/review`),
   apply: (id: string, input: ReviewApply) => authRequest<ReviewResult>(`${base}/songs/${segment(id)}/review/apply`, 'POST', input),
   applyBatch: (batchId: string, itemId: string, input: ReviewApply) => authRequest<ReviewResult>(`${base}/batches/${segment(batchId)}/items/${segment(itemId)}/review/apply`, 'POST', input),
+  lyrics: (songId: string, candidateId: string, signal?: AbortSignal) => authRequest<CandidateLyrics>(`${base}/songs/${segment(songId)}/candidates/${segment(candidateId)}/lyrics`, 'POST', undefined, 30000, signal),
   covers: (id: string, keyword: string, providers: MusicProvider[], signal?: AbortSignal) => authRequest<{ items: CoverChoice[]; errors: SearchResult['errors'] }>(`${base}/songs/${segment(id)}/covers/search`, 'POST', { keyword, providers }, 30000, signal),
   assetUrl: (id: string) => `${base}/cover-assets/${segment(id)}`,
   upload: async (id: string, fingerprint: string, file: File, progress: (value: number) => void, signal: AbortSignal): Promise<CoverAsset> => {
