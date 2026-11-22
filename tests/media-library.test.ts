@@ -14,6 +14,7 @@ import { dropdownStubs } from './fixtures/dropdown-stubs'
 
 vi.mock('../src/admin/modules/filename-parser/api/rules', () => ({ parserProfiles: { load: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), preview: vi.fn() }, ruleLibrary: { load: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn() } }))
 vi.mock('../src/admin/modules/media-library/api/embeddedMetadata', () => ({ embeddedMetadata: { summary: vi.fn() } }))
+vi.mock('../src/admin/core/auth/api', () => ({ authRequest: vi.fn(async () => ({})) }))
 vi.mock('../src/admin/modules/lx-downloads/api', () => ({ lx: { status: vi.fn() } }))
 vi.mock('../src/admin/modules/media-library/api/media', () => ({ media: { get: vi.fn(), directories: vi.fn(), list: vi.fn(), save: vi.fn(), remove: vi.fn(), scan: vi.fn(), songs: vi.fn(), createTask: vi.fn(), latestTask: vi.fn(), latestIngest: vi.fn(), task: vi.fn(), cancelTask: vi.fn() } }))
 let wrapper: VueWrapper
@@ -63,6 +64,14 @@ async function saveNewSource(startScan = true) {
   await button(startScan ? '保存并扫描' : '仅保存').trigger('click'); await flushPromises()
 }
 async function sourceAction(text: string) {
+  const row = wrapper.find('.webdav-source')
+  if (row.exists()) {
+    if (!row.find('.maintenance').exists()) {
+      await row.get('.record-menu button').trigger('click')
+      await row.findAll('[role="menuitem"]').find(item => item.text() === '维护与设置')!.trigger('click')
+    }
+    return button(text === '扫描歌曲' ? '重新扫描歌曲' : text)
+  }
   await wrapper.get('.source-actions button[aria-label]').trigger('click')
   await flushPromises()
   return wrapper.findAll('[role="menuitem"]').find(item => item.text() === text)!
@@ -76,10 +85,11 @@ it('任务中心来源深链接读取不在当前页的来源，并打开对应�
   await router.push('/library/media?source=outside-page')
   const source = { id: 'outside-page', name: '目标曲库', type: 'WEBDAV', location: 'https://nas.example.invalid/dav/', username: '', parserProfileId: 'default', passwordConfigured: false, createdAt: '', updatedAt: '' }
   vi.mocked(media.get).mockResolvedValue(source as never)
-  wrapper = mount(MediaLibraryView, { attachTo: document.body, global: { plugins: [router], stubs: { ...dropdownStubs, WebDavMetadataDialog: { props: ['source'], template: '<div class="linked-source">{{ source.name }}</div>' } } } })
+  wrapper = mount(MediaLibraryView, { attachTo: document.body, global: { plugins: [router], stubs: dropdownStubs } })
   await flushPromises()
   expect(media.get).toHaveBeenCalledWith('outside-page')
-  expect(wrapper.get('.linked-source').text()).toBe('目标曲库')
+  expect(wrapper.get('#webdav-source-outside-page h2').text()).toBe('目标曲库')
+  expect(document.activeElement).toBe(wrapper.get('#webdav-source-outside-page').element)
 })
 it('WebDAV 地址在卡片中显示解码后的中文，编辑时保留原地址', async () => {
   const location = 'http://nas.example.invalid/%E5%AA%92%E4%BD%93%E5%BA%93/ktv/music/'
@@ -87,7 +97,8 @@ it('WebDAV 地址在卡片中显示解码后的中文，编辑时保留原地址
   wrapper = mount(MediaLibraryView, { attachTo: document.body, global: { plugins: [router], stubs: { teleport: true, ...dropdownStubs } } })
   await flushPromises()
   expect(wrapper.get('.source-location').text()).toBe('http://nas.example.invalid/媒体库/ktv/music/')
-  expect(button('资料管理').exists()).toBe(true)
+  expect(wrapper.get('.webdav-source .import-button').text()).toBe('导入资料包')
+  expect(button('资料管理')).toBeUndefined()
   expect(button('完善信息')).toBeUndefined()
   await (await sourceAction('编辑')).trigger('click')
   await flushPromises()
@@ -134,7 +145,7 @@ it('WebDAV 编辑不回显密码，留空时不覆盖密码', async () => {
   vi.mocked(media.list).mockResolvedValue({ items: [{ id: 'source-1', name: '远端歌曲', type: 'WEBDAV', location: 'https://nas.example.invalid/dav/', username: 'singer', parserProfileId: 'default', passwordConfigured: true, createdAt: '', updatedAt: '' }], page: 0, size: 20, totalElements: 1 })
   wrapper = mount(MediaLibraryView, { attachTo: document.body, global: { plugins: [router], stubs: { teleport: true, ...dropdownStubs } } })
   await flushPromises()
-  expect(wrapper.text()).toContain('按需连接')
+  expect(wrapper.find('.webdav-source .status-line').exists()).toBe(false)
   await (await sourceAction('编辑')).trigger('click')
   await flushPromises()
   const form = wrapper.findComponent(ElDialog)
@@ -352,9 +363,25 @@ it('慢状态请求串行，页面隐藏后停止更新，恢复可见时重新�
     vi.mocked(media.latestTask).mockResolvedValue(task('SUCCEEDED'))
     hidden = false; document.dispatchEvent(new Event('visibilitychange')); await flushPromises()
     expect(media.latestTask).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('扫描完成')
+    expect(wrapper.find('.webdav-source .status-line').exists()).toBe(false)
+    await sourceAction('扫描歌曲')
+    expect(wrapper.get('.maintenance').text()).toContain('扫描完成')
     await vi.advanceTimersByTimeAsync(20000)
     expect(media.task).toHaveBeenCalledTimes(1)
+  } finally { vi.useRealTimers() }
+})
+it('后台生成衍生文件时刷新对应来源，完成后状态收起并停止轮询', async () => {
+  vi.useFakeTimers()
+  try {
+    vi.mocked(media.list).mockResolvedValue({ items: [remote], page: 0, size: 20, totalElements: 1 })
+    vi.mocked(embeddedMetadata.summary).mockResolvedValueOnce({ counts: {}, files: { pending: 1, failed: 0 } } as never)
+    wrapper = mount(MediaLibraryView, { global: { plugins: [router], stubs: { teleport: true, ...dropdownStubs } } })
+    await flushPromises()
+    expect(wrapper.get('.status-line').text()).toContain('正在生成曲库文件')
+    await vi.advanceTimersByTimeAsync(2000); await flushPromises()
+    expect(wrapper.find('.status-line').exists()).toBe(false)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(embeddedMetadata.summary).toHaveBeenCalledTimes(2)
   } finally { vi.useRealTimers() }
 })
 it('轮询期间刷新来源会在当前请求结束后补读最新状态', async () => {
@@ -371,7 +398,9 @@ it('轮询期间刷新来源会在当前请求结束后补读最新状态', asyn
     expect(media.latestTask).toHaveBeenCalledTimes(1)
     resolve(task()); await flushPromises()
     expect(media.latestTask).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('扫描完成')
+    expect(wrapper.find('.webdav-source .status-line').exists()).toBe(false)
+    await sourceAction('扫描歌曲')
+    expect(wrapper.get('.maintenance').text()).toContain('扫描完成')
   } finally { vi.useRealTimers() }
 })
 it('隐藏前慢轮询尚未完成时恢复页面，完成后补读最新任务一次', async () => {
@@ -395,7 +424,9 @@ it('隐藏前慢轮询尚未完成时恢复页面，完成后补读最新任务�
     vi.mocked(media.latestTask).mockResolvedValue({ ...task('SUCCEEDED'), id: 'latest-job' })
     resolve(task()); await flushPromises()
     expect(media.latestTask).toHaveBeenCalledTimes(2)
-    expect(wrapper.text()).toContain('扫描完成')
+    expect(wrapper.find('.webdav-source .status-line').exists()).toBe(false)
+    await sourceAction('扫描歌曲')
+    expect(wrapper.get('.maintenance').text()).toContain('扫描完成')
     await vi.advanceTimersByTimeAsync(20000)
     expect(media.latestTask).toHaveBeenCalledTimes(2)
     expect(media.task).toHaveBeenCalledTimes(1)
@@ -412,9 +443,11 @@ it('WebDAV 创建后台任务并展示进度，完成后不自动跳页', async 
     await (await sourceAction('扫描歌曲')).trigger('click'); await flushPromises()
     expect(media.createTask).toHaveBeenCalledWith(remote.id)
     expect(wrapper.text()).toContain('已处理 5 个目录、300 个条目；200 首')
-    expect((await sourceAction('扫描歌曲')).attributes('aria-disabled')).toBe('true')
+    expect((await sourceAction('扫描歌曲')).attributes('disabled')).toBeDefined()
     await vi.advanceTimersByTimeAsync(2000); await flushPromises()
-    expect(wrapper.text()).toContain('扫描完成')
+    expect(wrapper.find('.webdav-source .status-line').exists()).toBe(false)
+    await sourceAction('扫描歌曲')
+    expect(wrapper.get('.maintenance').text()).toContain('扫描完成')
     expect(button('查看歌曲')).toBeDefined()
     expect(router.currentRoute.value.path).toBe('/library/media')
     wrapper.unmount()
@@ -429,13 +462,13 @@ it('重新进入恢复任务，支持取消并保留错误提示与重扫入口'
   vi.mocked(media.cancelTask).mockResolvedValue(task('CANCELLED'))
   wrapper = mount(MediaLibraryView, { attachTo: document.body, global: { plugins: [router], stubs: { teleport: true, ...dropdownStubs } } }); await flushPromises()
   expect(wrapper.text()).toContain('正在扫描目录')
-  await button('取消扫描').trigger('click'); await flushPromises()
+  await (await sourceAction('取消扫描')).trigger('click'); await flushPromises()
   expect(media.cancelTask).toHaveBeenCalledWith(remote.id, 'job')
   expect(wrapper.text()).toContain('已取消')
   vi.mocked(media.latestTask).mockResolvedValue(task('FAILED'))
   await (await pageAction('刷新')).trigger('click'); await flushPromises()
   expect(wrapper.text()).toContain('目录读取失败，旧索引已保留')
-  expect((await sourceAction('扫描歌曲')).attributes('aria-disabled')).toBe('false')
+  expect((await sourceAction('扫描歌曲')).attributes('disabled')).toBeUndefined()
 })
 it('离开页面后忽略迟到的任务状态响应', async () => {
   let resolveTask!: (value: ReturnType<typeof task>) => void

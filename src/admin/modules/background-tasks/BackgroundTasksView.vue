@@ -5,6 +5,7 @@ import { ElAlert, ElButton, ElEmpty, ElInput, ElOption, ElPagination, ElProgress
 import { ArrowLeft, ArrowRight, Clock, Document, FolderOpened, Headset, RefreshRight, Search } from '@element-plus/icons-vue'
 import PageHeader from '../../shared/ui/PageHeader.vue'
 import TaskProgressOverview from './TaskProgressOverview.vue'
+import { acceptedUpload, packageUploads, uploadPackage } from '../media-library/package-uploads'
 import { backgroundTasks, type BackgroundTask, type ChildPage, type ItemPage, type TaskPage } from './api'
 import { activeTask, compactTaskName, countNames, date, failureGuidance, failureText, frameProgress, isScan, itemStatusNames, progressStatus, progressText, skipReasons, stageName, statistics, statusNames, taskFailure, taskHighlights, tone, typeNames, unsuccessful } from './presentation'
 
@@ -15,6 +16,15 @@ const pageNumber = (key: string) => Math.max(0, Math.min(1000000, Number.parseIn
 const filter = computed(() => ({ view: ['HISTORY', 'ALL'].includes(value('view')) ? value('view') : 'ACTIVE',
   type: value('type'), status: value('status'), q: value('q'), page: pageNumber('page') }))
 const keyword = ref(filter.value.q)
+const localUploads = computed(() => {
+  const { view, type, status, q, page } = filter.value
+  if (view === 'HISTORY' || page || (type && type !== 'SHARE_IMPORT')) return []
+  return [...packageUploads.values()].filter(item => {
+    const state = item.controller ? 'RUNNING' : item.error === '上传已取消' ? 'CANCELLED' : 'FAILED'
+    return (!status || status === state) && (item.source.name + item.file.name).toLowerCase().includes(q.toLowerCase())
+  })
+})
+watch(acceptedUpload, receipt => { if (receipt && !taskId.value) void refresh() })
 const result = ref<TaskPage>(), task = ref<BackgroundTask>(), items = ref<ItemPage>(), children = ref<ChildPage>()
 const error = ref(''), loading = ref(false), observed = ref('')
 const failureReason = ref(''), failureSong = ref('')
@@ -132,6 +142,13 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer); docum
         </ElSelect>
         <ElButton native-type="submit">搜索</ElButton>
       </form>
+      <section v-if="localUploads.length" aria-label="当前标签页的资料包上传" class="local-uploads">
+        <article v-for="item in localUploads" :key="item.source.id">
+          <div><strong>{{ item.source.name }} · {{ item.file.name }}</strong><p role="status">{{ item.controller ? '正在上传，完成前请保留此标签页' : item.error }}</p></div>
+          <ElButton v-if="item.controller" @click="item.controller.abort()">取消上传</ElButton>
+          <template v-else><ElButton @click="uploadPackage(item.source, item.file, item.mode)">重试上传</ElButton><ElButton text @click="packageUploads.delete(item.source.id)">移除记录</ElButton></template>
+        </article>
+      </section>
       <ElSkeleton v-if="loading && !result" :rows="5" animated />
       <div v-else-if="result?.items.length" class="task-table-wrap task-list-wrap sv-glass">
         <table class="task-table task-list-table">
@@ -148,7 +165,7 @@ onBeforeUnmount(() => { active = false; generation++; clearTimeout(timer); docum
           </tr></tbody>
         </table>
       </div>
-      <ElEmpty v-else-if="!loading && !error" :description="filter.q || filter.type || filter.status ? '没有符合筛选条件的任务' : filter.view === 'ACTIVE' ? '当前没有未完成的任务' : '暂无任务历史'">
+      <ElEmpty v-else-if="!loading && !error && !localUploads.length" :description="filter.q || filter.type || filter.status ? '没有符合筛选条件的任务' : filter.view === 'ACTIVE' ? '当前没有未完成的任务' : '暂无任务历史'">
         <ElButton v-if="filter.q || filter.type || filter.status" @click="clearFilters">清除筛选</ElButton>
       </ElEmpty>
       <div v-if="result" class="task-list-footer"><span>共 {{ result.totalElements.toLocaleString() }} 个批次</span><span v-if="observed">最近读取：{{ date(observed) }}<template v-if="error"> · 读取失败，等待重试</template></span></div>

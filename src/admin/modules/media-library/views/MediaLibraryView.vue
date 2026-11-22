@@ -9,18 +9,20 @@ import PageHeader from '../../../shared/ui/PageHeader.vue'
 import { useVisiblePolling } from '../../../shared/composables/use-visible-polling'
 import { media, type MediaSource, type SourceType, type ScanTask } from '../api/media'
 
-import WebDavMetadataDialog from '../components/WebDavMetadataDialog.vue'
+import LocalMetadataDialog from '../components/LocalMetadataDialog.vue'
+import WebDavSourceRow from '../components/WebDavSourceRow.vue'
 import LocalFolderPicker from '../components/LocalFolderPicker.vue'
-import MediaSourceCard from '../components/MediaSourceCard.vue'
+import LocalSourceCard from '../components/LocalSourceCard.vue'
 import MediaSourceWizard from '../components/MediaSourceWizard.vue'
 import { lx } from '../../lx-downloads/api'
 import { embeddedMetadata, type EmbeddedSummary } from '../api/embeddedMetadata'
+import { uploadPackage } from '../package-uploads'
+import { displayWebDavLocation } from '../webdav-location'
 import { validateSharePackage } from '../api/shareImports'
 const FilenameProfilesView = defineAsyncComponent(() => import('../../filename-parser/views/FilenameProfilesView.vue'))
 const FilenameParserView = defineAsyncComponent(() => import('../../filename-parser/views/FilenameParserView.vue'))
 const metadataSource = ref<MediaSource | null>(null)
-const metadataImportFile = ref<File>()
-const metadataUploading = ref(false)
+const previewImport = ref(false)
 const importMode = ref(false)
 const importFile = ref<File>()
 const sourceStep = ref<1 | 2 | 3>(1)
@@ -37,10 +39,10 @@ function confirmFolder(path: string) { draft.location = path; picker.value = fal
 function changeType(type: SourceType) {
   if (editing.value || saving.value || draft.type === type) return
   Object.assign(draft, { autoExtractEmbedded: false, type, location: '', username: '', password: '', useForLxDownloads: false }); clearPassword.value = false
-  importMode.value = false; importFile.value = undefined; formError.value = ''
+  importMode.value = false; previewImport.value = false; importFile.value = undefined; formError.value = ''
 }
 function changeImportMode() {
-  importFile.value = undefined; formError.value = ''
+  previewImport.value = false; importFile.value = undefined; formError.value = ''
   if (importMode.value) { draft.autoExtractEmbedded = false; draft.scanEnabled = false }
 }
 function directScan() {
@@ -65,9 +67,7 @@ const summaryLocation = computed(() => {
     const url = new URL(draft.location)
     const hiddenParameters = !!(url.search || url.hash)
     url.username = ''; url.password = ''; url.search = ''; url.hash = ''
-    let display = url.toString()
-    try { display = decodeURI(display) } catch { /* Preserve malformed percent escapes as entered. */ }
-    return display + (hiddenParameters ? '（查询参数及片段已隐藏）' : '')
+    return displayWebDavLocation(url.toString()) + (hiddenParameters ? '（查询参数及片段已隐藏）' : '')
   }
   catch { return '请返回检查 WebDAV 目录地址' }
 })
@@ -76,7 +76,7 @@ const workbenchProfileId = ref('default')
 const workbench = ref<{ canLeave: () => Promise<boolean> }>()
 const editorBack = ref<InstanceType<typeof ElButton>>()
 const formBaseline = ref('')
-const formSignature = computed(() => JSON.stringify({ ...draft, clearPassword: clearPassword.value, importMode: importMode.value, importFile: importFile.value ? [importFile.value.name, importFile.value.size, importFile.value.lastModified] : null }))
+const formSignature = computed(() => JSON.stringify({ ...draft, clearPassword: clearPassword.value, importMode: importMode.value, previewImport: previewImport.value, importFile: importFile.value ? [importFile.value.name, importFile.value.size, importFile.value.lastModified] : null }))
 const formDirty = computed(() => dialog.value && formSignature.value !== formBaseline.value)
 const profileWorkspace = ref<ParserWorkspace | null>(null), profilesLoading = ref(false), profilesError = ref('')
 const selectedProfile = computed(() => profileWorkspace.value?.profiles.find(p => p.id === draft.parserProfileId))
@@ -88,16 +88,21 @@ const taskVersions: Record<string, number> = {}
 const taskErrors = reactive<Record<string, string>>({})
 const cancelling = reactive<Record<string, boolean>>({})
 let taskGeneration = 0, loadGeneration = 0, latestTasksRequested = false
-function enhancing(id: string) { const s = summaries[id]; return !!s?.enabled && !s.paused && (s.counts.PENDING ?? 0) + (s.counts.QUEUED ?? 0) + (s.counts.RUNNING ?? 0) > 0 }
 function ingestActive(id: string) { return ['QUEUED', 'RUNNING'].includes(ingests[id]?.state ?? '') }
 function taskActive(task?: ScanTask) { return !!task && ['QUEUED', 'RUNNING'].includes(task.status) }
+function sourceBusy(id: string) {
+  const summary = summaries[id]
+  const extracting = summary?.enabled && !summary.paused &&
+    (summary.counts.PENDING ?? 0) + (summary.counts.QUEUED ?? 0) + (summary.counts.RUNNING ?? 0) > 0
+  return summary?.importProcessing || summary?.files?.pending || extracting || ingestActive(id) || taskActive(tasks[id])
+}
 const taskPolling = useVisiblePolling(async reason => {
   if (reason === 'resume') latestTasksRequested = true
   do {
     const latest = latestTasksRequested; latestTasksRequested = false
     await readTasks(latest)
   } while (active && !document.hidden && latestTasksRequested)
-}, () => items.value.some(item => ingestActive(item.id) || enhancing(item.id) || taskActive(tasks[item.id]))
+}, () => items.value.some(item => sourceBusy(item.id))
   ? 2000 : items.value.some(item => taskErrors[item.id]) ? 10000 : undefined, { immediate: false })
 function scheduleTasks(token = taskGeneration) {
   if (!active || token !== taskGeneration) return
@@ -109,19 +114,25 @@ function refreshTasks(latest: boolean): Promise<void> {
     if (active && !document.hidden && latestTasksRequested) return refreshTasks(false)
   })
 }
-async function readTasks(latest: boolean, token = taskGeneration) {
-  const sources = items.value
-  await Promise.all(sources.map(async item => {
-    const previous = tasks[item.id], version = taskVersions[item.id] ?? 0
-    if (!latest && !ingestActive(item.id) && !enhancing(item.id) && !taskActive(previous) && !taskErrors[item.id]) return
-    try {
-      const [task, ingest, summary] = await Promise.all([item.type === 'WEBDAV' ? latest || !previous ? media.latestTask(item.id) : media.task(item.id, previous.id) : undefined, media.latestIngest(item.id), embeddedMetadata.summary(item.id)])
-      if (!active || token !== taskGeneration || version !== (taskVersions[item.id] ?? 0)) return
-      tasks[item.id] = task; ingests[item.id] = ingest; summaries[item.id] = summary; taskErrors[item.id] = ''
-    } catch (e) {
-      if (active && token === taskGeneration && version === (taskVersions[item.id] ?? 0)) taskErrors[item.id] = e instanceof Error ? e.message : '读取扫描状态失败'
-    }
-  }))
+async function readSourceTask(item: MediaSource, latest: boolean, token = taskGeneration) {
+  const previous = tasks[item.id]
+  if (!latest && !sourceBusy(item.id) && !taskErrors[item.id]) return
+  const version = (taskVersions[item.id] ?? 0) + 1
+  taskVersions[item.id] = version
+  try {
+    const scan = item.type === 'LOCAL' ? undefined : latest || !previous ? media.latestTask(item.id) : media.task(item.id, previous.id)
+    const [task, ingest, summary] = await Promise.all([scan, media.latestIngest(item.id), embeddedMetadata.summary(item.id)])
+    if (!active || token !== taskGeneration || version !== taskVersions[item.id]) return
+    tasks[item.id] = task
+    ingests[item.id] = ingest
+    summaries[item.id] = summary
+    taskErrors[item.id] = ''
+  } catch (e) {
+    if (active && token === taskGeneration && version === taskVersions[item.id]) taskErrors[item.id] = e instanceof Error ? e.message : '读取扫描状态失败'
+  }
+}
+async function readTasks(latest: boolean) {
+  await Promise.all(items.value.map(item => readSourceTask(item, latest)))
 }
 async function cancelScan(item: MediaSource) {
   const task = tasks[item.id]
@@ -134,6 +145,7 @@ async function cancelScan(item: MediaSource) {
   finally { if (active) cancelling[item.id] = false }
 }
 let active = true, profileGeneration = 0
+let revealedSource: string | undefined
 async function loadProfiles() {
   const token = ++profileGeneration
   profilesLoading.value = true; profilesError.value = ''
@@ -170,29 +182,53 @@ async function scan(item: MediaSource) {
 async function showSongs(item: MediaSource) {
   await router.push({ path: '/library/songs', query: { sourceId: item.id } })
 }
-async function load(append = false, openLinkedSource = true) {
+async function revealSource(item: MediaSource) {
+  if (item.type === 'LOCAL') { metadataSource.value = item; return }
+  await nextTick()
+  const row = document.getElementById('webdav-source-' + item.id)
+  row?.focus({ preventScroll: true })
+  row?.scrollIntoView?.({ block: 'nearest' })
+}
+async function load(append = false, openLinkedSource = true, saved?: MediaSource) {
   const token = ++loadGeneration
   loading.value = true; error.value = ''
   try {
     const next = append ? sourcePage.value + 1 : 0
     const result = await media.list(next, 100)
     if (!active || token !== loadGeneration) return
-    items.value = append ? [...items.value, ...result.items] : result.items
-    const selectedSource = route.query.source
-    if (openLinkedSource && !append && typeof selectedSource === 'string') {
-      const selected = items.value.find(item => item.id === selectedSource) ?? await media.get(selectedSource)
-      if (!active || token !== loadGeneration) return
-      if (!items.value.some(item => item.id === selected.id)) items.value.unshift(selected)
-      metadataSource.value = selected
+    const nextItems = append ? [...items.value] : []
+    const ids = new Set(nextItems.map(item => item.id))
+    for (const item of result.items) {
+      if (!ids.has(item.id)) { nextItems.push(item); ids.add(item.id) }
     }
+    if (saved && !ids.has(saved.id)) nextItems.unshift(saved)
+    const selectedSource = route.query.source
+    let selected: MediaSource | undefined
+    if (openLinkedSource && !append && typeof selectedSource === 'string') {
+      selected = nextItems.find(item => item.id === selectedSource)
+      if (!selected) {
+        try { selected = await media.get(selectedSource) }
+        catch (cause) {
+          if (active && token === loadGeneration) error.value = cause instanceof Error ? cause.message : '读取来源失败'
+        }
+        if (!active || token !== loadGeneration) return
+        if (selected) nextItems.unshift(selected)
+      }
+    }
+    items.value = nextItems
     sourcePage.value = next; moreSources.value = (next + 1) * 100 < result.totalElements; loaded.value = true
     taskPolling.clear(); taskGeneration++; void refreshTasks(true)
+    if (selected && selected.id !== revealedSource) {
+      revealedSource = selected.id
+      void revealSource(selected)
+    }
   } catch (e) { if (active && token === loadGeneration) error.value = e instanceof Error ? e.message : '读取歌曲来源失败' }
   finally { if (active && token === loadGeneration) loading.value = false }
 }
 function open(type: SourceType, item?: MediaSource, forImport = false) {
   if (saving.value) return
   sourceStep.value = 1
+  previewImport.value = false
   importMode.value = forImport
   importFile.value = undefined
   editing.value = item ?? null
@@ -204,7 +240,6 @@ function open(type: SourceType, item?: MediaSource, forImport = false) {
 function closed() { if (dialog.value) return; picker.value = false; draft.password = ''; importFile.value = undefined; formError.value = ''; editing.value = null; editorPanel.value = 'source' }
 async function canLeaveWorkbench() { return editorPanel.value === 'source' || !workbench.value || await workbench.value.canLeave() }
 async function canLeaveSource() {
-  if (metadataUploading.value) return false
   if (!dialog.value) return true
   if (saving.value || !await canLeaveWorkbench()) return false
   if (!formDirty.value) return true
@@ -327,29 +362,60 @@ async function save(startScan = !editing.value && !importMode.value) {
       if (metadataSource.value?.id === saved.id) metadataSource.value = saved
     }
     dialog.value = false; draft.password = ''; ElMessage.success(importing ? '歌曲来源已保存，正在准备上传资料包' : startScan ? '已保存，后台将自动扫描入库，可以离开页面' : profileChanged ? '已保存解析方案，请重新扫描以更新文件名识别结果' : '歌曲来源配置已保存')
-    if (saved && importing) { metadataImportFile.value = file; metadataSource.value = saved }
-    await load(false, !importing)
+    if (saved && importing && file) {
+      void uploadPackage(saved, file, previewImport.value ? 'preview' : 'auto')
+      void revealSource(saved)
+    }
+    await load(false, !importing, importing ? saved : undefined)
   } catch (e) { formError.value = e instanceof Error ? e.message : '保存失败' }
   finally { saving.value = false }
 }
-async function reloadMetadataSource(importJobId?: string) {
-  const id = metadataSource.value?.id
-  if (id) {
-    const source = await media.get(id)
-    if (metadataSource.value?.id !== id) return
-    if (importJobId) await router.replace({ query: { ...route.query, import: importJobId } })
-    metadataSource.value = source
+async function refreshSource(item: MediaSource, importJobId?: string) {
+  try {
+    if (importJobId) {
+      const source = await media.get(item.id)
+      if (!active || !items.value.some(row => row.id === item.id)) return
+      items.value = items.value.map(row => row.id === item.id ? source : row)
+      if (route.query.source === item.id) await router.replace({ query: { ...route.query, import: importJobId } })
+    }
+    await readSourceTask(item, true)
+    scheduleTasks()
+  } catch (cause) {
+    if (active) error.value = cause instanceof Error ? cause.message : '读取来源失败'
   }
-  void refreshTasks(true)
+}
+function configured(id: string, summary: EmbeddedSummary) {
+  taskVersions[id] = (taskVersions[id] ?? 0) + 1
+  summaries[id] = summary
+  scheduleTasks()
 }
 async function remove(item: MediaSource) {
   try {
     await ElMessageBox.confirm(`移除“${item.name}”的歌曲来源配置？原始文件不会被删除。`, '移除歌曲来源', { confirmButtonText: '移除', cancelButtonText: '取消', type: 'warning' })
   } catch { return }
-  try { await media.remove(item.id); ElMessage.success('已移除歌曲来源配置'); await load() }
+  try {
+    await media.remove(item.id)
+    if (!active) return
+    if (route.query.source === item.id) {
+      const query = { ...route.query }
+      delete query.source
+      delete query.import
+      await router.replace({ query })
+    }
+    if (metadataSource.value?.id === item.id) metadataSource.value = null
+    ElMessage.success('已移除歌曲来源配置')
+    await load()
+  }
   catch (e) { error.value = e instanceof Error ? e.message : '移除失败' }
 }
-watch(() => route.query.source, id => { if (typeof id === 'string') void load() })
+watch(() => route.query.source, id => {
+  revealedSource = undefined
+  if (typeof id === 'string') void load()
+})
+watch(() => route.query.import, id => {
+  const item = items.value.find(row => row.id === route.query.source)
+  if (id && item) void revealSource(item)
+})
 onMounted(() => {
   window.addEventListener('beforeunload', beforeUnload)
   void load(); void loadProfiles()
@@ -363,10 +429,10 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
 <template>
   <div class="media-library-page management-page">
     <PageHeader class="media-heading" title="歌曲来源">
-      <template #meta><span v-if="loaded" class="source-count" :aria-label="`已读取 ${items.length} 个歌曲来源${moreSources ? '，可继续读取' : ''}`">{{ items.length }} 个来源</span></template>
+      <template #meta><span v-if="items.length > 1" class="source-count" :aria-label="`已读取 ${items.length} 个歌曲来源${moreSources ? '，可继续读取' : ''}`">{{ items.length }} 个来源</span></template>
       <template #actions>
         <div class="media-actions">
-          <ElButton type="primary" :icon="Plus" @click="open('LOCAL')">添加来源</ElButton>
+          <ElButton :type="items.length ? 'default' : 'primary'" :icon="Plus" @click="open('LOCAL')">添加来源</ElButton>
           <ElDropdown trigger="click" placement="bottom-end" :teleported="true" :show-arrow="false" popper-class="source-actions-dropdown">
             <ElButton class="media-more-button" text :icon="MoreFilled" aria-label="歌曲来源的更多操作" title="更多操作" />
             <template #dropdown><ElDropdownMenu><ElDropdownItem :icon="RefreshRight" :disabled="loading" @click="load()">刷新</ElDropdownItem><ElDropdownItem :icon="Upload" @click="open('WEBDAV', undefined, true)">导入资料包</ElDropdownItem><ElDropdownItem :icon="MagicStick" @click="router.push('/library/media/recognition')">文件名识别</ElDropdownItem></ElDropdownMenu></template>
@@ -377,18 +443,22 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
     <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon class="media-error"><ElButton text @click="load()">重试</ElButton></ElAlert>
     <section v-loading="loading" class="source-cards" aria-label="歌曲来源">
       <ElEmpty v-if="loaded && !items.length && !error" description="暂无歌曲来源"><ElButton type="primary" @click="open('LOCAL')">添加来源</ElButton></ElEmpty>
-      <MediaSourceCard
-        v-for="row in items" :key="row.id" :source="row"
-        :summary="summaries[row.id]" :ingest="ingests[row.id]"
-        :task="tasks[row.id]" :task-error="taskErrors[row.id]" :local-result="localResults[row.id]"
-        :scan-disabled="!!scanning" :cancelling="cancelling[row.id]"
-        :profile-loading="profilesLoading" :profile-name="profileName(row.parserProfileId)"
-        @songs="showSongs(row)" @metadata="metadataSource = row" @recognition="showRecognition(row)"
-        @scan="scan(row)" @cancel-scan="cancelScan(row)" @edit="open(row.type, row)" @remove="remove(row)"
-      />
+      <template v-for="row in items" :key="row.id">
+        <WebDavSourceRow v-if="row.type === 'WEBDAV'" :source="row"
+          :summary="summaries[row.id]" :ingest="ingests[row.id]" :task="tasks[row.id]" :task-error="taskErrors[row.id]"
+          :scan-disabled="!!scanning" :cancelling="cancelling[row.id]" :profile-loading="profilesLoading" :profile-name="profileName(row.parserProfileId)"
+          :import-job-id="route.query.source === row.id && typeof route.query.import === 'string' ? route.query.import : undefined"
+          @songs="showSongs(row)" @recognition="showRecognition(row)" @scan="scan(row)" @cancel-scan="cancelScan(row)"
+          @edit="open(row.type, row)" @remove="remove(row)" @updated="id => refreshSource(row, id)" @configured="value => configured(row.id, value)" />
+        <LocalSourceCard v-else :source="row" :summary="summaries[row.id]" :ingest="ingests[row.id]"
+          :task-error="taskErrors[row.id]" :local-result="localResults[row.id]" :scan-disabled="!!scanning"
+          :profile-loading="profilesLoading" :profile-name="profileName(row.parserProfileId)"
+          @songs="showSongs(row)" @metadata="metadataSource = row" @recognition="showRecognition(row)"
+          @scan="scan(row)" @edit="open(row.type, row)" @remove="remove(row)" />
+      </template>
       <ElButton v-if="moreSources" :loading="loading" @click="load(true)">显示更多位置</ElButton>
     </section>
-    <WebDavMetadataDialog v-if="metadataSource" :source="metadataSource" :initial-import-file="metadataImportFile" :import-job-id="typeof route.query.import === 'string' ? route.query.import : undefined" @uploading="metadataUploading = $event" @file-consumed="metadataImportFile = undefined" @songs="showSongs(metadataSource!); metadataSource = null" @close="metadataSource = null; metadataImportFile = undefined" @updated="reloadMetadataSource" />
+    <LocalMetadataDialog v-if="metadataSource" :key="metadataSource.id" :source="metadataSource" @songs="showSongs(metadataSource!); metadataSource = null" @close="metadataSource = null" @updated="refreshSource(metadataSource!)" />
     <ElDialog v-model="dialog" :title="editorPanel === 'source' ? (editing ? '编辑歌曲来源' : '添加歌曲来源') : `${editing?.name || draft.name || '新来源'} · ${editorPanel === 'profiles' ? '文件名识别' : '自定义规则'}`" :width="editorPanel !== 'source' ? 'min(1120px, calc(100vw - 24px))' : 'min(680px, calc(100vw - 24px))'" class="media-dialog" :class="{ 'source-workbench': editorPanel !== 'source', 'source-wizard-dialog': editorPanel === 'source' && !editing }" :close-on-click-modal="false" :close-on-press-escape="!saving" :show-close="!saving" :before-close="closeSource" @closed="closed">
       <template v-if="editorPanel !== 'source'">
         <div class="source-workbench-context"><ElButton ref="editorBack" @click="editorPanel === 'rules' ? returnToProfiles() : returnToSource()">{{ editorPanel === 'rules' ? '← 返回识别方案' : '← 返回来源设置' }}</ElButton></div>
@@ -420,6 +490,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
           </div>
           <template v-if="importMode">
             <div class="source-package"><label class="package-choice" :class="{ disabled: saving }">{{ importFile ? '更换资料包' : '选择资料包' }}<input type="file" accept=".zip,application/zip" aria-label="新歌曲来源资料包" :disabled="saving" @change="chooseImportFile"></label><span v-if="importFile" class="package-name">{{ importFile.name }}</span><ElButton v-if="importFile" text :disabled="saving" @click="directScan">移除资料包</ElButton><ElButton v-else text :disabled="saving" @click="directScan">改为直接扫描</ElButton></div>
+            <ElCheckbox v-model="previewImport" :disabled="saving">预览并调整目录</ElCheckbox>
           </template>
           <template v-else>
             <ElCheckbox v-model="draft.autoExtractEmbedded" :disabled="saving">自动读取文件内的歌曲信息</ElCheckbox>
@@ -443,7 +514,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
             <div><dt>来源名称</dt><dd>{{ sourceName }}</dd></div>
             <div><dt>媒体位置</dt><dd><span class="source-confirm-type">{{ draft.type === 'LOCAL' ? '本地目录' : 'WebDAV' }}</span>{{ summaryLocation }}</dd></div>
             <div v-if="draft.type === 'WEBDAV' && draft.username"><dt>访问账号</dt><dd>{{ draft.username }}</dd></div>
-            <div><dt>添加方式</dt><dd>{{ importingSource ? '导入已有资料包' : '直接扫描目录' }}<span v-if="importingSource && importFile" class="source-confirm-detail">{{ importFile.name }}</span></dd></div>
+            <div><dt>添加方式</dt><dd>{{ importingSource ? (previewImport ? '预览并调整目录' : '导入已有资料包') : '直接扫描目录' }}<span v-if="importingSource && importFile" class="source-confirm-detail">{{ importFile.name }}</span></dd></div>
             <div><dt>文件名识别</dt><dd>{{ selectedProfile?.name || '方案不可用' }}</dd></div>
             <div><dt>文件内信息</dt><dd>{{ draft.type === 'LOCAL' ? '先读文件标签，缺歌名或歌手时才解析文件名' : importingSource ? '从资料包导入，后台自动核对 WebDAV 路径和已知文件大小' : draft.autoExtractEmbedded ? '扫描后在后台按需读取' : '暂不开启，优先使用文件名' }}</dd></div>
             <div><dt>定时扫描</dt><dd>{{ !importingSource && draft.scanEnabled ? draft.scanCron : '未开启' }}<span v-if="!importingSource && draft.scanEnabled" class="source-confirm-detail">时区 Asia/Shanghai；仅保存也会保留此定时设置。</span></dd></div>
@@ -461,7 +532,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
             <ElButton v-if="!editing && sourceStep < 3" type="primary" native-type="submit" :disabled="saving || (sourceStep === 2 && profilesLoading)">下一步</ElButton>
             <template v-else>
               <ElButton v-if="!editing && !importMode" :disabled="saving || profilesLoading || !!profilesError || !selectedProfile" @click="save(false)">仅保存</ElButton>
-              <ElButton type="primary" native-type="submit" :loading="saving" :disabled="saving || profilesLoading || !!profilesError || !selectedProfile">{{ editing ? '保存修改' : importMode ? '保存并导入资料包' : '保存并扫描' }}</ElButton>
+              <ElButton type="primary" native-type="submit" :loading="saving" :disabled="saving || profilesLoading || !!profilesError || !selectedProfile">{{ editing ? '保存修改' : importMode ? (previewImport ? '保存并预览资料包' : '保存并导入资料包') : '保存并扫描' }}</ElButton>
             </template>
           </div>
         </template>
@@ -620,5 +691,10 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
   .media-more-button{ min-width: 44px; min-height: 44px; }
   .source-advanced summary, .package-choice { min-height: 44px; }
   .media-actions > .el-button { min-height: 44px; }
+}
+@media(min-width:300px) and (max-width:560px) {
+  .media-heading { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:4px; }
+  .media-heading :deep(.sv-page-header-actions) { margin:0; }
+  .media-actions > .el-button { padding-inline:10px; }
 }
 </style>

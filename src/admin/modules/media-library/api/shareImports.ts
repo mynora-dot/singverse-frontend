@@ -1,7 +1,9 @@
 import { authRequest } from '../../../core/auth/api'
 
+export type ImportApplyMode = 'auto' | 'preview'
 export interface ShareImportJob {
   id?: string; state: string; phase: string; error?: string
+  applyMode?: ImportApplyMode
   totalCount: number; processedCount: number; addedCount: number; updatedCount: number
   deletionCount?: number; preservedCount: number; unchangedCount: number; verifiedCount: number
   presentCount: number; missingCount: number; mismatchCount: number; unreachableCount: number
@@ -31,10 +33,10 @@ export const shareImports = {
   mapping: (id: string, job: string, removePrefix: string, addPrefix: string) => authRequest<ShareImportJob>(base(id) + '/' + encodeURIComponent(job) + '/mapping', 'PUT', { removePrefix, addPrefix }),
   action: (id: string, job: string, action: 'apply' | 'cancel' | 'retry') => authRequest<ShareImportJob>(base(id) + '/' + encodeURIComponent(job) + '/' + action, 'POST'),
   differences: (id: string, job: string, cursor = 0) => authRequest<{ items: ImportDifference[]; nextCursor: number; hasMore: boolean }>(base(id) + '/' + encodeURIComponent(job) + '/differences?cursor=' + cursor),
-  async upload(id: string, file: File, signal: AbortSignal): Promise<ShareImportJob> {
+  async upload(id: string, file: File, signal: AbortSignal, mode: ImportApplyMode = 'preview'): Promise<ShareImportJob> {
     validateSharePackage(file)
-    const csrf = await authRequest<{ token: string }>('/api/v1/auth/csrf')
-    const response = await fetch(base(id), {
+    const csrf = await authRequest<{ token: string }>('/api/v1/auth/csrf', 'GET', undefined, 10000, signal)
+    const response = await fetch(base(id) + '?applyMode=' + mode, {
       method: 'POST', credentials: 'same-origin', redirect: 'error',
       headers: { 'Content-Type': 'application/zip', 'X-CSRF-Token': csrf.token },
       body: file, signal,

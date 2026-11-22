@@ -6,6 +6,7 @@ import AssistantWidget from '../../modules/ai-settings/components/AssistantWidge
 import ThemeSwitcher from '../../shared/ui/ThemeSwitcher.vue'
 import { navigationContext, navigationGroups, overviewEntry, taskEntry } from '../navigation'
 import { useActiveTaskCount } from '../composables/use-active-task-count'
+import { acceptedUpload, packageUploads } from '../../modules/media-library/package-uploads'
 import { auth, authRequest } from '../../core/auth/api'
 import { disableAutomaticLogin } from '../../core/auth/login-preferences'
 import { useRouter, useRoute } from 'vue-router'
@@ -26,7 +27,9 @@ watch(activePath, async () => {
 }, { immediate: true })
 const primaryGroups = navigationGroups.filter(group => group.id !== 'settings')
 const settingsGroup = navigationGroups.find(group => group.id === 'settings')!
-const { count: taskCount } = useActiveTaskCount()
+const { count: serverTaskCount, refresh: refreshTaskCount } = useActiveTaskCount()
+const taskCount = computed(() => serverTaskCount.value + packageUploads.size)
+watch(acceptedUpload, receipt => { if (receipt) void refreshTaskCount() })
 const taskBadge = computed(() => taskCount.value > 99 ? '99+' : String(taskCount.value))
 const searchTerm = ref('')
 watch(() => [route.path, route.query.search], () => {

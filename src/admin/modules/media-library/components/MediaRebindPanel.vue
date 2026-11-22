@@ -3,11 +3,11 @@ import { ref } from 'vue'
 import { ElAlert, ElButton, ElInput } from 'element-plus'
 import { authRequest } from '../../../core/auth/api'
 import type { MediaSource } from '../types'
-const props = defineProps<{ source: MediaSource }>()
+const props = defineProps<{ source: MediaSource; disabled?: boolean }>()
 const emit = defineEmits<{ updated: [jobId: string] }>()
 const location = ref(props.source.location), username = ref(props.source.username), password = ref(''), error = ref(''), busy = ref(false)
 async function rebind() {
-  if (busy.value) return
+  if (busy.value || props.disabled) return
   busy.value = true; error.value = ''
   try {
     const job = await authRequest<{ id: string }>(`/api/v1/media-sources/${encodeURIComponent(props.source.id)}/rebind`, 'POST', { location: location.value, username: username.value, password: password.value })
@@ -23,7 +23,7 @@ async function rebind() {
     <label>用户名<ElInput v-model="username" autocomplete="off" maxlength="256" :disabled="busy" /></label>
     <label>新来源密码 / 应用密码（无密码可留空）<ElInput v-model="password" type="password" autocomplete="new-password" maxlength="1024" show-password :disabled="busy" /></label>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />
-    <ElButton :loading="busy" :disabled="!location.trim()" @click="rebind">保留资料并重新核验</ElButton>
+    <ElButton :loading="busy" :disabled="disabled || !location.trim()" @click="rebind">保留资料并重新核验</ElButton>
   </details>
 </template>
 <style scoped>
