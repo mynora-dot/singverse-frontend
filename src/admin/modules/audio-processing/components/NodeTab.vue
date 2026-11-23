@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { ElAlert, ElButton, ElTag } from 'element-plus'
 import { authRequest } from '../../../core/auth/api'
 import { base, importModel, type Model, type Node } from '../api'
-import { backendName, backendStates, bytes, failure, modelNames, operationStates, type Readiness } from '../presentation'
+import { backendName, backendStates, bytes, failure, operationStates, type Readiness } from '../presentation'
 import { applicableModels, isDetectedBackend, isRelevantBackend } from '../node-hardware'
 
 const props = defineProps<{ node?: Node; nodeError: string; readiness: Readiness; reload: (refresh?: boolean) => Promise<void>; modelsOnly?: boolean }>()
@@ -11,27 +11,35 @@ const emit = defineEmits<{ 'busy-change': [value: boolean] }>()
 const busy = ref(false), error = ref('')
 const detected = computed(() => props.node?.backends.filter(item => !['cpu', 'xpu'].includes(item.id) && isDetectedBackend(item)) || [])
 const visibleBackends = computed(() => props.node?.backends.filter(item => item.id === 'cpu' || detected.value.some(found => found.id === item.id)) || [])
-const rknn = (model: Model) => model.id === 'uvr-mdxnet-9482-rknn'
-const modelName = (model: Model) => modelNames[model.id]?.name || model.id
-const modelState = (model: Model) => model.installed ? '已安装' : !model.writable ? '模型目录不可写' : '未安装'
-const downloadForm = ref<{ model: string; url: string; sha256: string }>()
-const downloadError = ref('')
-const downloadInvalid = ref<'url' | 'sha256'>()
+const preparationNames: Record<string, string> = {
+  htdemucs: '通用版',
+  'htdemucs-openvino': 'Intel 显卡版',
+  'uvr-mdxnet-9482-rknn': '瑞芯微版',
+  'uvr-mdxnet-9482': '轻量版',
+  'panns-cnn6': '通用版',
+}
+const preparationName = (model: Model) => preparationNames[model.id] || '其他设备'
+const actionName = (model: Model) => model.id === 'panns-cnn6' ? '原唱与伴奏识别' : `伴奏${preparationName(model)}`
+const modelState = (model: Model) => model.installed ? '已安装' : !model.writable ? '安装目录不可写' : '未安装'
+const canInstallAutomatically = (model: Model) => !model.downloadSourceRequired && model.id !== 'uvr-mdxnet-9482-rknn'
 const catalog = computed<Model[]>(() => [
   ...(props.node?.fastClassifier ? [props.node.fastClassifier] : []),
   ...(props.node ? applicableModels(props.node).filter(model => !props.modelsOnly || model.id !== 'uvr-mdxnet-9482') : []),
 ])
 const modelGroups = computed(() => props.modelsOnly ? [
-  { title: '伴奏', models: catalog.value.filter(model => model.id !== 'panns-cnn6') },
-  { title: '音轨识别', models: catalog.value.filter(model => model.id === 'panns-cnn6') },
-].filter(group => group.models.length) : [{ title: '', models: catalog.value }])
+  { title: '生成伴奏', models: catalog.value.filter(model => model.id !== 'panns-cnn6') },
+  { title: '识别原唱与伴奏', models: catalog.value.filter(model => model.id === 'panns-cnn6') },
+].filter(group => group.models.length) : [{ title: '准备项目', models: catalog.value }])
 const modelBusy = computed(() => ['DOWNLOADING', 'IMPORTING', 'VERIFYING', 'TESTING'].includes(props.node?.operation.state || ''))
 const modelLocked = computed(() => busy.value || modelBusy.value || !!props.nodeError)
+const operationError = computed(() => error.value || (props.node?.operation.state === 'FAILED' && !modelLocked.value
+  ? '上次准备失败，请检查节点的网络、存储和安装权限。'
+  : ''))
 const auto = computed(() => props.node?.selection === 'auto')
-async function run(task: () => Promise<unknown>, refresh = false) {
+async function run(task: () => Promise<unknown>, refresh = false, errorMessage?: string) {
   if (busy.value) return
   busy.value = true; emit('busy-change', true); error.value = ''
-  try { await task(); await props.reload(refresh) } catch (failed) { error.value = failure(failed) }
+  try { await task(); await props.reload(refresh) } catch (failed) { error.value = errorMessage || failure(failed) }
   finally { busy.value = false; emit('busy-change', false) }
 }
 async function setFallback(event: Event) {
@@ -45,35 +53,18 @@ async function setFallback(event: Event) {
 const recheck = () => run(async () => undefined, true)
 const call = (action: string, body?: unknown, suffix = '') => authRequest(`${base}/model/${action}${suffix}`, 'POST', body, 60000)
 function download(model: Model) {
-  if (rknn(model) || model.downloadSourceRequired) {
-    downloadForm.value = { model: model.id, url: '', sha256: '' }; downloadError.value = ''; downloadInvalid.value = undefined
-    return
-  }
-  return run(() => call('download', undefined, model.id === 'htdemucs' ? '' : '?model=' + encodeURIComponent(model.id)))
-}
-async function downloadZip() {
-  const form = downloadForm.value
-  if (!form || modelLocked.value) return
-  const url = form.url.trim(), sha256 = form.sha256.trim()
-  try {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.hash) throw new Error()
-  } catch { downloadInvalid.value = 'url'; downloadError.value = '请填写不含账号密码的 HTTPS ZIP 地址'; return }
-  if (!/^[0-9a-fA-F]{64}$/.test(sha256)) { downloadInvalid.value = 'sha256'; downloadError.value = '请填写模型 ZIP 的 64 位 SHA-256'; return }
-  downloadError.value = ''; downloadInvalid.value = undefined
-  await run(() => call('download', { url, sha256: sha256.toLowerCase() }, '?model=' + encodeURIComponent(form.model)))
-  if (!error.value) downloadForm.value = undefined
+  if (modelLocked.value || !model.writable || !canInstallAutomatically(model)) return
+  const query = model.id === 'htdemucs' ? '' : '?model=' + encodeURIComponent(model.id)
+  return run(() => call('download', undefined, query), false, '自动安装未能开始，请检查计算节点后重试，或下载后离线导入。')
 }
 const backendAction = (action: 'test' | 'select', backend: string) => run(() => call(action, { backend }))
 async function upload(model: Model, event: Event) {
   const input = event.target as HTMLInputElement, file = input.files?.[0]
   if (!file) return
-  if (file.size > model.maxBytes) { error.value = '模型文件超过所选模型清单的大小限制'; input.value = ''; return }
-  await run(() => importModel(file, model.id)); input.value = ''
-}
-function offlineFiles(model: Model) {
-  if (model.files) return model.files.map(file => ({ name: file.name, url: file.url, sha256: file.sha256 }))
-  return props.node && model.id === 'htdemucs' ? [{ name: props.node.model.filename, url: props.node.model.downloadUrl, sha256: props.node.model.sha256 }] : []
+  input.value = ''
+  if (modelLocked.value || !model.writable) return
+  if (file.size > model.maxBytes) { error.value = '文件超过大小限制，请选择发布页中对应的下载文件。'; return }
+  await run(() => importModel(file, model.id), false, '离线导入失败，请核对文件对应的功能和设备后重试。')
 }
 function backendTone(state: string) { return state === 'AVAILABLE' ? 'success' : state === 'FAILED' ? 'danger' : state === 'UNVERIFIED' ? 'warning' : 'info' }
 onBeforeUnmount(() => { if (busy.value) emit('busy-change', false) })
@@ -86,41 +77,31 @@ onBeforeUnmount(() => { if (busy.value) emit('busy-change', false) })
       <div class="overview-copy"><h2>{{ readiness.title }}</h2><p v-if="!readiness.ready">{{ readiness.hint }}</p></div>
       <div class="overview-actions"><ElButton :loading="busy" @click="recheck">重新检测</ElButton></div>
     </section>
-    <ElAlert v-if="error" :title="error" type="error" show-icon :closable="false" role="alert" />
+    <ElAlert v-if="operationError" :title="operationError" type="error" show-icon :closable="false" role="alert" />
     <ElAlert v-if="node && nodeError" :title="nodeError" type="error" show-icon :closable="false"><ElButton text :loading="busy" @click="recheck">重新读取</ElButton></ElAlert>
 
     <ol v-if="node" class="steps">
       <li class="step">
         <header v-if="!modelsOnly"><h3>准备模型</h3><ElTag :type="readiness.modelInstalled ? 'success' : 'warning'" effect="light" size="small">{{ readiness.modelInstalled ? '已安装' : '未安装' }}</ElTag></header>
-        <p v-if="modelBusy || node.operation.state === 'FAILED'" class="operation" role="status"><span>{{ operationStates[node.operation.state] || node.operation.state }} · {{ (node.operation.bytes / 1024 ** 2).toFixed(1) }} MiB</span><ElButton v-if="modelBusy" link type="primary" :disabled="busy" aria-label="取消模型操作" @click="run(() => call('cancel'))">取消</ElButton></p>
-        <p v-if="node.operation.error" class="inline-error">{{ node.operation.error }}</p>
-        <section v-for="group in modelGroups" :key="group.title" class="model-group" :aria-label="group.title || '模型文件'">
+        <div v-if="modelBusy" class="operation">
+          <span role="status">{{ operationStates[node.operation.state] }}</span>
+          <ElButton link type="primary" :disabled="busy" aria-label="取消当前操作" @click="run(() => call('cancel'), false, '暂时无法取消，请稍后重试。')">取消</ElButton>
+        </div>
+        <p v-if="!catalog.length">当前节点暂无可安装项目。</p>
+        <section v-for="group in modelGroups" :key="group.title" class="model-group" :aria-label="group.title">
           <h3 v-if="modelsOnly" class="model-group-title">{{ group.title }}</h3>
           <div v-for="model in group.models" :key="model.id" class="model-row" :data-model="model.id">
             <div class="model-copy">
-              <strong>{{ modelName(model) }}</strong>
+              <strong>{{ modelsOnly ? preparationName(model) : actionName(model) }}</strong>
               <span class="model-state" :class="{ installed: model.installed, unavailable: !model.installed && !model.writable }">{{ modelState(model) }}</span>
             </div>
             <div v-if="!model.installed" class="model-actions">
-              <ElButton type="primary" :aria-label="`下载${modelName(model)}`" :disabled="modelLocked || !model.writable" @click="download(model)">下载到节点</ElButton>
+              <ElButton v-if="canInstallAutomatically(model)" :aria-label="`自动安装${actionName(model)}`" :disabled="modelLocked || !model.writable" @click="download(model)">自动安装</ElButton>
               <label class="upload el-button" :class="{ 'is-disabled': modelLocked || !model.writable }">
-                <input type="file" class="file-input" :accept="model.id === 'htdemucs' ? '.th' : '.zip'" :aria-label="`离线导入${modelName(model)}`" :disabled="modelLocked || !model.writable" @change="upload(model, $event)">
+                <input type="file" class="file-input" :accept="model.id === 'htdemucs' ? '.th' : '.zip'" :aria-label="`离线导入${actionName(model)}`" :disabled="modelLocked || !model.writable" @change="upload(model, $event)">
                 离线导入
               </label>
             </div>
-            <form v-if="!model.installed && downloadForm?.model === model.id" class="model-download" :aria-label="`下载${modelName(model)}设置`" @submit.prevent="downloadZip">
-              <p :id="`${model.id}-download-hint`" class="muted">填写已转换模型 ZIP 的公网 HTTPS 地址和完整包的 SHA-256。多芯片包会自动选择当前节点对应的模型。</p>
-              <label :for="`${model.id}-download-url`">模型 ZIP 地址</label>
-              <input :id="`${model.id}-download-url`" v-model="downloadForm.url" type="url" required maxlength="4096" autocomplete="off" :disabled="modelLocked" :aria-invalid="downloadInvalid === 'url'" :aria-describedby="downloadInvalid === 'url' ? `${model.id}-download-hint ${model.id}-download-error` : `${model.id}-download-hint`">
-              <label :for="`${model.id}-download-sha256`">ZIP 的 SHA-256</label>
-              <input :id="`${model.id}-download-sha256`" v-model="downloadForm.sha256" type="text" required maxlength="64" autocomplete="off" spellcheck="false" :disabled="modelLocked" :aria-invalid="downloadInvalid === 'sha256'" :aria-describedby="downloadInvalid === 'sha256' ? `${model.id}-download-error` : undefined">
-              <p v-if="downloadError" :id="`${model.id}-download-error`" class="inline-error" role="alert">{{ downloadError }}</p>
-              <div class="model-actions"><ElButton native-type="submit" type="primary" :disabled="modelLocked" :loading="busy">开始下载</ElButton><ElButton :disabled="busy" @click="downloadForm = undefined">收起</ElButton></div>
-            </form>
-            <details v-if="!model.installed" class="model-files"><summary :aria-label="`${modelName(model)}文件详情`">文件详情</summary>
-              <dl class="file-metadata"><div><dt>导入格式</dt><dd>{{ model.id === 'htdemucs' ? '.th' : '.zip' }}</dd></div><div v-if="model.id !== 'htdemucs'"><dt>ZIP 根目录</dt><dd>{{ rknn(model) ? 'manifest.json、uvr.rknn' : offlineFiles(model).map(file => file.name).join('、') }}</dd></div><template v-if="rknn(model)"><div><dt>多芯片包</dt><dd>可分别放在 rk3566/、rk3568/、rk3588/ 目录，自动选择当前芯片。</dd></div><div><dt>当前芯片</dt><dd>{{ model.target || '待节点识别' }}</dd></div></template></dl>
-              <div v-for="file in offlineFiles(model)" :key="file.name" class="offline-file"><a :href="file.url" target="_blank" rel="noreferrer">{{ file.name }}</a><dl class="file-metadata"><div><dt>SHA-256</dt><dd class="digest">{{ file.sha256 }}</dd></div></dl></div>
-            </details>
           </div>
         </section>
       </li>
@@ -164,16 +145,16 @@ onBeforeUnmount(() => { if (busy.value) emit('busy-change', false) })
 .overview-copy p { margin: 4px 0 0; font-size: var(--sv-font-meta); color: var(--sv-text-secondary); }
 .overview-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .steps { display: grid; margin: 0; padding: 0; list-style: none; }
-.step { display: grid; gap: 8px; min-width: 0; padding: 20px 0; border-bottom: 1px solid var(--sv-border-subtle); }
+.step { display: grid; gap: 12px; min-width: 0; padding: 20px 0; border-bottom: 1px solid var(--sv-border-subtle); }
 .step header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .step h3 { margin: 0; font-size: var(--sv-font-body); font-weight: 600; }
 .step p { margin: 0; font-size: var(--sv-font-body); line-height: 1.6; }
 .models-only .step { padding: 0; border: 0; }
 .model-group { min-width: 0; }
-.model-group + .model-group { margin-top: 24px; }
-.model-group .model-group-title { padding-bottom: 12px; color: var(--sv-text-secondary); font-size: 14px; font-weight: 500; }
-.model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 16px; padding: 20px 0 8px; border-top: 1px solid var(--sv-border-subtle); }
-.model-copy { display: grid; gap: 6px; min-width: 0; }
+.model-group + .model-group { margin-top: 8px; }
+.model-group .model-group-title { padding-bottom: 12px; font-size: 16px; font-weight: 600; }
+.model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; padding: 12px 0; border-top: 1px solid var(--sv-border-subtle); }
+.model-copy { display: grid; gap: 2px; min-width: 0; }
 .model-copy strong { font-size: 16px; line-height: 1.6; font-weight: 600; overflow-wrap: anywhere; }
 .model-state { font-size: 14px; line-height: 1.6; color: var(--sv-text-secondary); }
 .model-state.installed { color: var(--sv-semantic-ok); }
@@ -184,23 +165,7 @@ onBeforeUnmount(() => { if (busy.value) emit('busy-change', false) })
 .upload.is-disabled { cursor: not-allowed; opacity: .5; }
 .file-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: inherit; }
 .upload:focus-within { outline: 2px solid var(--sv-accent-primary); outline-offset: 2px; }
-.model-files { grid-column: 1 / -1; min-width: 0; margin-top: 4px; font-size: 14px; }
-.model-download { grid-column: 1 / -1; display: grid; gap: 8px; min-width: 0; margin: 16px 0 8px; padding: 16px; border: 1px solid var(--sv-border-subtle); border-radius: var(--sv-radius-sm); }
-.model-download label { font-size: 14px; font-weight: 500; }
-.model-download input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--sv-border-subtle); border-radius: var(--sv-radius-sm); color: var(--sv-text-primary); background: var(--sv-surface-3); font: inherit; }
-.model-download input:focus-visible { outline: 2px solid var(--sv-accent-primary); outline-offset: 2px; }
-.model-download input[aria-invalid="true"] { border-color: var(--sv-semantic-danger); }
-.model-download .model-actions { margin-top: 8px; }
-.model-files summary { min-height: 44px; align-content: center; cursor: pointer; color: var(--sv-text-secondary); }
-.model-files summary:focus-visible, .model-files a:focus-visible { outline: 2px solid var(--sv-accent-primary); outline-offset: 2px; border-radius: 4px; }
-.model-files a { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; color: var(--sv-accent-primary); overflow-wrap: anywhere; }
-.file-metadata { display: grid; gap: 12px; margin: 8px 0 16px; font-size: 14px; }
-.file-metadata > div { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 12px; align-items: baseline; }
-.file-metadata dt { color: var(--sv-text-secondary); }
-.file-metadata dd { margin: 0; line-height: 1.7; overflow-wrap: anywhere; }
-.offline-file { padding: 8px 12px; margin: 8px 0; background: var(--sv-surface-3); border-radius: 8px; }
-code, .digest { overflow-wrap: anywhere; font-family: var(--sv-font-mono); font-size: 12px; }
-.operation { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 12px; margin-bottom: 12px !important; border-radius: var(--sv-radius-sm); background: var(--sv-accent-soft); font-size: 14px !important; font-variant-numeric: tabular-nums; }
+.operation { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 4px 12px; border-radius: var(--sv-radius-sm); background: var(--sv-accent-soft); font-size: 14px; }
 .operation :deep(.el-button) { min-height: 44px; margin: 0; }
 .backend-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--sv-border-subtle); }
 .backend-copy { display: grid; gap: 2px; min-width: 0; }
@@ -213,15 +178,13 @@ code, .digest { overflow-wrap: anywhere; font-family: var(--sv-font-mono); font-
 .empty p { margin: 0 0 8px; }
 .muted { font-size: var(--sv-font-meta); color: var(--sv-text-secondary); }
 .inline-error { color: var(--sv-semantic-danger); font-size: var(--sv-font-meta); overflow-wrap: anywhere; }
+.node-tab :deep(.el-alert__title) { font-size: 14px; line-height: 1.6; }
 @media (max-width: 640px) {
   .overview { flex-wrap: wrap; padding-bottom: 16px; }
-  .model-row, .backend-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .model-actions, .backend-actions { justify-content: flex-start; }
-  .model-actions { width: 100%; }
-  .model-actions > * { flex: 1; }
-  .model-files { margin-top: 0; }
-  .model-files, .model-state, .file-metadata, .model-group .model-group-title { font-size: 16px; }
-  .file-metadata > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .model-row { column-gap: 8px; }
+  .model-actions :deep(.el-button) { padding-inline: 12px; }
+  .backend-row { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .backend-actions { justify-content: flex-start; }
   .fallback-toggle, .resource-details summary { min-height: 44px; }
 }
 </style>

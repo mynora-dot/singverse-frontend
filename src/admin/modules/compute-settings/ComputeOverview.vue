@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { ElAlert, ElButton, ElDrawer, ElIcon, ElMessageBox, ElSkeleton, ElSwitch } from 'element-plus'
-import { Monitor, Headset, ArrowRight } from '@element-plus/icons-vue'
+import { Monitor, Headset, ArrowRight, TopRight } from '@element-plus/icons-vue'
 import { authRequest } from '../../core/auth/api'
 import { base } from '../audio-processing/api'
 import { backendName, bytes, generationProfileNames, readiness, type GenerationProfile } from '../audio-processing/presentation'
@@ -11,9 +11,10 @@ import NodeTab from '../audio-processing/components/NodeTab.vue'
 import HardwareSettings from './HardwareSettings.vue'
 import AudioDeviceSettings from './AudioDeviceSettings.vue'
 import { currentVideoBackend, videoBackendName } from './hardware'
-import { audioPlans, audioPlanStatus, backendStatus } from './presentation'
+import { audioPlans, audioPlanStatus } from './presentation'
 import { useComputeResources } from './useComputeResources'
 
+const modelReleaseUrl = 'https://github.com/mynora-dot/singverse-model/releases/latest'
 const props = defineProps<{ connected: boolean; capabilities: string[] }>()
 const emit = defineEmits<{ connect: [] }>()
 const videoEnabled = props.connected && props.capabilities.some(item => ['transcode-hls', 'transcode-offline'].includes(item))
@@ -26,7 +27,7 @@ const videoBusy = ref(false)
 const modelsBusy = ref(false)
 const drawerBusy = computed(() => busy.value || videoBusy.value || modelsBusy.value)
 const drawerOpen = computed({ get: () => !!drawer.value, set: value => { if (!value && !drawerBusy.value) drawer.value = '' } })
-const drawerTitle = computed(() => ({ video: '播放设置', audio: `${audioPlans.find(item => item.id === profile.value)?.label || '伴奏'} · 处理设备`, models: '模型管理', environment: '运行环境', '': '' })[drawer.value])
+const drawerTitle = computed(() => ({ video: '播放设置', audio: `${audioPlans.find(item => item.id === profile.value)?.label || '伴奏'} · 处理设备`, models: '功能准备', environment: '运行环境', '': '' })[drawer.value])
 const plan = computed(() => node.value ? audioPlanStatus(node.value, profile.value) : undefined)
 const deploymentProfiles = computed(() => {
   if (!node.value) return []
@@ -48,7 +49,7 @@ const videoHint = computed(() => {
   if (detected.length && !detected.includes(hardware.value.effectiveBackend)) return detected.map(videoBackendName).join('、')
   return ''
 })
-const actionLabel = computed(() => profile.value === 'DSP_FAST' && plan.value?.ready ? '重新检测' : plan.value?.ready ? '处理设备' : plan.value?.action === 'models' ? '安装模型' : plan.value?.action === 'environment' ? '检查环境' : '验证设备')
+const actionLabel = computed(() => profile.value === 'DSP_FAST' && plan.value?.ready ? '重新检测' : plan.value?.ready ? '处理设备' : plan.value?.action === 'models' ? '准备伴奏' : plan.value?.action === 'environment' ? '检查环境' : '验证设备')
 const policyDraft = ref(true), policySaved = ref(false)
 const policyDirty = computed(() => !!hardware.value && policyDraft.value !== (hardware.value.cpuFallback !== false))
 watch(hardware, (value, previous) => {
@@ -65,10 +66,12 @@ function openAudioAction() {
 }
 function closeDrawer(done: () => void) { if (!drawerBusy.value) { drawer.value = ''; done() } }
 function verify(backend: string) {
-  void run(() => authRequest(`${base}/model/test`, 'POST', { backend }, 60000))
+  void run(() => authRequest(`${base}/model/test`, 'POST', { backend }, 60000), false, '暂时无法验证设备，请检查运行环境后重试。')
 }
 function refreshEnvironment() { void run(async () => undefined, true) }
-function selectBackend(backend: string) { void run(() => authRequest(`${base}/model/select`, 'POST', { backend }, 60000)) }
+function selectBackend(backend: string) {
+  void run(() => authRequest(`${base}/model/select`, 'POST', { backend }, 60000), false, '暂时无法切换设备，请重新检测后重试。')
+}
 async function savePolicy() { if (await saveFallback(policyDraft.value)) policySaved.value = true }
 async function refreshHardware() { actionError.value = ''; await reloadHardware() }
 async function hardwareChanged() { await reloadHardware(); await reloadNode() }
@@ -109,7 +112,7 @@ onBeforeRouteLeave(async () => {
           <ElSkeleton v-else-if="!node" :rows="4" animated />
           <template v-else-if="plan">
             <div class="plan-state"><p role="status"><span class="sr-only">{{ generationProfileNames[profile] }}伴奏：</span><span class="sv-status-dot" :class="plan.ready ? 'ok' : 'warn'" aria-hidden="true" />{{ plan.tag }}</p><ElButton :type="plan.ready ? 'default' : 'primary'" :loading="busy" :disabled="modelBusy" @click="openAudioAction">{{ actionLabel }}</ElButton></div>
-            <dl v-if="profile === 'LEGACY_DEMUCS' && plan.supported" class="preparation-list"><div><dt>模型文件</dt><dd :class="plan.installed ? 'positive' : 'pending'">{{ plan.installed ? '已安装' : plan.model ? '未安装' : '尚未提供' }}</dd></div><div><dt>{{ plan.selected ? backendName(plan.selected) : plan.candidate ? backendName(plan.candidate.id) : '处理设备' }}</dt><dd :class="{ positive: plan.ready }">{{ plan.ready ? '已通过验证' : backendStatus(plan.candidate) }}</dd></div></dl>
+            <dl v-if="profile === 'LEGACY_DEMUCS' && plan.supported" class="preparation-list"><div><dt>处理设备</dt><dd>{{ backendName(plan.selected || plan.candidate?.id) || '尚未确认' }}</dd></div></dl>
           </template>
         </div>
       </section>
@@ -119,14 +122,22 @@ onBeforeRouteLeave(async () => {
       <div class="policy-copy"><h2>加速不可用时使用 CPU</h2><p v-if="hardwareError" class="policy-error" role="status">{{ hardwareError }}</p></div>
       <div class="policy-controls"><span v-if="policyDirty" class="pending">尚未保存</span><span v-else-if="policySaved" class="positive" role="status">已保存</span><ElButton v-if="policyDirty" type="primary" :loading="busy" @click="savePolicy">保存策略</ElButton><ElButton v-if="!hardware || hardwareError || actionError" text :loading="hardwareLoading" @click="refreshHardware">重新读取</ElButton><ElSwitch v-if="hardware" v-model="policyDraft" aria-label="加速不可用时允许视频与伴奏使用 CPU" :disabled="!hardware || !!hardwareError || busy || !hardware.writable" /></div>
     </section>
-    <div v-if="audioEnabled" class="resource-links"><ElButton text :disabled="!node || !!nodeError || busy" @click="drawer = 'models'">模型管理<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></ElButton><ElButton text :disabled="busy" @click="drawer = 'environment'">运行环境<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></ElButton></div>
+    <div class="resource-links">
+      <ElButton v-if="audioEnabled" text :disabled="!node || !!nodeError || busy" @click="drawer = 'models'">功能准备<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></ElButton>
+      <ElButton tag="a" :href="modelReleaseUrl" target="_blank" rel="noopener noreferrer" aria-label="模型下载（在新标签页打开）" type="primary" text bg>模型下载<ElIcon aria-hidden="true"><TopRight /></ElIcon></ElButton>
+      <ElButton v-if="audioEnabled" text :disabled="busy" @click="drawer = 'environment'">运行环境<ElIcon aria-hidden="true"><ArrowRight /></ElIcon></ElButton>
+    </div>
 
     <ElDrawer v-model="drawerOpen" class="compute-capability-drawer" :title="drawerTitle" size="min(600px, 100vw)" :before-close="closeDrawer" :close-on-click-modal="false" :show-close="!drawerBusy" destroy-on-close>
+      <div v-if="drawer === 'models'" class="preparation-download">
+        <ElButton tag="a" :href="modelReleaseUrl" target="_blank" rel="noopener noreferrer" aria-label="模型下载（在新标签页打开）" type="primary">模型下载<ElIcon aria-hidden="true"><TopRight /></ElIcon></ElButton>
+        <p>按用途和设备下载，再选择<span>「离线导入」。</span></p>
+      </div>
       <HardwareSettings v-if="drawer === 'video'" hide-fallback @changed="hardwareChanged" @busy-change="videoBusy = $event" />
       <template v-else-if="drawer === 'audio' && node && !nodeError"><AudioDeviceSettings :node="node" :profile="profile" :busy="busy" @verify="verify" @select="selectBackend" @models="drawer = 'models'" @environment="drawer = 'environment'" @refresh="refreshEnvironment" /></template>
-      <NodeTab v-else-if="drawer === 'models' && node" models-only :node="node" :node-error="nodeError" :readiness="legacyReadiness" :reload="reloadNode" @busy-change="modelsBusy = $event" />
+      <NodeTab v-else-if="drawer === 'models' && node" models-only :node="node" :node-error="nodeError" :readiness="legacyReadiness" :reload="refresh => reloadNode(refresh, true)" @busy-change="modelsBusy = $event" />
       <section v-else-if="drawer === 'environment'" class="environment-help">
-        <template v-if="plan && !plan.ready"><h3>{{ plan.tag }}</h3><p v-if="plan.candidate?.reason">{{ backendName(plan.candidate.id) }}：{{ plan.candidate.reason }}</p><p v-else-if="profile === 'DSP_FAST'">{{ plan.hint }}</p><ElButton v-if="plan.action === 'models'" type="primary" :disabled="busy || !node" @click="drawer = 'models'">安装模型</ElButton><ElButton v-else-if="plan.entries.length" :disabled="busy" @click="drawer = 'audio'">处理设备</ElButton></template>
+        <template v-if="plan && !plan.ready"><h3>{{ plan.tag }}</h3><p v-if="plan.action === 'environment'">{{ plan.hint }}</p><ElButton v-if="plan.action === 'models'" type="primary" :disabled="busy || !node" @click="drawer = 'models'">准备伴奏</ElButton><ElButton v-else-if="plan.entries.length" :disabled="busy" @click="drawer = 'audio'">处理设备</ElButton></template>
         <dl v-if="node" class="environment-facts"><div><dt>系统</dt><dd>{{ node.environment.system }} / {{ node.environment.architecture }}</dd></div><div v-if="node.environment.processor"><dt>处理器</dt><dd>{{ node.environment.processor }}</dd></div><div><dt>可用内存</dt><dd>{{ bytes(node.memoryAvailableBytes) }}</dd></div><div><dt>剩余存储</dt><dd>{{ bytes(node.diskFreeBytes) }}</dd></div></dl>
         <details v-if="deploymentProfiles.length" class="deployment-guide"><summary>当前设备的部署信息</summary><section v-for="item in deploymentProfiles" :key="item.backend"><h4>{{ backendName(item.backend) }} <span>{{ item.included ? '当前环境已包含' : '当前环境未包含' }}</span></h4><p>镜像：{{ item.image }}</p><code>{{ item.command }}</code></section></details>
         <ElButton :loading="busy" :disabled="!audioEnabled" @click="refreshEnvironment">重新检测运行环境</ElButton>
@@ -173,7 +184,11 @@ onBeforeRouteLeave(async () => {
 .policy-controls :deep(.el-button), .policy-controls :deep(.el-switch) { min-height: 44px; margin: 0; }
 .resource-links { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .resource-links :deep(.el-button) { margin: 0; min-height: 44px; font-size: 14px; }
-.resource-links .el-icon { margin-left: 8px; }
+.resource-links .el-icon, .preparation-download .el-icon { margin-left: 8px; }
+.preparation-download { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-bottom: 20px; }
+.preparation-download :deep(.el-button) { min-height: 44px; margin: 0; }
+.preparation-download p { flex: 1 1 160px; margin: 0; color: var(--sv-text-secondary); font-size: 14px; line-height: 1.6; }
+.preparation-download p span { white-space: nowrap; }
 .action-error, .drawer-error { margin-top: 20px; }
 .environment-help h3 { font-size: 18px; line-height: 1.6; margin: 0 0 12px; }
 .environment-help p { font-size: 14px; line-height: 1.8; color: var(--sv-text-secondary); margin: 12px 0 16px; overflow-wrap: anywhere; }

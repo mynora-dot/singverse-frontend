@@ -1,4 +1,5 @@
 import { computed, reactive } from 'vue'
+import { requestId } from '../../../shared/request-id'
 import { assistantApi } from './api'
 import type { AssistantStatus, Conversation, Detail, Operation, RunEvent, ToolDefinition } from './types'
 
@@ -85,7 +86,7 @@ export async function sendMessage() {
   try {
     let conversation = assistantState.detail?.conversation.id
     if (!conversation) { const c = await assistantApi.create(content.slice(0, 35)); if (account !== accountGeneration) return; assistantState.conversations.unshift(c); await selectConversation(c.id); conversation = c.id }
-    if (pendingSend?.conversation !== conversation || pendingSend.content !== content) pendingSend = { conversation, content, id: crypto.randomUUID() }
+    if (pendingSend?.conversation !== conversation || pendingSend.content !== content) pendingSend = { conversation, content, id: requestId() }
     const r = await assistantApi.submit(conversation, pendingSend.id, content)
     if (account !== accountGeneration) return
     pendingSend = undefined; assistantState.draft = ''; await refreshConversation(); selectRun(r.id)
@@ -95,10 +96,16 @@ export async function sendMessage() {
 export async function decideOperation(op: Operation, approve: boolean) {
   if (assistantState.busy) return
   assistantState.busy = true; assistantState.error = ''
-  let decision = decisions.get(op.id)
-  if (!decision || decision.approve !== approve) { decision = { id: crypto.randomUUID(), approve }; decisions.set(op.id, decision) }
-  try { await assistantApi.decide(op.runId, op.id, decision.id, op.revision, approve); await refreshConversation(); subscribe(op.runId, generation) }
-  catch (e) { assistantState.error = message(e); await refreshConversation() }
+  try {
+    let decision = decisions.get(op.id)
+    if (!decision || decision.approve !== approve) {
+      decision = { id: requestId(), approve }
+      decisions.set(op.id, decision)
+    }
+    await assistantApi.decide(op.runId, op.id, decision.id, op.revision, approve)
+    await refreshConversation()
+    subscribe(op.runId, generation)
+  } catch (e) { assistantState.error = message(e); await refreshConversation() }
   finally { assistantState.busy = false }
 }
 export async function stopRun() {

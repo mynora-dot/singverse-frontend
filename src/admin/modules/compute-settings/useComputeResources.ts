@@ -45,11 +45,11 @@ export function useComputeResources(videoEnabled: boolean, audioEnabled: boolean
     } catch (error) { if (active && turn === hardwareGeneration) hardwareError.value = failure(error, '读取视频和共享策略失败，请重试。') }
     finally { if (active && turn === hardwareGeneration) hardwareLoading.value = false }
   }
-  async function run(task: () => Promise<unknown>, refresh = false) {
+  async function run(task: () => Promise<unknown>, refresh = false, errorMessage?: string) {
     if (busy.value || !active) return
     busy.value = true; actionError.value = ''
     try { await task(); if (active) await reloadNode(refresh, true) }
-    catch (error) { if (active) actionError.value = failure(error) }
+    catch (error) { if (active) actionError.value = errorMessage || failure(error) }
     finally { if (active) { busy.value = false; polling.schedule() } }
   }
   async function saveFallback(enabled: boolean) {

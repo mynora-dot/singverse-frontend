@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { ElAlert, ElButton } from 'element-plus'
 import type { Node } from '../audio-processing/api'
 import { backendName, bytes, generationProfileNames, type GenerationProfile } from '../audio-processing/presentation'
-import { audioPlanStatus, backendStatus, backendTone, canVerify } from './presentation'
+import { audioPlanStatus, backendReason, backendStatus, backendTone, canVerify } from './presentation'
 const props = defineProps<{ node: Node; profile: GenerationProfile; busy: boolean }>()
 const emit = defineEmits<{ verify: [backend: string]; select: [backend: string]; models: []; environment: []; refresh: [] }>()
 const status = computed(() => audioPlanStatus(props.node, props.profile))
@@ -17,19 +17,19 @@ const title = computed(() => `${generationProfileNames[props.profile]}伴奏`)
       <div class="details-actions"><ElButton :loading="busy" @click="emit('refresh')">重新检查处理工具</ElButton><ElButton v-if="!status.ready" type="primary" @click="emit('environment')">查看处理方法</ElButton></div>
     </template>
     <template v-else>
-      <div v-if="status.running" class="operation-note" role="status">正在等待或验证模型，请稍候…</div>
-      <ElAlert v-if="status.operation?.error" :title="status.operation.error" type="error" :closable="false" />
+      <div v-if="status.running" class="operation-note" role="status">正在等待或验证设备，请稍候…</div>
+      <ElAlert v-if="status.operation?.state === 'FAILED'" title="上次操作未完成，请检查运行环境后重试。" type="error" :closable="false" />
       <div class="device-list">
         <article v-for="backend in status.entries" :key="backend.id" class="device-row">
           <div class="device-heading"><strong>{{ backendName(backend.id) }}</strong><span class="device-state" :class="backendTone(backend)">{{ status.selected === backend.id && backend.state === 'AVAILABLE' ? '使用中' : backendStatus(backend) }}</span></div>
           <p v-if="backend.device?.name" class="device-name">{{ backend.device.name }}</p>
-          <p v-if="backend.reason">{{ backend.reason }}</p>
+          <p v-if="backendReason(backend)">{{ backendReason(backend) }}</p>
           <p v-if="backend.elapsedMs">上次试跑 {{ backend.elapsedMs }} ms</p>
           <div class="device-actions">
             <ElButton v-if="canVerify(backend)" :disabled="locked" :aria-label="`验证${backendName(backend.id)}`" @click="emit('verify', backend.id)">{{ backend.state === 'AVAILABLE' ? '重新验证' : backend.state === 'FAILED' ? '重试验证' : '验证此设备' }}</ElButton>
             <ElButton v-if="profile === 'LEGACY_DEMUCS' && backend.state === 'AVAILABLE' && node.selection !== backend.id" :disabled="locked" @click="emit('select', backend.id)">选用此设备</ElButton>
             <ElButton v-if="['IMAGE_MISSING', 'RUNTIME_MISSING', 'MODEL_UNSUPPORTED'].includes(backend.state)" type="primary" link :disabled="busy" @click="emit('environment')">查看处理方法</ElButton>
-            <ElButton v-if="backend.state === 'MODEL_MISSING'" type="primary" link :disabled="busy" @click="emit('models')">准备模型与依赖</ElButton>
+            <ElButton v-if="backend.state === 'MODEL_MISSING'" type="primary" link :disabled="busy" @click="emit('models')">准备伴奏</ElButton>
           </div>
         </article>
         <p v-if="!status.entries.length" class="empty-note">尚未读取到此方案的处理设备。<ElButton type="primary" link :loading="busy" @click="emit('refresh')">重新检测</ElButton></p>

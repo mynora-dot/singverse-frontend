@@ -139,13 +139,6 @@ export function nodeWorking(node?: Node) {
 }
 const backendNames: Record<string, string> = { cpu: 'CPU', cuda: 'NVIDIA 显卡 (CUDA)', tensorrt: 'NVIDIA 显卡 (TensorRT)', rocm: 'AMD 显卡 (ROCm)', migraphx: 'AMD 显卡 (MIGraphX)', mps: 'Mac (MPS)', coreml: 'Mac (Core ML)', mlx: 'Apple 芯片 (MLX)', directml: 'Windows 显卡 (DirectML)', openvino: 'Intel 显卡 (OpenVINO)', 'openvino-cpu': 'CPU (OpenVINO)', rknn: '瑞芯微 NPU (RKNN)' }
 export function backendName(id?: string | null) { return id ? backendNames[id] || id.toUpperCase() : '' }
-export const modelNames: Record<string, { name: string; hint: string }> = {
-  'panns-cnn6': { name: '快速人声分类模型', hint: '扫描时识别双音轨，不分离人声，无需 GPU' },
-  htdemucs: { name: '标准分离模型', hint: '适用于 NVIDIA、AMD 和 Apple 芯片，内置 CPU 降级' },
-  'htdemucs-openvino': { name: 'Intel 优化模型', hint: '用于 Intel 显卡的 OpenVINO 转换版本' },
-  'uvr-mdxnet-9482-rknn': { name: '瑞芯微 NPU 分离模型', hint: '下载或导入匹配芯片的 RKNN 模型 ZIP，安装后需试跑' },
-  'uvr-mdxnet-9482': { name: '轻量两轨分离模型', hint: '干净档；先验证独立 CPU，再启用对应加速设备' },
-}
 export const generationProfiles = ['DSP_FAST', 'LEGACY_DEMUCS'] as const
 export type GenerationProfile = typeof generationProfiles[number]
 export const generationProfileNames: Record<GenerationProfile, string> = { DSP_FAST: '快速', LEGACY_DEMUCS: '高级' }

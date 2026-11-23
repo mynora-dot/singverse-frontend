@@ -68,15 +68,15 @@ it('快速档在高级模型缺失时仍可用，两档切换同步焦点和面�
   expect(wrapper!.text()).not.toMatch(/轻量 AI|片段试跑|当前处理方式|检测到：/)
 })
 
-it('高级模型从安装进入设备验证，沿用原有下载和验证接口', async () => {
-  await open(); await advanced(); await button('安装模型').trigger('click')
-  await button('下载到节点', models().get('[data-model="htdemucs"]')).trigger('click'); await flushPromises()
+it('高级伴奏从安装进入设备验证，沿用原有下载和验证接口', async () => {
+  await open(); await advanced(); await button('准备伴奏').trigger('click')
+  await button('自动安装', models().get('[data-model="htdemucs"]')).trigger('click'); await flushPromises()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/model/download', 'POST', undefined, 60000)
   await wrapper!.get('button[aria-label="关闭设置"]').trigger('click')
   node.models![0]!.installed = true
   await wrapper!.get('[data-profile="DSP_FAST"]').trigger('click')
   await button('重新检测').trigger('click'); await flushPromises(); await advanced()
-  expect(wrapper!.get('[role="tabpanel"]').text()).toContain('已安装')
+  expect(wrapper!.get('[role="tabpanel"]').text()).toContain('待验证')
   expect(button('验证设备').attributes('disabled')).toBeUndefined()
 })
 
@@ -88,15 +88,25 @@ it('已安装的高级模型通过处理设备侧栏验证，保留后端参数'
   expect(wrapper!.text()).not.toContain('轻量')
 })
 
-it('只展示当前设备的高级模型与识别模型，离线来源按需展开', async () => {
+it('功能准备按用途显示，下载直达最新发布页，失败时隐藏技术细节', async () => {
+  node.operation = { state: 'FAILED', bytes: 21 * 1024 ** 2, error: 'model.th SHA-256 mismatch' }
   await open('#audio-models')
+  const drawer = wrapper!.get('[role="dialog"][aria-label="功能准备"]')
+  for (const scope of [wrapper!.get('.resource-links'), drawer]) {
+    const link = scope.get('a')
+    expect(link.text()).toBe('模型下载')
+    expect(link.attributes('href')).toBe('https://github.com/mynora-dot/singverse-model/releases/latest')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toContain('noopener')
+  }
   expect(models().findAll('[data-model]').map(row => row.attributes('data-model'))).toEqual(['htdemucs', 'panns-cnn6'])
-  expect(models().findAll('.model-group').map(group => group.attributes('aria-label'))).toEqual(['伴奏', '音轨识别'])
+  expect(models().findAll('.model-group').map(group => group.attributes('aria-label'))).toEqual(['生成伴奏', '识别原唱与伴奏'])
   const model = models().get('[data-model="htdemucs"]')
-  expect(model.get('details').attributes('open')).toBeUndefined()
+  expect(model.text()).toContain('通用版')
+  expect(drawer.text()).toContain('上次准备失败')
+  expect(drawer.text()).not.toMatch(/模型管理|标准分离模型|文件详情|SHA-256|model\.th|Cnn6\.pth|21\.0 MiB/)
+  expect(model.find('details').exists()).toBe(false)
   expect(model.get('input[type="file"]').attributes('accept')).toBe('.th')
-  expect(model.get('a').attributes('href')).toBe(node.model.downloadUrl)
-  expect(model.get('.digest').text()).toBe(node.model.sha256)
   expect(models().get('[data-model="panns-cnn6"] input').attributes('accept')).toBe('.zip')
   expect(authRequest).not.toHaveBeenCalledWith(expect.stringContaining('/model/download'), expect.anything(), expect.anything(), expect.anything())
 })
@@ -113,8 +123,9 @@ it('导入时锁定关闭和离开，失败后保留模型入口并显示错误'
   expect(wrapper!.find('button[aria-label="关闭设置"]').exists()).toBe(false)
   await router.push('/other')
   expect(router.currentRoute.value.path).toBe('/system/compute')
-  reject(new Error('模型校验失败')); await flushPromises()
-  expect(models().text()).toContain('模型校验失败')
+  reject(new Error('model.th SHA-256 mismatch')); await flushPromises()
+  expect(models().text()).toContain('离线导入失败')
+  expect(models().text()).not.toContain('SHA-256')
   expect(wrapper!.find('button[aria-label="关闭设置"]').exists()).toBe(true)
   expect(models().attributes('aria-busy')).toBe('false')
   expect((input.element as HTMLInputElement).value).toBe('')
@@ -134,7 +145,7 @@ it('超限文件在本地拦截，不发起导入', async () => {
 it('模型操作后刷新失败保留侧栏和关闭能力，重新读取后恢复操作', async () => {
   await open('#audio-models')
   vi.mocked(authRequest).mockResolvedValueOnce(undefined as never).mockRejectedValueOnce(new Error('状态读取失败'))
-  await button('下载到节点', models().get('[data-model="htdemucs"]')).trigger('click'); await flushPromises()
+  await button('自动安装', models().get('[data-model="htdemucs"]')).trigger('click'); await flushPromises()
   expect(models().text()).toContain('状态读取失败')
   expect(wrapper!.find('button[aria-label="关闭设置"]').exists()).toBe(true)
   expect(models().get('[data-model="htdemucs"] button').attributes('disabled')).toBeDefined()
@@ -155,10 +166,10 @@ it('已选择的设备验证失败时显示失败状态并可重试', async () =
 it('下载进度可取消，忙碌期间禁止重复下载与导入', async () => {
   node.operation = { state: 'DOWNLOADING', bytes: 50 * 1024 ** 2 }
   await open('#audio-models')
-  expect(models().get('[role="status"]').text()).toContain('下载中 · 50.0 MiB')
+  expect(models().get('[role="status"]').text()).toBe('下载中')
   for (const input of models().findAll('input[type="file"]')) expect(input.attributes('disabled')).toBeDefined()
   for (const download of models().findAll('.model-actions button')) expect(download.attributes('disabled')).toBeDefined()
-  await models().get('button[aria-label="取消模型操作"]').trigger('click'); await flushPromises()
+  await models().get('button[aria-label="取消当前操作"]').trigger('click'); await flushPromises()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/model/cancel', 'POST', undefined, 60000)
 })
 
@@ -166,7 +177,7 @@ it('不可写目录仍显示实际状态，禁止网页安装', async () => {
   node.models![0]!.writable = false
   await open('#audio-models')
   const model = models().get('[data-model="htdemucs"]')
-  expect(model.text()).toContain('模型目录不可写')
+  expect(model.text()).toContain('安装目录不可写')
   expect(model.get('button').attributes('disabled')).toBeDefined()
   expect(model.get('input').attributes('disabled')).toBeDefined()
 })
@@ -181,12 +192,13 @@ it('共享 CPU 策略仅在保存后生效，保留视频方式与修订号', as
   expect(wrapper!.text()).toContain('已保存')
 })
 
-it('高级运行环境缺失时给出真实原因，检测到硬件不代表可生成', async () => {
-  for (const backend of node.backends) { backend.state = 'RUNTIME_MISSING'; backend.reason = '缺少固定版本推理环境' }
+it('高级运行环境缺失时引导检查环境，检测到硬件不代表可生成', async () => {
+  for (const backend of node.backends) { backend.state = 'RUNTIME_MISSING'; backend.reason = '缺少固定版本推理环境，htdemucs 不可用' }
   await open(); await advanced()
   expect(wrapper!.get('[role="tabpanel"]').text()).toContain('缺少运行环境')
   await button('检查环境').trigger('click')
-  expect(wrapper!.get('.environment-help').text()).toContain('缺少固定版本推理环境')
+  expect(wrapper!.get('.environment-help').text()).toContain('检查设备驱动和计算服务的运行环境')
+  expect(wrapper!.get('.environment-help').text()).not.toContain('htdemucs')
   expect(authRequest).not.toHaveBeenCalledWith(expect.stringContaining('/model/test'), expect.anything(), expect.anything(), expect.anything())
 })
 
@@ -195,8 +207,8 @@ it('Intel 缺模型时优先展示实际显卡并保留对应模型，固定 CPU
   node.backends = [{ id: 'cpu', state: 'MODEL_MISSING', reason: '' }, { id: 'openvino', detected: true, state: 'MODEL_MISSING', reason: '' }]
   await open(); await advanced()
   expect(wrapper!.get('.preparation-list').text()).toContain('Intel 显卡 (OpenVINO)')
-  await button('安装模型').trigger('click')
-  await button('下载到节点', models().get('[data-model="htdemucs-openvino"]')).trigger('click'); await flushPromises()
+  await button('准备伴奏').trigger('click')
+  await button('自动安装', models().get('[data-model="htdemucs-openvino"]')).trigger('click'); await flushPromises()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/model/download?model=htdemucs-openvino', 'POST', undefined, 60000)
   await wrapper!.get('button[aria-label="关闭设置"]').trigger('click')
   node.selected = 'cpu'; node.selection = 'cpu'

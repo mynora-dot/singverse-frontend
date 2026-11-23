@@ -80,6 +80,6 @@ it('Intel 节点概览和环境说明不再列出其他厂商，实际模型入�
   expect(environment.findAll('.deployment-guide section')).toHaveLength(1)
   expect(environment.text()).toContain('fixture:openvino')
   expect(environment.text()).not.toMatch(/fixture:(cuda|rocm|rknn)/)
-  await button('模型管理').trigger('click'); await flushPromises()
+  await button('功能准备').trigger('click'); await flushPromises()
   expect(wrapper!.get('.models-only').findAll('[data-model]').map(item => item.attributes('data-model'))).toEqual(['htdemucs', 'htdemucs-openvino', 'panns-cnn6'])
 })

@@ -305,9 +305,9 @@ it('没有合格后端时禁止生成，并引导到节点与模型下载模型'
   await button('去准备环境').trigger('click'); await flushPromises()
   expect(router.push).toHaveBeenCalledWith('/system/compute#audio-models')
   wrapper!.unmount(); wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
-  expect(wrapper!.text()).toContain('下载到节点')
+  expect(wrapper!.text()).toContain('自动安装')
   expect(wrapper!.text()).toContain('RK3566')
-  await button('下载到节点').trigger('click'); await flushPromises()
+  await button('自动安装').trigger('click'); await flushPromises()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/model/download', 'POST', undefined, 60000)
 })
 it('离开页面后不再轮询', async () => {
@@ -339,11 +339,11 @@ it('隐藏部署信息，OpenVINO模型下载使用独立清单', async () => {
   expect(wrapper!.text()).not.toContain('singverse-compute:0.1.0-openvino')
   expect(wrapper!.text()).toContain('当前镜像未包含')
   const openvino = wrapper!.get('[data-model="htdemucs-openvino"]')
-  expect(openvino.text()).toContain('Intel 优化模型')
+  expect(openvino.text()).toContain('Intel 显卡版')
   expect(openvino.get('input[type="file"]').attributes('accept')).toBe('.zip')
   expect(wrapper!.get('[data-model="htdemucs"] input[type="file"]').attributes('accept')).toBe('.th')
-  expect(openvino.text()).toContain('htdemucs_fwd.xml')
-  await button('下载到节点', openvino).trigger('click'); await flushPromises()
+  expect(openvino.text()).not.toContain('htdemucs_fwd.xml')
+  await button('自动安装', openvino).trigger('click'); await flushPromises()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/model/download?model=htdemucs-openvino', 'POST', undefined, 60000)
 })
 
@@ -364,60 +364,20 @@ it.each([true, false])('NVIDIA 节点仅显示适配模型，CPU 降级为 %s', 
   expect(wrapper!.find('[data-model="uvr-mdxnet-9482-rknn"]').exists()).toBe(false)
 })
 
-it('瑞芯微模型支持 ZIP 导入，并填写 HTTPS 地址和摘要后下载', async () => {
+it.each([true, undefined])('瑞芯微用 ZIP 离线导入，兼容 downloadSourceRequired 为 %s 的节点', async downloadSourceRequired => {
   const previous = vi.mocked(authRequest).getMockImplementation()!
   vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/node') ? {
     ...node(), cpuFallback: false,
-    models: [{ ...node().model, id: 'uvr-mdxnet-9482-rknn', installed: false, downloadSourceRequired: true, target: 'rk3566' }],
+    models: [{ ...node().model, id: 'uvr-mdxnet-9482-rknn', installed: false, downloadSourceRequired, target: 'rk3566' }],
     backends: [{ id: 'rknn', detected: true, state: 'MODEL_MISSING' }],
   } as never : previous(...args))
   wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
   const model = wrapper!.get('[data-model="uvr-mdxnet-9482-rknn"]')
-  expect(model.text()).toContain('瑞芯微 NPU 分离模型')
-  expect(model.get('.file-metadata').text()).toContain('manifest.json、uvr.rknn')
-  expect(model.text()).not.toContain('XML 和 BIN')
+  expect(model.text()).toContain('瑞芯微版')
+  expect(model.text()).not.toMatch(/自动安装|manifest\.json|rk3566|SHA-256/)
   expect(model.get('input[type="file"]').attributes('accept')).toBe('.zip')
-  expect(model.text()).toContain('rk3566')
-  expect(model.text()).toContain('rk3588/')
-  await button('下载到节点', model).trigger('click'); await flushPromises()
-  expect(requested('/model/download')).toBe(false)
-  const form = model.get('form')
-  await form.get('input[type="url"]').setValue('https://models.example.test/rk.zip')
-  await form.get('input[type="text"]').setValue('a'.repeat(64))
-  await form.trigger('submit'); await flushPromises()
-  expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/model/download?model=uvr-mdxnet-9482-rknn', 'POST', { url: 'https://models.example.test/rk.zip', sha256: 'a'.repeat(64) }, 60000)
   expect(model.find('form').exists()).toBe(false)
-})
-
-it('瑞芯微模型下载拒绝无效地址和摘要，失败时保留输入便于修正', async () => {
-  const previous = vi.mocked(authRequest).getMockImplementation()!
-  vi.mocked(authRequest).mockImplementation(async (...args) => args[0].includes('/node') ? {
-    ...node(), models: [{ ...node().model, id: 'uvr-mdxnet-9482-rknn', installed: false }],
-    backends: [{ id: 'rknn', detected: true, state: 'MODEL_MISSING' }],
-  } as never : previous(...args))
-  wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
-  const model = wrapper!.get('[data-model="uvr-mdxnet-9482-rknn"]')
-  await button('下载到节点', model).trigger('click')
-  const form = model.get('form')
-  await form.get('input[type="url"]').setValue('http://models.example.test/rk.zip')
-  await form.trigger('submit'); await flushPromises()
-  expect(form.get('[role="alert"]').text()).toContain('HTTPS')
-  expect(form.get('input[type="url"]').attributes('aria-invalid')).toBe('true')
-  expect(form.get('input[type="text"]').attributes('aria-invalid')).toBe('false')
-  await form.get('input[type="url"]').setValue('https://models.example.test/rk.zip')
-  await form.trigger('submit'); await flushPromises()
-  expect(form.get('[role="alert"]').text()).toContain('64 位')
-  expect(form.get('input[type="text"]').attributes('aria-invalid')).toBe('true')
-  expect(form.get('input[type="url"]').attributes('aria-invalid')).toBe('false')
   expect(requested('/model/download')).toBe(false)
-  await form.get('input[type="text"]').setValue('a'.repeat(64))
-  vi.mocked(authRequest).mockImplementation(async (...args) => {
-    if (args[0].includes('/model/download')) throw new Error('无法识别芯片')
-    return previous(...args)
-  })
-  await form.trigger('submit'); await flushPromises()
-  expect(wrapper!.text()).toContain('无法识别芯片')
-  expect(model.get('form input[type="url"]').element).toHaveProperty('value', 'https://models.example.test/rk.zip')
 })
 
 it('旧 setup 链接跳转性能节点配置', async () => {
@@ -487,10 +447,10 @@ it('快速分类模型独立展示，GPU 节点也可下载且不提供设备选
   })
   wrapper = mount(AudioModelsHarness, { global: { stubs } }); await flushPromises()
   const fast = wrapper!.get('[data-model="panns-cnn6"]')
-  expect(fast.text()).toContain('快速人声分类模型')
+  expect(fast.text()).toContain('原唱与伴奏识别')
   expect(fast.find('select').exists()).toBe(false)
   expect(fast.get('input[type="file"]').attributes('accept')).toBe('.zip')
-  await button('下载到节点', fast).trigger('click'); await flushPromises()
+  await button('自动安装', fast).trigger('click'); await flushPromises()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/audio-processing/model/download?model=panns-cnn6', 'POST', undefined, 60000)
 })
 
