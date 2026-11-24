@@ -36,16 +36,16 @@ export function useSourceShare(sourceId: string, loadJobs = () => true) {
   const polling = useVisiblePolling(async () => { if (loadJobs()) await read() }, () => active.value ? 2000 : readError.value ? 10000 : undefined)
   watch(loadJobs, enabled => { if (enabled) void polling.refresh() })
 
-  async function start(delta = false) {
+  async function start() {
     if (busy.value || active.value) return
     const token = ++revision
     busy.value = true
     error.value = ''
     try {
-      if (job.value?.state === 'FAILED' && !delta) {
+      if (job.value?.state === 'FAILED') {
         await authRequest(base + '/' + encodeURIComponent(job.value.id) + '/resume', 'POST')
       } else {
-        const created = await authRequest<ShareJob>(base, 'POST', { baseId: delta ? job.value?.id : undefined })
+        const created = await authRequest<ShareJob>(base, 'POST')
         if (token !== revision) return
         job.value = created
       }

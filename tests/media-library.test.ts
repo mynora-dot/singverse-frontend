@@ -148,7 +148,7 @@ it('WebDAV 编辑不回显密码，留空时不覆盖密码', async () => {
   expect(wrapper.find('.webdav-source .status-line').exists()).toBe(false)
   await (await sourceAction('编辑')).trigger('click')
   await flushPromises()
-  const form = wrapper.findComponent(ElDialog)
+  const form = wrapper.findAllComponents(ElDialog).find(dialog => dialog.props('title') === '编辑歌曲来源')!
   expect(form.get('input[type="password"]').element).toHaveProperty('value', '')
   await button('保存修改').trigger('click')
   await flushPromises()

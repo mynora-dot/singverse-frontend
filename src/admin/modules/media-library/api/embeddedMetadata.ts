@@ -18,7 +18,7 @@ export interface EmbeddedDetail {
 const base = '/api/v1/media-sources'
 export const embeddedMetadata = {
   summary: (id: string) => authRequest<EmbeddedSummary>(`${base}/${encodeURIComponent(id)}/embedded-metadata`),
-  configure: (id: string, input: Pick<EmbeddedSummary, 'enabled' | 'paused' | 'accessGroup' | 'privateOrigins'>) => authRequest<EmbeddedSummary>(`${base}/${encodeURIComponent(id)}/embedded-metadata`, 'PUT', input),
+  configure: (id: string, input: Pick<EmbeddedSummary, 'enabled' | 'paused'> & { privateOrigins?: string[] }) => authRequest<EmbeddedSummary>(`${base}/${encodeURIComponent(id)}/embedded-metadata`, 'PUT', input),
   confirmEmpty: (id: string) => authRequest(`${base}/${encodeURIComponent(id)}/embedded-metadata/confirm-empty`, 'POST'),
   detail: (id: string) => authRequest<EmbeddedDetail>(`/api/v1/media-songs/${encodeURIComponent(id)}/embedded-metadata`),
   refresh: (songIds: string[], deep = false) => authRequest<{ accepted: number }>('/api/v1/media-songs/embedded-metadata/refresh', 'POST', { songIds, deep }),

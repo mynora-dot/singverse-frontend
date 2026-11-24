@@ -301,7 +301,7 @@ function validateConnection() {
 }
 function validateMethod() {
   if (importingSource.value && !importFile.value) {
-    formError.value = '请先选择导出的 ZIP 资料包'
+    formError.value = '请先选择全量 ZIP 资料包'
     if (!editing.value) sourceStep.value = 2
     focusSourceField('input[aria-label="新歌曲来源资料包"]')
     return false
@@ -370,14 +370,8 @@ async function save(startScan = !editing.value && !importMode.value) {
   } catch (e) { formError.value = e instanceof Error ? e.message : '保存失败' }
   finally { saving.value = false }
 }
-async function refreshSource(item: MediaSource, importJobId?: string) {
+async function refreshSource(item: MediaSource) {
   try {
-    if (importJobId) {
-      const source = await media.get(item.id)
-      if (!active || !items.value.some(row => row.id === item.id)) return
-      items.value = items.value.map(row => row.id === item.id ? source : row)
-      if (route.query.source === item.id) await router.replace({ query: { ...route.query, import: importJobId } })
-    }
     await readSourceTask(item, true)
     scheduleTasks()
   } catch (cause) {
@@ -449,7 +443,7 @@ onBeforeUnmount(() => { active = false; profileGeneration++; taskGeneration++; l
           :scan-disabled="!!scanning" :cancelling="cancelling[row.id]" :profile-loading="profilesLoading" :profile-name="profileName(row.parserProfileId)"
           :import-job-id="route.query.source === row.id && typeof route.query.import === 'string' ? route.query.import : undefined"
           @songs="showSongs(row)" @recognition="showRecognition(row)" @scan="scan(row)" @cancel-scan="cancelScan(row)"
-          @edit="open(row.type, row)" @remove="remove(row)" @updated="id => refreshSource(row, id)" @configured="value => configured(row.id, value)" />
+          @edit="open(row.type, row)" @remove="remove(row)" @updated="refreshSource(row)" @configured="value => configured(row.id, value)" />
         <LocalSourceCard v-else :source="row" :summary="summaries[row.id]" :ingest="ingests[row.id]"
           :task-error="taskErrors[row.id]" :local-result="localResults[row.id]" :scan-disabled="!!scanning"
           :profile-loading="profilesLoading" :profile-name="profileName(row.parserProfileId)"

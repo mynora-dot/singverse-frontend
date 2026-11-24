@@ -16,7 +16,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   songs: []; scan: []; cancelScan: []; edit: []; remove: []; recognition: []
-  updated: [jobId?: string]; configured: [value: EmbeddedSummary]
+  updated: []; configured: [value: EmbeddedSummary]
 }>()
 const row = ref<HTMLElement>(), seen = ref(typeof IntersectionObserver === 'undefined')
 const loadJobs = computed(() => seen.value || !!props.importJobId)
@@ -31,7 +31,7 @@ onMounted(() => {
 onBeforeUnmount(() => observer?.disconnect())
 const { job, busy, error, active, progress, download, start } = useSourceShare(props.source.id, () => loadJobs.value)
 const maintenanceOpen = ref(false), maintenanceMounted = ref(false)
-const importing = ref(false), rebound = ref<string>(), moreButton = ref<InstanceType<typeof ElButton>>()
+const importing = ref(false), moreButton = ref<InstanceType<typeof ElButton>>()
 let maintenanceTrigger: HTMLElement | undefined
 const count = computed(() => props.summary?.quality?.songs)
 const directory = computed(() => {
@@ -56,11 +56,7 @@ const activity = computed(() => {
   if (props.summary?.enabled && !props.summary.paused && (props.summary.counts.RUNNING || props.summary.counts.QUEUED)) return '正在完善歌曲信息'
   return props.summary?.files?.pending ? '正在生成曲库文件' : ''
 })
-watch(() => props.importJobId, () => { rebound.value = undefined; maintenanceOpen.value = false })
-function reloaded(id?: string) {
-  if (id) { rebound.value = id; maintenanceOpen.value = false }
-  emit('updated', id)
-}
+watch(() => props.importJobId, () => { maintenanceOpen.value = false })
 function openMaintenance(event?: MouseEvent) {
   const trigger = event?.currentTarget
   maintenanceTrigger = trigger instanceof HTMLElement ? trigger : moreButton.value?.ref
@@ -79,7 +75,7 @@ function maintenanceClosed() {
 </script>
 <template>
   <article ref="row" :id="'webdav-source-' + source.id" class="webdav-source" :aria-labelledby="'webdav-name-' + source.id" :inert="maintenanceMounted" tabindex="-1" @focusin.once="seen = true">
-    <ShareImportPanel :key="source.location" :source="source" :summary="summary" :activity="activity" :load-jobs="loadJobs" :job-id="rebound || importJobId" @active="importing = $event" @updated="emit('updated')" @songs="emit('songs')" @maintenance="openMaintenance">
+    <ShareImportPanel :key="source.location" :source="source" :summary="summary" :activity="activity" :load-jobs="loadJobs" :job-id="importJobId" @active="importing = $event" @updated="emit('updated')" @songs="emit('songs')" @maintenance="openMaintenance">
       <template #toolbar="{ choose, selected, disabled }">
         <div class="record">
           <ElIcon class="folder" aria-hidden="true"><FolderOpened /></ElIcon>
@@ -112,11 +108,8 @@ function maintenanceClosed() {
         <p class="maintenance-source">{{ source.name }}</p>
       </template>
       <WebDavMaintenance :key="source.location" :source="source" :summary="summary" :task="task" :importing="importing || !!summary?.importProcessing" :scan-disabled="scanDisabled || ingestActive" :cancelling="cancelling" :profile-name="profileName" :profile-loading="profileLoading"
-        @scan="emit('scan')" @cancel-scan="emit('cancelScan')" @edit="emit('edit')" @remove="emit('remove')" @recognition="emit('recognition')" @configured="value => emit('configured', value)" @updated="reloaded">
+        @scan="emit('scan')" @cancel-scan="emit('cancelScan')" @edit="emit('edit')" @remove="emit('remove')" @recognition="emit('recognition')" @configured="value => emit('configured', value)" @updated="emit('updated')">
         <p v-if="scanErrors">{{ scanErrors }}</p>
-        <details v-if="job?.state === 'SUCCEEDED'"><summary>导出选项</summary>
-          <ElButton :disabled="busy || active" @click="start(true)">仅分享新增和变化</ElButton>
-        </details>
       </WebDavMaintenance>
     </ElDialog>
   </article>

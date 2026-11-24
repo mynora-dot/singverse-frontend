@@ -16,8 +16,8 @@ vi.mock('../src/admin/modules/media-library/api/embeddedMetadata', async importO
   const original = await importOriginal<typeof import('../src/admin/modules/media-library/api/embeddedMetadata')>()
   return { ...original, embeddedMetadata: { summary: vi.fn(), configure: vi.fn(), confirmEmpty: vi.fn(), detail: vi.fn(), refresh: vi.fn() } }
 })
-vi.mock('../src/admin/modules/media-library/api/media', () => ({ media: { latestTask: vi.fn().mockResolvedValue(undefined), createTask: vi.fn(), songs: vi.fn().mockResolvedValue({ items: [{ id: 'trial', relativePath: 'sample.mp3' }] }) } }))
-vi.mock('../src/admin/core/auth/api', () => ({ authRequest: vi.fn(async (path: string) => path.endsWith('/csrf') ? { token: 'test-csrf' } : {}) }))
+vi.mock('../src/admin/modules/media-library/api/media', () => ({ media: { latestTask: vi.fn().mockResolvedValue(undefined), createTask: vi.fn() } }))
+vi.mock('../src/admin/core/auth/api', () => ({ authRequest: vi.fn() }))
 const source: MediaSource = { id: 'source', name: '网盘曲库', type: 'WEBDAV', location: 'https://example.invalid/dav/', username: '', passwordConfigured: false, parserProfileId: 'default', createdAt: '', updatedAt: '' }
 const summary: EmbeddedSummary = { enabled: false, paused: false, accessGroup: 'shared-cloud', privateOrigins: [], emptyScans: 0, canConfirmEmpty: false, counts: { COMPLETE: 12, PARTIAL: 3 }, presence: { missing: 1, changed: 2 }, budget: { files_started: 15, bytes_read: 1048576 } }
 let wrapper: ReturnType<typeof mount>
@@ -40,29 +40,31 @@ async function openAdvanced() {
 }
 beforeEach(() => {
   vi.clearAllMocks(); packageUploads.clear(); rowSummary = { ...summary }
+  vi.mocked(authRequest).mockImplementation(async path => (path.endsWith('/csrf') ? { token: 'test-csrf' } : {}) as never)
   vi.mocked(embeddedMetadata.summary).mockResolvedValue({ ...summary })
   vi.mocked(embeddedMetadata.configure).mockResolvedValue({ ...summary, enabled: true })
   vi.mocked(embeddedMetadata.detail).mockResolvedValue({ state: 'PARTIAL', changed: 1, result: { state: 'PARTIAL', fields: { lyrics: 'UNKNOWN' }, technical: { container: 'mp3' }, lyrics: { text: '内嵌歌词', timing: 'none' } } })
 })
 afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks() })
-it('维护设置直接开启和暂停提取，独立于未保存的访问组更改', async () => {
+it('维护设置开启和暂停提取时不提交代理草稿，代理可单独保存', async () => {
   renderRow()
   await flushPromises()
   expect(wrapper.text()).not.toContain('MiB')
   expect(wrapper.find('.el-tabs').exists()).toBe(false)
-  expect(button('试提取一首')).toBeUndefined()
   await openAdvanced()
-  await wrapper.get('input[maxlength="64"]').setValue('草稿组')
+  await wrapper.get('textarea').setValue('https://proxy.example.invalid')
   expect(wrapper.get('.embedded-action h3').text()).toBe('完善歌曲信息')
   expect(wrapper.get('.embedded-action').element.closest('details')).toBeNull()
   await wrapper.findAllComponents(ElButton).find(button => button.text() === '开始自动提取')!.trigger('click')
   await flushPromises()
-  expect(embeddedMetadata.configure).toHaveBeenLastCalledWith('source', { enabled: true, paused: false, accessGroup: 'shared-cloud', privateOrigins: [] })
+  expect(embeddedMetadata.configure).toHaveBeenLastCalledWith('source', { enabled: true, paused: false })
   vi.mocked(embeddedMetadata.configure).mockResolvedValue({ ...summary, enabled: true, paused: true })
   await wrapper.findAllComponents(ElButton).find(button => button.text() === '暂停自动提取')!.trigger('click')
   await flushPromises()
-  expect(embeddedMetadata.configure).toHaveBeenLastCalledWith('source', { enabled: true, paused: true, accessGroup: 'shared-cloud', privateOrigins: [] })
+  expect(embeddedMetadata.configure).toHaveBeenLastCalledWith('source', { enabled: true, paused: true })
   expect(wrapper.text()).toContain('继续自动提取')
+  await button('保存代理设置').trigger('click'); await flushPromises()
+  expect(embeddedMetadata.configure).toHaveBeenLastCalledWith('source', { enabled: true, paused: true, privateOrigins: ['https://proxy.example.invalid'] })
 })
 it('仅在满足空库确认条件后提供全部下架操作', async () => {
   rowSummary = { ...summary, emptyScans: 2, canConfirmEmpty: true }
@@ -133,26 +135,15 @@ it('已有歌曲的来源在上传中仍可查看歌曲', async () => {
   finish({ id: 'late', state: 'PARSING' } as ShareImportJob); await flushPromises()
 })
 
-it('维护区试提取一首不会开启整库自动提取，分享不再暴露旧版入口', async () => {
+it('导出成功后维护区也不提供增量导出及已移除的维护入口', async () => {
+  vi.mocked(authRequest).mockImplementation(async path => (path.endsWith('/share-jobs/latest') ? { id: 'full', state: 'SUCCEEDED' } : {}) as never)
   renderRow()
   await flushPromises(); await openAdvanced()
-  vi.mocked(embeddedMetadata.detail).mockResolvedValueOnce({ state: 'PENDING' })
-  await wrapper.findAllComponents(ElButton).find(button => button.text() === '试提取一首')!.trigger('click')
-  await flushPromises()
-  expect(embeddedMetadata.refresh).toHaveBeenCalledWith(['trial'])
-  expect(embeddedMetadata.configure).not.toHaveBeenCalled()
-  expect(wrapper.text()).not.toContain('旧版')
-  expect(wrapper.text()).not.toContain('SUCCEEDED')
-})
-
-it('已完成样本复用缓存，未知字段不显示为确认没有', async () => {
-  renderRow()
-  await flushPromises(); await openAdvanced()
-  await wrapper.findAllComponents(ElButton).find(button => button.text() === '试提取一首')!.trigger('click')
-  await flushPromises()
-  expect(embeddedMetadata.refresh).not.toHaveBeenCalled()
-  expect(wrapper.text()).toContain('尚未读取到内嵌歌名')
-  expect(wrapper.text()).not.toContain('文件未提供内嵌歌名')
+  expect(wrapper.text()).toContain('下载资料包')
+  const maintenance = wrapper.get('.maintenance').text()
+  for (const label of ['试提取一首', '诊断目录与分段读取', '重新绑定自己的媒体目录', '保留资料并重新核验', '共享访问组', '导出选项', '仅分享新增和变化']) {
+    expect(maintenance).not.toContain(label)
+  }
 })
 
 it('默认隐藏同步和分包细节，分享可直接提交给后台准备', async () => {
@@ -199,7 +190,7 @@ it('首页显示歌曲数、中文路径和当前来源的异常数，导出在�
   expect(wrapper.text()).toContain('1 首歌曲资料待补齐 · 2 个文件未找到')
   expect(button('导出资料包')).toBeUndefined()
   await wrapper.get('.record-menu button').trigger('click'); await menuItem('导出资料包')!.trigger('click'); await flushPromises()
-  expect(authRequest).toHaveBeenCalledWith('/api/v1/media-sources/source/embedded-metadata/share-jobs', 'POST', expect.anything())
+  expect(authRequest).toHaveBeenCalledWith('/api/v1/media-sources/source/embedded-metadata/share-jobs', 'POST')
   expect(wrapper.findAll('a[download]')).toHaveLength(1)
   expect(wrapper.get('a[download]').text()).toBe('下载资料包')
   expect(wrapper.get('a[download]').attributes('href')).toBe('/api/v1/media-sources/source/embedded-metadata/share-jobs/out/download')

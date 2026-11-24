@@ -50,8 +50,7 @@ async function scan() {
     </section>
     <details class="advanced-options" @toggle.self="toggle"><summary>高级选项</summary>
       <div v-if="advanced" class="advanced-content"><div class="advanced-actions">
-      <ElButton :loading="scanning" @click="scan">重新扫描歌曲</ElButton>
-      <ElButton v-if="job?.state === 'SUCCEEDED'" :disabled="busy || active" @click="start(true)">仅分享新增和变化</ElButton></div>
+      <ElButton :loading="scanning" @click="scan">重新扫描歌曲</ElButton></div>
       <p v-if="summary?.files">衍生文件：{{ summary.files.pending ? '等待处理 ' + summary.files.pending + ' 首' : '已完成' }}<span v-if="summary.files.failed">，{{ summary.files.failed }} 首待重新生成</span><span v-if="summary.files.attachments">，封面待补齐</span>。</p>
       </div>
     </details>

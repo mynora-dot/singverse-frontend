@@ -1,12 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElAlert, ElButton, ElInput, ElMessage, ElMessageBox } from 'element-plus'
-import { authRequest } from '../../../core/auth/api'
-import { useVisiblePolling } from '../../../shared/composables/use-visible-polling'
-import { embeddedMetadata, embeddedState, type EmbeddedSummary, type EmbeddedDetail } from '../api/embeddedMetadata'
-import { media } from '../api/media'
+import { embeddedMetadata, embeddedState, type EmbeddedSummary } from '../api/embeddedMetadata'
 import type { MediaSource, ScanTask } from '../types'
-import MediaRebindPanel from './MediaRebindPanel.vue'
 
 const props = defineProps<{
   source: MediaSource; summary?: EmbeddedSummary; task?: ScanTask; importing: boolean
@@ -14,17 +10,15 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   scan: []; cancelScan: []; edit: []; remove: []; recognition: []
-  configured: [value: EmbeddedSummary]; updated: [jobId?: string]
+  configured: [value: EmbeddedSummary]; updated: []
 }>()
 const busy = ref(false), error = ref('')
-const accessGroup = ref(''), origins = ref('')
-const sampleId = ref(''), sampleName = ref(''), sample = ref<EmbeddedDetail>()
-const diagnosis = ref<{ directoryMessage: string; mediaMessage: string }>()
+const origins = ref('')
 const activeScan = computed(() => ['QUEUED', 'RUNNING'].includes(props.task?.status ?? ''))
 const extractionDisabled = computed(() => props.importing || !props.summary || busy.value ||
   (props.summary.quality?.songs ?? props.summary.quality?.total) === 0)
 watch(() => !!props.summary, ready => {
-  if (ready) { accessGroup.value = props.summary!.accessGroup; origins.value = (props.summary!.privateOrigins ?? []).join('\n') }
+  if (ready) origins.value = (props.summary!.privateOrigins ?? []).join('\n')
 }, { immediate: true })
 
 async function perform(action: () => Promise<void>) {
@@ -39,31 +33,10 @@ function save(toggle: boolean) {
   if (!saved || toggle && extractionDisabled.value) return
   void perform(async () => {
     const settings = toggle
-      ? { enabled: true, paused: saved.enabled && !saved.paused, accessGroup: saved.accessGroup, privateOrigins: saved.privateOrigins }
-      : { enabled: saved.enabled, paused: saved.paused, accessGroup: accessGroup.value, privateOrigins: origins.value.split('\n').map(v => v.trim()).filter(Boolean) }
+      ? { enabled: true, paused: saved.enabled && !saved.paused }
+      : { enabled: saved.enabled, paused: saved.paused, privateOrigins: origins.value.split('\n').map(v => v.trim()).filter(Boolean) }
     emit('configured', await embeddedMetadata.configure(props.source.id, settings))
     ElMessage.success('已保存')
-  })
-}
-const samplePolling = useVisiblePolling(async () => {
-  if (!sampleId.value) return
-  try { sample.value = await embeddedMetadata.detail(sampleId.value) }
-  catch (cause) { error.value = cause instanceof Error ? cause.message : '读取样本失败' }
-}, () => ['QUEUED','PENDING','RUNNING'].includes(sample.value?.state ?? '') ? 2000 : undefined, { immediate: false })
-function trial() {
-  if (extractionDisabled.value || props.summary?.paused) return
-  void perform(async () => {
-    const song = (await media.songs(props.source.id, 0, 1)).items[0]
-    if (!song) throw new Error('请先扫描歌曲')
-    sampleId.value = song.id; sampleName.value = song.relativePath
-    const cached = await embeddedMetadata.detail(song.id)
-    if (cached.state === 'PENDING' || cached.state === 'NOT_WEBDAV') await embeddedMetadata.refresh([song.id])
-    await samplePolling.refresh()
-  })
-}
-function diagnose() {
-  void perform(async () => {
-    diagnosis.value = await authRequest('/api/v1/media-sources/' + encodeURIComponent(props.source.id) + '/diagnostics', 'POST')
   })
 }
 async function confirmEmpty() {
@@ -81,15 +54,6 @@ async function confirmEmpty() {
       <h3>完善歌曲信息</h3>
       <div class="controls">
         <ElButton :disabled="extractionDisabled" @click="save(true)">{{ summary?.paused ? '继续自动提取' : summary?.enabled ? '暂停自动提取' : '开始自动提取' }}</ElButton>
-        <ElButton :disabled="extractionDisabled || !!summary?.paused" @click="trial">试提取一首</ElButton>
-      </div>
-      <div v-if="sample" class="sample-result" role="status"><strong>{{ embeddedState(sample.state) }}</strong><p>{{ sampleName }}</p>
-        <div v-if="sample.result">
-          <img v-if="sample.result.cover" :src="'/api/v1/media-songs/' + encodeURIComponent(sampleId) + '/embedded-metadata/cover'" alt="样本内嵌封面">
-          <strong>{{ sample.result.tags?.title || (sample.result.fields?.title === 'ABSENT' ? '文件未提供内嵌歌名' : '尚未读取到内嵌歌名') }}</strong>
-          <p>{{ sample.result.tags?.artists?.join('、') || '尚未读取到内嵌歌手' }}</p>
-          <details v-if="sample.result.lyrics"><summary>查看歌词</summary><pre>{{ sample.result.lyrics.text }}</pre></details>
-        </div>
       </div>
       <p v-if="summary?.blockedReason">{{ embeddedState(summary.blockedReason) }}</p>
       <p v-if="summary?.enabled && !summary.paused && !summary.remoteReady && summary.nodeMessage">{{ summary.nodeMessage }}</p>
@@ -97,10 +61,8 @@ async function confirmEmpty() {
     </div>
     <div class="controls">
       <ElButton :disabled="scanDisabled || importing || activeScan || busy" @click="emit('scan')">重新扫描歌曲</ElButton>
-      <ElButton :disabled="busy" @click="diagnose">诊断目录与分段读取</ElButton>
       <ElButton :disabled="profileLoading" @click="emit('recognition')">文件名识别<template v-if="profileName"> · {{ profileName }}</template></ElButton>
     </div>
-    <p v-if="diagnosis" role="status">目录：{{ diagnosis.directoryMessage }}<br>媒体：{{ diagnosis.mediaMessage }}</p>
     <p>{{ source.scanEnabled ? '自动扫描已开启' : '自动扫描未开启' }}<template v-if="source.nextScanAt"> · 下次 {{ new Date(source.nextScanAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) }}</template></p>
     <p v-if="summary?.quality">{{ summary.quality.variants ?? summary.quality.total }} 个版本 · {{ summary.quality.files ?? summary.quality.total }} 个媒体文件 · {{ summary.quality.identityComplete }} 首歌名和歌手齐全</p>
     <p v-if="summary?.files && (summary.files.pending || summary.files.failed || summary.files.attachments)"><span v-if="summary.files.pending">{{ summary.files.pending }} 项衍生文件生成中　</span><span v-if="summary.files.failed">{{ summary.files.failed }} 项衍生文件待重试　</span><span v-if="summary.files.attachments">封面待补齐</span></p>
@@ -110,11 +72,9 @@ async function confirmEmpty() {
       <p v-if="task.status === 'SUCCEEDED'">扫描完成 · 新增 {{ task.addedSongs ?? 0 }} · 复用 {{ task.reusedSongs ?? 0 }} · 待确认删除 {{ task.missingSongs ?? 0 }} · 下架 {{ task.removedSongs ?? 0 }}</p>
       <ElButton v-if="activeScan && task.phase === 'SCANNING'" :loading="cancelling" :disabled="task.cancelRequested" @click="emit('cancelScan')">取消扫描</ElButton>
     </div>
-    <MediaRebindPanel :source="source" :disabled="importing" @updated="id => emit('updated', id)" />
-    <details><summary>访问组与代理</summary>
-      <label>共享访问组<ElInput v-model="accessGroup" maxlength="64" /></label>
-      <label>私有下载代理（每行一个地址）<ElInput v-model="origins" type="textarea" :rows="2" /></label>
-      <ElButton :disabled="busy || !summary" @click="save(false)">保存高级设置</ElButton>
+    <details><summary>私有下载代理</summary>
+      <label>代理地址（每行一个）<ElInput v-model="origins" type="textarea" :rows="2" /></label>
+      <ElButton :disabled="busy || !summary" @click="save(false)">保存代理设置</ElButton>
     </details>
     <slot />
     <div class="controls source-settings">
@@ -131,8 +91,6 @@ h3 { margin:0 0 10px; font-size:15px; color:var(--sv-text-primary); }
 p,label { font-size:14px; line-height:1.65; }
 p { color:var(--sv-text-secondary); margin:8px 0; overflow-wrap:anywhere; }
 .controls .el-button { max-width:100%; min-height:44px; height:auto; margin:0; white-space:normal; line-height:1.5; }
-.sample-result { margin:10px 0; } .sample-result img { width:72px; height:72px; object-fit:cover; }
-.sample-result pre { white-space:pre-wrap; }
 .maintenance :deep(summary) { min-height:44px; padding:10px 0; font-size:14px; line-height:1.65; cursor:pointer; }
 label { display:block; margin:10px 0; }
 .source-settings { margin-top:12px; }

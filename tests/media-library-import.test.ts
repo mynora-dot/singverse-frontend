@@ -14,7 +14,6 @@ import { parserProfiles } from '../src/admin/modules/filename-parser/api/rules'
 import type { MediaSource } from '../src/admin/modules/media-library/types'
 import { workspace } from './fixtures/filename-workspace'
 import { dropdownStubs } from './fixtures/dropdown-stubs'
-import { authRequest } from '../src/admin/core/auth/api'
 
 vi.mock('../src/admin/modules/background-tasks/api', () => ({ backgroundTasks: { list: vi.fn() } }))
 vi.mock('../src/admin/modules/media-library/api/media', () => ({ media: { list: vi.fn(), save: vi.fn(), get: vi.fn(), latestTask: vi.fn(), latestIngest: vi.fn(), scan: vi.fn(), createTask: vi.fn() } }))
@@ -143,21 +142,6 @@ it('任务中心定位到首批以外的来源，刷新后保留目录草稿和�
   expect(wrapper.get('#webdav-source-other').find('[aria-label="导入详情"]').exists()).toBe(false)
 })
 
-it('相同根地址更换账号后切换到新核验任务，不再显示旧完成任务', async () => {
-  wrapper.unmount()
-  vi.mocked(shareImports.get).mockImplementation(async (_source, id) => ({ ...job(id === 'new-verification' ? 'VERIFYING' : 'SUCCEEDED'), id }))
-  vi.mocked(authRequest).mockImplementation(async path => path.endsWith('/rebind') ? { id: 'new-verification' } as never : {} as never)
-  wrapper = mount(WebDavSourceRow, { attachTo: document.body, props: { source, importJobId: 'old-completed', summary }, global: { stubs: { teleport: true, ...dropdownStubs } } })
-  await flushPromises()
-  await wrapper.get('.record-menu button').trigger('click')
-  await wrapper.findAll('[role="menuitem"]').find(item => item.text() === '维护与设置')!.trigger('click'); await flushPromises()
-  await button('保留资料并重新核验').trigger('click'); await flushPromises()
-  expect(authRequest).toHaveBeenCalledWith(`/api/v1/media-sources/${source.id}/rebind`, 'POST', expect.objectContaining({ location: source.location }))
-  expect(shareImports.get).toHaveBeenCalledWith(source.id, 'new-verification')
-  expect(wrapper.text()).toContain('正在核验文件路径')
-  expect(wrapper.emitted('updated')).toContainEqual(['new-verification'])
-})
-
 it('新建 WebDAV 一次确认后自动核对路径，入库使用包内资料', async () => {
   await openWebDAV()
   await checkbox('自动读取文件内的歌曲信息').setValue(true)
@@ -275,7 +259,7 @@ it('保存来源失败时保留选中的资料包，再次保存成功后才上�
 it('未选包、空文件、非 ZIP 及超限资料包在新建来源前给出错误', async () => {
   await openWebDAV(true); await button('下一步').trigger('click'); await flushPromises()
   sourceStep(2)
-  expect(wrapper.text()).toContain('请先选择导出的 ZIP 资料包')
+  expect(wrapper.text()).toContain('请先选择全量 ZIP 资料包')
   await selectPackage(new File(['json'], 'metadata.json'))
   expect(wrapper.text()).toContain('请选择 ZIP 格式的资料包')
   await selectPackage(new File([], 'empty.zip'))
@@ -303,7 +287,7 @@ it('明确选用资料包但未选 ZIP 时可主动改为直接扫描，无需�
   await openWebDAV(true)
   await button('下一步').trigger('click'); await flushPromises()
   sourceStep(2)
-  expect(wrapper.text()).toContain('请先选择导出的 ZIP 资料包')
+  expect(wrapper.text()).toContain('请先选择全量 ZIP 资料包')
   expect(media.save).not.toHaveBeenCalled()
   await button('改为直接扫描').trigger('click'); await flushPromises()
   expect(checkbox('从已导出的资料包入库').element).toHaveProperty('checked', false)

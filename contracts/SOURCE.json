@@ -60,8 +60,8 @@
       "sha256": "57bf9957affce3fd8416339156094b969d64a4133aed0536157603e1a32be68f"
     },
     "contracts/metadata/package-v4.md": {
-      "sha256": "c33ca63acce11893b546031030db2405cfdfe31d258e6aa77c0a0e154439d347",
-      "revision": "de876ffff0b454504e21a7f3f45fcb4722361842"
+      "sha256": "ce909824736fb55a2f006e9339aa7f56fd087cca86f76a18eae4ca9ddc7117c1",
+      "revision": "0dae233ce159be561e7476ead21938dd020147ba"
     },
     "contracts/metadata/package-v4.schema.json": {
       "sha256": "ff3481deba183bb5cc295dccc185abc37d9b80da0de53b48b59dc5503f220095"
@@ -70,8 +70,8 @@
       "sha256": "69043de4096f7df473cca354364b9e6ae4451780d9ece54b15e5ffc7e6d6733d"
     },
     "contracts/openapi/README.md": {
-      "sha256": "b057fd5244c282258f16b8be4e79f427a94eea8ec7a76a78688692893177fe80",
-      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
+      "sha256": "e09d30f4afa3bbe2a74a097eb30db867f030b6273acf66f49baf3bd21e2eab53",
+      "revision": "0dae233ce159be561e7476ead21938dd020147ba"
     },
     "contracts/openapi/auth-test-vectors.json": {
       "sha256": "d1d9cca13627c3c54cbb97a3cc57c8e592721ac50db1390ccd54977912109e04"
@@ -81,8 +81,8 @@
       "revision": "9e92439fb2000d3c2d026c01691716510d79d149"
     },
     "contracts/openapi/singverse.openapi.json": {
-      "sha256": "601e97a69e83b1cfb0ab76ad82842284c043766cf887bafba742776d977ab195",
-      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
+      "sha256": "39a6d3dad3f9aaf7af86e24ff808e17eb141906c8be2ff8641bd776ae685f1fe",
+      "revision": "0dae233ce159be561e7476ead21938dd020147ba"
     },
     "contracts/song-activity.md": {
       "sha256": "ec2b7ded6f3d84993231321f0ef611c8b25a288efbda6d99e3cf8febffb6ba30"
@@ -111,12 +111,12 @@
       "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
     },
     "contracts/metadata/package-v5.md": {
-      "sha256": "72b7f554cbbc7ea2ca53d266cceb668e6786a8dc4d9703a99f8fea5825649735",
-      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
+      "sha256": "1dd4cbac9e02df96c89b4d4df675253becc3d9e435a98550fa5df724f2aaa354",
+      "revision": "0dae233ce159be561e7476ead21938dd020147ba"
     },
     "contracts/metadata/package-v5.schema.json": {
-      "sha256": "59acf5143b12b7d2177f127c502db6ef8ebb92b6ee91aceb19fb4f2cdc106080",
-      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
+      "sha256": "2ec229f7bfc228bc109f2e03500c21c6147e6ad25dfa54ad2d8bf1d3f885632d",
+      "revision": "0dae233ce159be561e7476ead21938dd020147ba"
     }
   }
 }
