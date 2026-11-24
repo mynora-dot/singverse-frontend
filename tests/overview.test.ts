@@ -69,6 +69,7 @@ it('使用聚合接口统计真实数字，并把待办链接到对应页面', a
     const todos = wrapper.findAll('.todo-item, .review-strip').map(item => item.text())
     expect(wrapper.text()).not.toContain('电视等待授权')
     expect(wrapper.findAll('a').some(link => link.attributes('href')?.includes('/system/tv-devices'))).toBe(false)
+    expect(wrapper.get('.family-actions').findAll('a').map(link => link.attributes('href'))).toEqual(['/party/'])
     expect(todos.some(text => text.includes('1 个媒体库最近扫描失败') && text.includes('来源b'))).toBe(true)
     expect(todos.some(text => text.includes('12 首文件名识别不完整'))).toBe(true)
     expect(todos.some(text => text.includes('默认密码') || text.includes('二次验证'))).toBe(false)

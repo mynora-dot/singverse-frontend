@@ -19,7 +19,8 @@
       "sha256": "0c1fc5b0b9068f4ae4576cd06594c7ea410df66ac8768766c9508cf46e5420ce"
     },
     "contracts/metadata/README.md": {
-      "sha256": "85a9761d5b421d0d7620156558dc6351a13886fdf8cbe386c39baebd94cb145d"
+      "sha256": "d2520e38c87bf06933dbd2f8a99e3f22c0644a0afcb292b0b57b132732864dee",
+      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
     },
     "contracts/metadata/examples/README.md": {
       "sha256": "4d8df73a02f399ac1d98d7b64918459543e2d18cd5ebbbbc4fa6a12e40c563ae"
@@ -69,8 +70,8 @@
       "sha256": "69043de4096f7df473cca354364b9e6ae4451780d9ece54b15e5ffc7e6d6733d"
     },
     "contracts/openapi/README.md": {
-      "sha256": "4bd78b741eb454ab7326f5f32bbfc5748621dca707d6e52d93abfdadd0ccf32f",
-      "revision": "16c95b83a4b5ff2c77830e25e9da038e636dc50e"
+      "sha256": "b057fd5244c282258f16b8be4e79f427a94eea8ec7a76a78688692893177fe80",
+      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
     },
     "contracts/openapi/auth-test-vectors.json": {
       "sha256": "d1d9cca13627c3c54cbb97a3cc57c8e592721ac50db1390ccd54977912109e04"
@@ -80,8 +81,8 @@
       "revision": "9e92439fb2000d3c2d026c01691716510d79d149"
     },
     "contracts/openapi/singverse.openapi.json": {
-      "sha256": "82fd34958c8f5b32ae9a378552fe33d91177d57af04e681d76e3b33f70efa3d4",
-      "revision": "16c95b83a4b5ff2c77830e25e9da038e636dc50e"
+      "sha256": "601e97a69e83b1cfb0ab76ad82842284c043766cf887bafba742776d977ab195",
+      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
     },
     "contracts/song-activity.md": {
       "sha256": "ec2b7ded6f3d84993231321f0ef611c8b25a288efbda6d99e3cf8febffb6ba30"
@@ -102,13 +103,20 @@
       "revision": "8df2301b2204e7f3cd124d607a5d021ea6a12a91"
     },
     "contracts/assistant.md": {
-      "sha256": "e47cf55819183618d4a236187893bda22afc79efbb3423e9d2ac8dfaf8c9d7dd",
-      "revision": "8df2301b2204e7f3cd124d607a5d021ea6a12a91"
+      "sha256": "8851b74293709bc2f90c3b2324f97f94b68282a2b894f190b68722b626541cf5",
+      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
     },
     "contracts/assistant-tool-coverage.json": {
-      "sha256": "2ca4b8fa016f3cd6f58b62da054e80196d878835267fa179f7fa94d90976c5f4",
-      "revision": "8df2301b2204e7f3cd124d607a5d021ea6a12a91"
+      "sha256": "89031f769abc85c4104f580ca2098979b3079f268775ce1c33403c06ef990fba",
+      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
+    },
+    "contracts/metadata/package-v5.md": {
+      "sha256": "72b7f554cbbc7ea2ca53d266cceb668e6786a8dc4d9703a99f8fea5825649735",
+      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
+    },
+    "contracts/metadata/package-v5.schema.json": {
+      "sha256": "59acf5143b12b7d2177f127c502db6ef8ebb92b6ee91aceb19fb4f2cdc106080",
+      "revision": "6c271ff100db18251d3f2bdb73ed31c4d4dfeb8a"
     }
-  },
-  "workingTree": true
+  }
 }

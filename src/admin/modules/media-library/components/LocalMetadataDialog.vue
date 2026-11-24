@@ -9,7 +9,7 @@ import { useVisiblePolling } from '../../../shared/composables/use-visible-polli
 
 const props = defineProps<{ source: MediaSource }>()
 const emit = defineEmits<{ close: []; songs: []; updated: [] }>()
-const { base, job, download, active, progress, busy, error: shareError, start } = useSourceShare(props.source.id)
+const { job, download, active, progress, busy, error: shareError, start } = useSourceShare(props.source.id)
 const summary = ref<EmbeddedSummary>(), error = ref(''), scanning = ref(false), advanced = ref(false)
 function toggle(event: Event) { advanced.value = (event.target as HTMLDetailsElement).open }
 const total = computed(() => summary.value?.quality?.songs ?? summary.value?.quality?.total ?? Object.values(summary.value?.counts ?? {}).reduce((a,b) => a + b, 0))
@@ -46,14 +46,14 @@ async function scan() {
       </div>
       <ElProgress v-if="active" :percentage="progress" :indeterminate="job?.state === 'WAITING'" />
       <p v-if="job?.state === 'FAILED'" role="status">分享包准备失败，请重试。</p>
-      <div v-if="job?.state === 'SUCCEEDED'" class="ready-status"><span>{{ job.part_count ? '分享包已准备好' : '暂无新增资料' }}</span><ElButton text :disabled="busy" @click="start()">重新导出</ElButton></div>
+      <div v-if="job?.state === 'SUCCEEDED'" class="ready-status"><span>分享包已准备好</span><ElButton text :disabled="busy" @click="start()">重新导出</ElButton></div>
     </section>
     <details class="advanced-options" @toggle.self="toggle"><summary>高级选项</summary>
       <div v-if="advanced" class="advanced-content"><div class="advanced-actions">
       <ElButton :loading="scanning" @click="scan">重新扫描歌曲</ElButton>
       <ElButton v-if="job?.state === 'SUCCEEDED'" :disabled="busy || active" @click="start(true)">仅分享新增和变化</ElButton></div>
       <p v-if="summary?.files">衍生文件：{{ summary.files.pending ? '等待处理 ' + summary.files.pending + ' 首' : '已完成' }}<span v-if="summary.files.failed">，{{ summary.files.failed }} 首待重新生成</span><span v-if="summary.files.attachments">，封面待补齐</span>。</p>
-      <details v-if="download && job"><summary>单独下载分包</summary><div class="share-parts"><a v-for="part in job.part_count" :key="part" :href="base + '/' + job.id + '/parts/' + part" :download="'part-' + String(part).padStart(6, '0') + '.zip'">分包 {{ part }}</a></div></details></div>
+      </div>
     </details>
     <template #footer><ElButton @click="emit('close')">关闭</ElButton></template>
   </ElDialog>
@@ -79,8 +79,6 @@ summary { min-height: 28px; line-height: 28px; cursor: pointer; }
 .advanced-content p { margin: 12px 0; }
 .advanced-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .advanced-actions .el-button { margin: 0; }
-.share-parts { display: flex; flex-wrap: wrap; gap: 12px; max-height: 180px; margin: 12px 0; overflow: auto; }
-.share-parts a { color: var(--sv-accent-primary); }
 :global(.library-workflow-dialog.el-dialog) { display: flex; flex-direction: column; max-height: 90dvh; }
 :global(.library-workflow-dialog > .el-dialog__header), :global(.library-workflow-dialog > .el-dialog__footer) { flex-shrink: 0; }
 :global(.library-workflow-dialog > .el-dialog__body) { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }

@@ -47,13 +47,13 @@ it('精简主导航与当前分区提供全部现有管理功能', async () => {
   await router.push('/library/songs'); const wrapper = mount(App, { global: { plugins: [router] } }); await settleLayout()
   expect(wrapper.findAll('.primary-navigation a').map(a => a.text())).toEqual(['首页','曲库','加歌','整理','客厅'])
   expect(wrapper.findAll('.section-navigation a').map(a => a.text())).toEqual(['歌曲','歌手','歌单','收藏'])
-  const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/favorites','/library/classification','/library/media','/library/downloads','/library/songs/metadata','/library/audio-processing','/system/tv-settings','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai']
+  const expected = ['/system/client-downloads','/library/songs','/library/artists','/library/playlists','/library/favorites','/library/classification','/library/media','/library/downloads','/library/songs/metadata','/library/audio-processing','/library/playback-history','/library/missing-feedback','/system/parameters','/system/music-platforms','/library/cache','/system/compute','/system/ai']
   expect(navigationGroups.flatMap(g => g.children.map(e => e.path)).sort()).toEqual(expected.sort())
   await wrapper.get('.mobile-nav-toggle').trigger('click')
   const entries = (group: string) => wrapper.findAll(`[aria-labelledby="nav-group-${group}"] a`).map(a => a.text())
   expect(entries('add')).toEqual(['歌曲来源','下载歌曲','缺歌心愿'])
   expect(entries('tidy')).toEqual(['歌曲信息','歌曲分类','原唱与伴奏'])
-  expect(entries('living')).toEqual(['播放与热门','电视首页','客户端下载'])
+  expect(entries('living')).toEqual(['播放与热门','客户端下载'])
   expect(entries('settings')).toEqual(settingsLabels)
   expect(wrapper.findAll('#admin-navigation a').some(a => a.text() === '文件名识别')).toBe(false)
   wrapper.unmount()
@@ -65,6 +65,7 @@ it('客厅与设置入口打开分区第一项，账号与安全仍在设置中�
     await settleLayout()
     await wrapper.findAll('.primary-navigation a').find(a => a.text() === '客厅')!.trigger('click'); await settleLayout()
     expect(router.currentRoute.value.path).toBe('/library/playback-history')
+    expect(wrapper.findAll('.section-navigation a').map(a => a.text())).toEqual(['播放与热门', '客户端下载'])
     expect(wrapper.get('.section-navigation a').attributes('aria-current')).toBe('page')
     await wrapper.get('.settings-link').trigger('click'); await settleLayout()
     expect(router.currentRoute.value.path).toBe('/system/music-platforms')
@@ -163,6 +164,16 @@ it('电视授权页和入口已移除，客厅入口直接进入播放与热门'
     expect(wrapper.text()).toContain('页面不存在')
     expect(wrapper.findAll('a').some(link => link.attributes('href')?.includes('/system/tv-devices'))).toBe(false)
     expect(vi.mocked(fetch).mock.calls.some(([path]) => String(path).includes('/device-authorizations') || String(path).includes('/tv-devices'))).toBe(false)
+  } finally { wrapper.unmount() }
+})
+
+it('旧电视首页设置地址进入页面不存在，且不请求设置接口', async () => {
+  await router.push('/system/tv-settings')
+  const wrapper = mount(App, { global: { plugins: [router] } })
+  try {
+    await settleLayout()
+    expect(wrapper.get('h1').text()).toBe('页面不存在')
+    expect(vi.mocked(fetch).mock.calls.some(([path]) => String(path).includes('/tv-settings'))).toBe(false)
   } finally { wrapper.unmount() }
 })
 

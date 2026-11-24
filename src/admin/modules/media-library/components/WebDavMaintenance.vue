@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElAlert, ElButton, ElInput, ElMessage, ElMessageBox } from 'element-plus'
 import { authRequest } from '../../../core/auth/api'
 import { useVisiblePolling } from '../../../shared/composables/use-visible-polling'
@@ -13,10 +13,10 @@ const props = defineProps<{
   scanDisabled?: boolean; cancelling?: boolean; profileName?: string; profileLoading?: boolean
 }>()
 const emit = defineEmits<{
-  close: []; scan: []; cancelScan: []; edit: []; remove: []; recognition: []
+  scan: []; cancelScan: []; edit: []; remove: []; recognition: []
   configured: [value: EmbeddedSummary]; updated: [jobId?: string]
 }>()
-const heading = ref<HTMLElement>(), busy = ref(false), error = ref('')
+const busy = ref(false), error = ref('')
 const accessGroup = ref(''), origins = ref('')
 const sampleId = ref(''), sampleName = ref(''), sample = ref<EmbeddedDetail>()
 const diagnosis = ref<{ directoryMessage: string; mediaMessage: string }>()
@@ -26,7 +26,6 @@ const extractionDisabled = computed(() => props.importing || !props.summary || b
 watch(() => !!props.summary, ready => {
   if (ready) { accessGroup.value = props.summary!.accessGroup; origins.value = (props.summary!.privateOrigins ?? []).join('\n') }
 }, { immediate: true })
-onMounted(() => heading.value?.focus({ preventScroll: true }))
 
 async function perform(action: () => Promise<void>) {
   if (busy.value) return
@@ -76,11 +75,10 @@ async function confirmEmpty() {
 }
 </script>
 <template>
-  <section class="maintenance" :aria-labelledby="'maintenance-' + source.id">
-    <div class="section-heading"><h3 ref="heading" :id="'maintenance-' + source.id" tabindex="-1">维护与设置</h3><ElButton text @click="emit('close')">收起设置</ElButton></div>
+  <div class="maintenance">
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />
     <div class="embedded-action">
-      <h4>完善歌曲信息</h4>
+      <h3>完善歌曲信息</h3>
       <div class="controls">
         <ElButton :disabled="extractionDisabled" @click="save(true)">{{ summary?.paused ? '继续自动提取' : summary?.enabled ? '暂停自动提取' : '开始自动提取' }}</ElButton>
         <ElButton :disabled="extractionDisabled || !!summary?.paused" @click="trial">试提取一首</ElButton>
@@ -100,7 +98,7 @@ async function confirmEmpty() {
     <div class="controls">
       <ElButton :disabled="scanDisabled || importing || activeScan || busy" @click="emit('scan')">重新扫描歌曲</ElButton>
       <ElButton :disabled="busy" @click="diagnose">诊断目录与分段读取</ElButton>
-      <ElButton :disabled="profileLoading" @click="emit('recognition')">文件名识别<span v-if="profileName"> · {{ profileName }}</span></ElButton>
+      <ElButton :disabled="profileLoading" @click="emit('recognition')">文件名识别<template v-if="profileName"> · {{ profileName }}</template></ElButton>
     </div>
     <p v-if="diagnosis" role="status">目录：{{ diagnosis.directoryMessage }}<br>媒体：{{ diagnosis.mediaMessage }}</p>
     <p>{{ source.scanEnabled ? '自动扫描已开启' : '自动扫描未开启' }}<template v-if="source.nextScanAt"> · 下次 {{ new Date(source.nextScanAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) }}</template></p>
@@ -124,20 +122,18 @@ async function confirmEmpty() {
       <ElButton v-if="summary?.canConfirmEmpty" type="danger" plain :disabled="busy || importing" @click="confirmEmpty">确认空库同步</ElButton>
       <ElButton type="danger" text @click="emit('remove')">移除</ElButton>
     </div>
-  </section>
+  </div>
 </template>
 <style scoped>
-.maintenance { min-width:0; border-top:1px solid var(--sv-border-subtle); margin-top:16px; padding-top:10px; }
-.section-heading,.controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-.section-heading { justify-content:space-between; }
-h3,h4 { margin:0; color:var(--sv-text-primary); }
-h3 { font-size:17px; } h3:focus { outline:none; } h4 { margin:10px 0; font-size:15px; }
-p,label,summary { font-size:14px; line-height:1.65; }
+.controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.embedded-action + .controls { margin-top:12px; }
+h3 { margin:0 0 10px; font-size:15px; color:var(--sv-text-primary); }
+p,label { font-size:14px; line-height:1.65; }
 p { color:var(--sv-text-secondary); margin:8px 0; overflow-wrap:anywhere; }
-.controls .el-button { margin:0; }
+.controls .el-button { max-width:100%; min-height:44px; height:auto; margin:0; white-space:normal; line-height:1.5; }
 .sample-result { margin:10px 0; } .sample-result img { width:72px; height:72px; object-fit:cover; }
 .sample-result pre { white-space:pre-wrap; }
-summary { cursor:pointer; padding:10px 0; } label { display:block; margin:10px 0; }
+.maintenance :deep(summary) { min-height:44px; padding:10px 0; font-size:14px; line-height:1.65; cursor:pointer; }
+label { display:block; margin:10px 0; }
 .source-settings { margin-top:12px; }
-@media(max-width:768px){ .controls .el-button,summary { min-height:44px; } }
 </style>

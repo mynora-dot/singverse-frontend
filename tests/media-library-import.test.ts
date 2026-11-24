@@ -147,7 +147,7 @@ it('相同根地址更换账号后切换到新核验任务，不再显示旧完�
   wrapper.unmount()
   vi.mocked(shareImports.get).mockImplementation(async (_source, id) => ({ ...job(id === 'new-verification' ? 'VERIFYING' : 'SUCCEEDED'), id }))
   vi.mocked(authRequest).mockImplementation(async path => path.endsWith('/rebind') ? { id: 'new-verification' } as never : {} as never)
-  wrapper = mount(WebDavSourceRow, { attachTo: document.body, props: { source, importJobId: 'old-completed', summary }, global: { stubs: dropdownStubs } })
+  wrapper = mount(WebDavSourceRow, { attachTo: document.body, props: { source, importJobId: 'old-completed', summary }, global: { stubs: { teleport: true, ...dropdownStubs } } })
   await flushPromises()
   await wrapper.get('.record-menu button').trigger('click')
   await wrapper.findAll('[role="menuitem"]').find(item => item.text() === '维护与设置')!.trigger('click'); await flushPromises()

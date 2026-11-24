@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import LocalSourceCard from '../src/admin/modules/media-library/components/LocalSourceCard.vue'
 import WebDavSourceRow from '../src/admin/modules/media-library/components/WebDavSourceRow.vue'
@@ -27,7 +27,10 @@ function renderLocal(props: Partial<InstanceType<typeof LocalSourceCard>['$props
   wrapper = mount(LocalSourceCard, { props: { source: local, profileName: '默认解析方案', ...props }, attachTo: document.body })
 }
 function renderRow(props: Partial<InstanceType<typeof WebDavSourceRow>['$props']> = {}) {
-  wrapper = mount(WebDavSourceRow, { props: { source, ...props }, attachTo: document.body })
+  wrapper = mount(WebDavSourceRow, { props: { source, ...props }, attachTo: document.body, global: { stubs: { transition: false } } })
+}
+function maintenanceDialog() {
+  return new DOMWrapper(document.body).get('[role="dialog"]')
 }
 afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; vi.clearAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
@@ -58,12 +61,17 @@ it('WebDAV 扫描平时仅占一行，查看后可取消，正常结束后收起
   const status = wrapper.get('[role="status"]')
   expect(status.text()).toContain('正在扫描目录')
   expect(wrapper.find('.scan-progress').exists()).toBe(false)
-  await status.get('button').trigger('click')
-  await wrapper.get('.scan-progress button').trigger('click')
+  const inspect = status.get('button')
+  expect(inspect.attributes('aria-haspopup')).toBe('dialog')
+  await inspect.trigger('click')
+  await maintenanceDialog().get('.scan-progress button').trigger('click')
   expect(wrapper.emitted('cancelScan')).toHaveLength(1)
   await wrapper.setProps({ task: task('SUCCEEDED') })
   expect(wrapper.find('.status-line').exists()).toBe(false)
-  expect(wrapper.get('.scan-progress').text()).toContain('1 首文件名识别不完整')
+  const settings = maintenanceDialog()
+  expect(settings.get('.scan-progress').text()).toContain('1 首文件名识别不完整')
+  await settings.trigger('keydown', { key: 'Escape' })
+  await vi.waitFor(() => expect(document.activeElement).toBe(wrapper.get('.more-button').element))
 })
 
 it('状态读取出错时仍能查看最近扫描错误，重复的原因只显示一次', async () => {
@@ -72,10 +80,13 @@ it('状态读取出错时仍能查看最近扫描错误，重复的原因只显�
   await flushPromises()
   expect(wrapper.get('.status-line').text()).toContain('网络断开')
   await wrapper.get('.status-line button').trigger('click')
-  expect(wrapper.get('.maintenance').text().split('目录读取失败，旧索引已保留')).toHaveLength(2)
+  const settings = maintenanceDialog()
+  expect(settings.get('.maintenance').text().split('目录读取失败，旧索引已保留')).toHaveLength(2)
+  await settings.trigger('keydown', { key: 'Escape' })
+  await vi.waitFor(() => expect(document.activeElement).toBe(wrapper.get('.status-line button').element))
 })
 
-it('来源行只显示一次中文目录与去重歌曲数，更多菜单可打开和收起对应维护操作', async () => {
+it('来源行只显示一次中文目录与去重歌曲数，更多菜单可打开对应维护弹窗', async () => {
   renderRow({ summary: { ...summary, quality: { ...summary.quality!, informationMissing: 0 } } })
   await flushPromises()
   expect(wrapper.get('[aria-label="媒体目录"]').text()).toBe('https://nas.example.invalid/歌曲/')
@@ -94,9 +105,14 @@ it('来源行只显示一次中文目录与去重歌曲数，更多菜单可打�
   expect(items.map(item => item.textContent?.trim())).toEqual(['导出资料包', '维护与设置'])
   items[1]!.click()
   await flushPromises()
-  const settings = wrapper.get('section[aria-labelledby="maintenance-remote"]')
-  expect(document.activeElement).toBe(settings.get('h3').element)
-  await settings.findAll('button').find(item => item.text() === '收起设置')!.trigger('click')
+  const settings = maintenanceDialog()
+  expect(settings.element.closest('article')).toBeNull()
+  expect(settings.attributes('aria-modal')).toBe('true')
+  expect(settings.get(`#${settings.attributes('aria-labelledby')}`).text()).toBe('维护与设置')
+  expect(settings.get('.maintenance-source').text()).toBe(source.name)
+  expect(settings.element.contains(document.activeElement)).toBe(true)
+  await settings.get('.el-dialog__headerbtn').trigger('click')
+  await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"]')).toBeNull())
   expect(more.element).toBe(document.activeElement)
 })
 
@@ -105,7 +121,7 @@ it('后台入库期间显示当前阶段，并阻止重复扫描', async () => {
   await flushPromises()
   expect(wrapper.get('.status-line').text()).toContain('正在后台入库')
   await wrapper.get('.status-line button').trigger('click')
-  const scan = wrapper.findAll('button').find(item => item.text() === '重新扫描歌曲')!
+  const scan = maintenanceDialog().findAll('button').find(item => item.text() === '重新扫描歌曲')!
   expect(scan.element.disabled).toBe(true)
   await scan.trigger('click')
   expect(wrapper.emitted('scan')).toBeUndefined()

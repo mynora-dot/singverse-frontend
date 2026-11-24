@@ -135,7 +135,6 @@ function songLink(id: string) {
         <h2 id="family-title">客厅点歌</h2>
         <div class="family-actions">
           <a class="party-link" href="/party/" target="_blank" rel="noopener">打开亲友点歌<ElIcon aria-hidden="true"><TopRight /></ElIcon></a>
-          <RouterLink class="family-settings" to="/system/tv-settings">客厅设置</RouterLink>
         </div>
       </section>
     </div>
@@ -320,8 +319,6 @@ function songLink(id: string) {
 .family-actions a { display: inline-flex; align-items: center; min-height: 44px; gap: 8px; font-size: 14px; }
 .party-link { padding: 0 14px; border-radius: var(--sv-radius-md); background: white; color: #142958; font-weight: 600; }
 .party-link:hover { background: #e4eeff; color: #142958; }
-.family-settings, .family-settings:hover { color: white; }
-.family-settings:hover { text-decoration: underline; }
 
 .overview-shortcuts { margin: 24px 0; }
 .overview-shortcuts h2 { margin-bottom: 12px; font-size: 18px; font-weight: 600; }

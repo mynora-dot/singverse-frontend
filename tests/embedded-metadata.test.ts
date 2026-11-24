@@ -23,7 +23,7 @@ const summary: EmbeddedSummary = { enabled: false, paused: false, accessGroup: '
 let wrapper: ReturnType<typeof mount>
 let rowSummary: EmbeddedSummary
 function renderRow(item = source) {
-  wrapper = mount(WebDavSourceRow, { props: { source: item, summary: rowSummary, onConfigured: value => { void wrapper.setProps({ summary: value }) } }, global: { stubs: dropdownStubs } })
+  wrapper = mount(WebDavSourceRow, { props: { source: item, summary: rowSummary, onConfigured: value => { void wrapper.setProps({ summary: value }) } }, global: { stubs: { teleport: true, ...dropdownStubs } } })
 }
 const menuItem = (label: string) => wrapper.findAll('[role="menuitem"]').find(item => item.text() === label)
 const button = (label: string) => wrapper.findAllComponents(ElButton).find(item => item.text() === label)!
@@ -53,7 +53,7 @@ it('维护设置直接开启和暂停提取，独立于未保存的访问组更�
   expect(button('试提取一首')).toBeUndefined()
   await openAdvanced()
   await wrapper.get('input[maxlength="64"]').setValue('草稿组')
-  expect(wrapper.get('.embedded-action h4').text()).toBe('完善歌曲信息')
+  expect(wrapper.get('.embedded-action h3').text()).toBe('完善歌曲信息')
   expect(wrapper.get('.embedded-action').element.closest('details')).toBeNull()
   await wrapper.findAllComponents(ElButton).find(button => button.text() === '开始自动提取')!.trigger('click')
   await flushPromises()
@@ -189,7 +189,7 @@ it('首页显示歌曲数、中文路径和当前来源的异常数，导出在�
       exporting = true
       return { id: 'out', state: 'QUEUED' } as never
     }
-    if (exporting && path.endsWith('/share-jobs/latest')) return { id: 'out', state: 'SUCCEEDED', part_count: 1 } as never
+    if (exporting && path.endsWith('/share-jobs/latest')) return { id: 'out', state: 'SUCCEEDED' } as never
     return {} as never
   })
   renderRow({ ...source, location: 'http://nas/%E5%A8%B1%E4%B9%90%E6%9C%BA%E6%A2%B01/ktv/test2/' })
@@ -200,6 +200,7 @@ it('首页显示歌曲数、中文路径和当前来源的异常数，导出在�
   expect(button('导出资料包')).toBeUndefined()
   await wrapper.get('.record-menu button').trigger('click'); await menuItem('导出资料包')!.trigger('click'); await flushPromises()
   expect(authRequest).toHaveBeenCalledWith('/api/v1/media-sources/source/embedded-metadata/share-jobs', 'POST', expect.anything())
+  expect(wrapper.findAll('a[download]')).toHaveLength(1)
   expect(wrapper.get('a[download]').text()).toBe('下载资料包')
   expect(wrapper.get('a[download]').attributes('href')).toBe('/api/v1/media-sources/source/embedded-metadata/share-jobs/out/download')
 })

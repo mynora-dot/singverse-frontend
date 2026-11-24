@@ -117,7 +117,6 @@
 .sv-home-entries [data-tone='amber'] { --entry-accent: #98621f; }
 .sv-home-entries [data-tone='green'] { --entry-accent: #527342; }
 .sv-home-entries [data-tone='purple'] { --entry-accent: #8259aa; }
-.sv-home-entries [data-tone='teal'] { --entry-accent: #3a7782; }
 .sv-home-entries [data-tone='slate'] { --entry-accent: #626c7c; }
 .sv-home-entry-icon {
   display: grid;

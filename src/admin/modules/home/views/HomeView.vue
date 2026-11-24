@@ -2,7 +2,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElDialog } from 'element-plus'
-import { ArrowRight, Close, Collection, Download, FolderOpened, Headset, MagicStick, Microphone, Monitor, Right, Setting } from '@element-plus/icons-vue'
+import { ArrowRight, Close, Collection, Download, FolderOpened, Headset, MagicStick, Microphone, Right, Setting } from '@element-plus/icons-vue'
 import LoginView from '../../auth/views/LoginView.vue'
 import ThemeSwitcher from '../../../shared/ui/ThemeSwitcher.vue'
 import '../home.css'
@@ -17,7 +17,6 @@ const entries = [
   { title: '歌曲来源', description: '连接本地目录和 WebDAV 曲库', path: '/library/media', icon: FolderOpened, tone: 'amber' },
   { title: '歌单', description: '创建歌单，编排歌曲顺序', path: '/library/playlists', icon: Collection, tone: 'green' },
   { title: '歌曲信息', description: '整理歌名、歌手与专辑封面', path: '/library/songs/metadata', icon: MagicStick, tone: 'purple' },
-  { title: '电视首页', description: '更换客厅电视的首页轮播图', path: '/system/tv-settings', icon: Monitor, tone: 'teal' },
   { title: '设置', description: '配置音乐平台和歌曲信息来源', path: '/system/music-platforms', icon: Setting, tone: 'slate' },
 ]
 
@@ -66,7 +65,7 @@ function jumpTo(section?: HTMLElement) {
       <div class="sv-home-hero">
         <div class="sv-home-heading">
           <h1>管理中心</h1>
-          <p>整理家庭曲库，设置客厅电视。</p>
+          <p>整理家庭曲库，查看播放记录。</p>
           <button class="sv-home-primary" type="button" @click="openLogin()">管理员登录 <Right aria-hidden="true" /></button>
         </div>
       </div>

@@ -33,11 +33,11 @@ const taskIds = computed(() => {
   return [...ids]
 })
 const states: Record<string, string> = { RUNNING: '正在执行', WAITING: '等待确认', COMPLETED: '已完成', FAILED: '执行失败', STOPPED: '已停止', INTERRUPTED: '服务重启后已中断' }
-const groups = [{ title: '歌曲', page: '/library/songs' }, { title: '下载歌曲', page: '/library/downloads' }, { title: '原唱与伴奏', page: '/library/audio-processing' }, { title: '电视首页', page: '/system/tv-settings' }, { title: '模型服务', page: '/system/ai/models' }, { title: '后台任务', page: '/system/tasks' }]
+const groups = [{ title: '歌曲', page: '/library/songs' }, { title: '下载歌曲', page: '/library/downloads' }, { title: '原唱与伴奏', page: '/library/audio-processing' }, { title: '模型服务', page: '/system/ai/models' }, { title: '后台任务', page: '/system/tasks' }]
 async function openConversation(id: string) { historyOpen.value = false; await selectConversation(id) }
 async function remove(id: string) { try { await ElMessageBox.confirm('将删除这个会话的消息、运行记录和确认记录。已创建的歌单和业务任务会保留。', '删除会话', { confirmButtonText: '删除会话', cancelButtonText: '保留', type: 'warning' }); await deleteConversation(id) } catch { /* User kept the history. */ } }
 function time(value: string) { return new Date(value).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
-function safePage(value: unknown) { return typeof value === 'string' && /^\/(library|system)(\/|$)/.test(value) ? value : '' }
+function safePage(value: unknown) { return typeof value === 'string' && value !== '/system/assistant' && /^\/(library|system)(\/|$)/.test(value) ? value : '' }
 </script>
 <template>
   <section class="assistant-workbench">

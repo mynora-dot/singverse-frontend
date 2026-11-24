@@ -23,8 +23,9 @@ it('管理快捷入口登录后保留各自目的地，关闭后可以重新选�
   try {
     expect(wrapper.get('h1').text()).toBe('管理中心')
     expect(wrapper.findAll('.sv-home-nav a').map(link => link.attributes('href'))).toEqual(['/party/', '/downloads/'])
-    const destinations = ['/library/songs', '/library/media', '/library/playlists', '/library/songs/metadata', '/system/tv-settings', '/system/music-platforms']
+    const destinations = ['/library/songs', '/library/media', '/library/playlists', '/library/songs/metadata', '/system/music-platforms']
     const entries = wrapper.findAll('.sv-home-entries button')
+    expect(entries).toHaveLength(destinations.length)
     for (const [index, entry] of entries.entries()) {
       await entry.trigger('click'); await flushPromises()
       expect(wrapper.get('.login-target').text()).toBe(destinations[index])

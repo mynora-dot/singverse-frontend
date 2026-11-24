@@ -1,4 +1,5 @@
-name: singverse-frontend
+name: SingVerse 前端静态包发布
+run-name: 发布前端静态包 ${{ github.event.release.tag_name }}
 on:
   release:
     types: [published]
@@ -11,24 +12,27 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
+    name: 构建并上传前端静态包
     if: ${{ !github.event.release.prerelease && !github.event.release.draft }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - name: Set version from Release tag
+      - name: 检出 Release 对应的源码
+        uses: actions/checkout@v4
+      - name: 从发布标签读取版本号
         run: python3 scripts/build_version.py --github-env
-      - uses: actions/setup-node@v4
+      - name: 配置 Node.js 与 npm 缓存
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - name: Build frontend
+      - name: 安装依赖并构建前端页面
         run: |
           npm ci --no-audit --no-fund
           npm exec -- vite build
-      - name: Package release
+      - name: 打包管理后台、亲友 H5 和下载页
         run: python3 scripts/package-release.py
-      - name: Upload release assets
+      - name: 将静态包和校验文件上传至 Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/upload-release.py

@@ -7,7 +7,6 @@ interface ShareJob {
   state: string
   total_count: number
   processed_count: number
-  part_count: number
 }
 
 export function useSourceShare(sourceId: string, loadJobs = () => true) {
@@ -16,7 +15,7 @@ export function useSourceShare(sourceId: string, loadJobs = () => true) {
   const busy = ref(false), error = ref(''), readError = ref(false)
   const active = computed(() => ['WAITING', 'QUEUED', 'RUNNING'].includes(job.value?.state ?? ''))
   const progress = computed(() => Math.min(99, Math.round((job.value?.processed_count ?? 0) * 100 / Math.max(1, job.value?.total_count ?? 0))))
-  const download = computed(() => job.value?.state === 'SUCCEEDED' && job.value.part_count ? base + '/' + encodeURIComponent(job.value.id) + '/download' : '')
+  const download = computed(() => job.value?.state === 'SUCCEEDED' ? base + '/' + encodeURIComponent(job.value.id) + '/download' : '')
   let revision = 0, readVersion = 0
   onBeforeUnmount(() => { revision++ })
 
@@ -57,5 +56,5 @@ export function useSourceShare(sourceId: string, loadJobs = () => true) {
       if (token === revision) { busy.value = false; polling.schedule() }
     }
   }
-  return { base, job, busy, error, active, progress, download, start }
+  return { job, busy, error, active, progress, download, start }
 }

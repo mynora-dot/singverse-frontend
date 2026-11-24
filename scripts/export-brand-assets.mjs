@@ -199,6 +199,10 @@ for (const [name, directory] of [['tv', values['tv-res']], ['mobile', values['mo
   if (name === 'tv') {
     await write(path.join(resources, 'drawable-anydpi-v24/tv_banner.xml'), nativeBanner)
     await raster(banner, 320, 180, path.join(resources, 'drawable-xhdpi/tv_banner.png'))
+    // Pre-render antialiasing at Orange Pi's native tile size, 142 × 84.
+    const tvLauncherTile = svg(142, 84, `  <rect width="142" height="84" rx="3" fill="#FFFFFF"/>
+  <g transform="translate(33 3) scale(0.06)">${markPaths}</g>`)
+    await raster(tvLauncherTile, 142, 84, path.join(resources, 'mipmap-nodpi/tv_application_icon.png'))
   }
   console.log(`Updated ${name} resources: ${resources}`)
 }

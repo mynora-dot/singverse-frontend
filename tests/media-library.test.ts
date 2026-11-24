@@ -104,7 +104,7 @@ it('WebDAV 地址在卡片中显示解码后的中文，编辑时保留原地址
   await flushPromises()
   expect(wrapper.find('.source-wizard-steps').exists()).toBe(false)
   expect(button('下一步')).toBeUndefined()
-  expect((wrapper.findComponent(ElDialog).get('input[placeholder="https://nas.example/dav/歌曲目录/"]').element as HTMLInputElement).value).toBe(location)
+  expect(wrapper.get('.media-dialog input[placeholder="https://nas.example/dav/歌曲目录/"]').element).toHaveProperty('value', location)
 })
 it('来源保存后立即回显服务器确认的名称，列表重读失败仍保留', async () => {
   const source = { id: 'source-1', name: '原来源', type: 'WEBDAV' as const, location: 'https://nas.example.invalid/dav/', username: '', parserProfileId: 'default', passwordConfigured: false, createdAt: '', updatedAt: '' }

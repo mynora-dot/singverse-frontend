@@ -22,7 +22,6 @@ export const navigationGroups = [
   ] },
   { id: 'living', label: '客厅', path: '/library/playback-history', icon: Monitor, children: [
     { path: '/library/playback-history', label: '播放与热门', icon: Clock },
-    { path: '/system/tv-settings', label: '电视首页', icon: Monitor },
     { path: '/system/client-downloads', label: '客户端下载', icon: Download },
   ] },
   { id: 'settings', label: '设置', path: '/system/music-platforms', icon: Setting, children: [

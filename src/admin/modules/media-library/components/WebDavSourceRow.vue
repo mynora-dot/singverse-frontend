@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { ElButton, ElDropdown, ElDropdownItem, ElDropdownMenu, ElIcon, ElProgress } from 'element-plus'
+import { ElButton, ElDialog, ElDropdown, ElDropdownItem, ElDropdownMenu, ElIcon, ElProgress } from 'element-plus'
 import { ArrowRight, Download, FolderOpened, MoreFilled, Setting, Upload } from '@element-plus/icons-vue'
 import type { EmbeddedSummary } from '../api/embeddedMetadata'
 import type { MediaSource, ScanTask } from '../types'
@@ -29,8 +29,10 @@ onMounted(() => {
   observer.observe(row.value)
 })
 onBeforeUnmount(() => observer?.disconnect())
-const { base, job, busy, error, active, progress, download, start } = useSourceShare(props.source.id, () => loadJobs.value)
-const advanced = ref(false), importing = ref(false), rebound = ref<string>(), moreButton = ref<InstanceType<typeof ElButton>>()
+const { job, busy, error, active, progress, download, start } = useSourceShare(props.source.id, () => loadJobs.value)
+const maintenanceOpen = ref(false), maintenanceMounted = ref(false)
+const importing = ref(false), rebound = ref<string>(), moreButton = ref<InstanceType<typeof ElButton>>()
+let maintenanceTrigger: HTMLElement | undefined
 const count = computed(() => props.summary?.quality?.songs)
 const directory = computed(() => {
   const display = displayWebDavLocation(props.source.location)
@@ -54,19 +56,30 @@ const activity = computed(() => {
   if (props.summary?.enabled && !props.summary.paused && (props.summary.counts.RUNNING || props.summary.counts.QUEUED)) return '正在完善歌曲信息'
   return props.summary?.files?.pending ? '正在生成曲库文件' : ''
 })
-watch(() => props.importJobId, () => { rebound.value = undefined; advanced.value = false })
+watch(() => props.importJobId, () => { rebound.value = undefined; maintenanceOpen.value = false })
 function reloaded(id?: string) {
-  if (id) { rebound.value = id; advanced.value = false }
+  if (id) { rebound.value = id; maintenanceOpen.value = false }
   emit('updated', id)
 }
-function closeSettings() {
-  advanced.value = false
-  void nextTick(() => moreButton.value?.$el.focus())
+function openMaintenance(event?: MouseEvent) {
+  const trigger = event?.currentTarget
+  maintenanceTrigger = trigger instanceof HTMLElement ? trigger : moreButton.value?.ref
+  maintenanceMounted.value = true
+  maintenanceOpen.value = true
+}
+function maintenanceClosed() {
+  const trigger = maintenanceTrigger
+  maintenanceTrigger = undefined
+  maintenanceMounted.value = false
+  void nextTick(() => {
+    const target = trigger?.isConnected ? trigger : moreButton.value?.ref
+    target?.focus({ preventScroll: true })
+  })
 }
 </script>
 <template>
-  <article ref="row" :id="'webdav-source-' + source.id" class="webdav-source" :aria-labelledby="'webdav-name-' + source.id" tabindex="-1" @focusin.once="seen = true">
-    <ShareImportPanel :key="source.location" :source="source" :summary="summary" :activity="activity" :load-jobs="loadJobs" :job-id="rebound || importJobId" @active="importing = $event" @updated="emit('updated')" @songs="emit('songs')" @maintenance="advanced = true">
+  <article ref="row" :id="'webdav-source-' + source.id" class="webdav-source" :aria-labelledby="'webdav-name-' + source.id" :inert="maintenanceMounted" tabindex="-1" @focusin.once="seen = true">
+    <ShareImportPanel :key="source.location" :source="source" :summary="summary" :activity="activity" :load-jobs="loadJobs" :job-id="rebound || importJobId" @active="importing = $event" @updated="emit('updated')" @songs="emit('songs')" @maintenance="openMaintenance">
       <template #toolbar="{ choose, selected, disabled }">
         <div class="record">
           <ElIcon class="folder" aria-hidden="true"><FolderOpened /></ElIcon>
@@ -82,7 +95,7 @@ function closeSettings() {
             <ElButton ref="moreButton" class="more-button" text :icon="MoreFilled" :aria-label="source.name + '的更多操作'" title="更多" />
             <template #dropdown><ElDropdownMenu>
               <ElDropdownItem :icon="Download" :disabled="count === 0 || active || busy" @click="start()">{{ job?.state === 'FAILED' ? '重试导出资料包' : '导出资料包' }}</ElDropdownItem>
-              <ElDropdownItem :icon="Setting" @click="advanced = true">维护与设置</ElDropdownItem>
+              <ElDropdownItem :icon="Setting" aria-haspopup="dialog" @click="openMaintenance()">维护与设置</ElDropdownItem>
             </ElDropdownMenu></template>
           </ElDropdown>
         </div>
@@ -92,15 +105,20 @@ function closeSettings() {
     <a v-else-if="download" class="download" :href="download" download="singverse-share-set.zip"><ElIcon aria-hidden="true"><Download /></ElIcon>下载资料包</a>
     <p v-else-if="job?.state === 'FAILED'" class="export-status" role="status">资料包导出失败 <ElButton link type="primary" :disabled="busy" @click="start()">重试导出</ElButton></p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <WebDavMaintenance v-if="advanced" :key="source.location" :source="source" :summary="summary" :task="task" :importing="importing || !!summary?.importProcessing" :scan-disabled="scanDisabled || ingestActive" :cancelling="cancelling" :profile-name="profileName" :profile-loading="profileLoading"
-      @close="closeSettings" @scan="emit('scan')" @cancel-scan="emit('cancelScan')" @edit="emit('edit')" @remove="emit('remove')" @recognition="emit('recognition')" @configured="value => emit('configured', value)" @updated="reloaded">
-      <p v-if="scanErrors">{{ scanErrors }}</p>
-      <details v-if="job?.state === 'SUCCEEDED'"><summary>导出选项</summary>
-        <ElButton :disabled="busy || active" @click="start(true)">仅分享新增和变化</ElButton>
-        <span v-if="!job.part_count">暂无新增资料</span>
-        <div v-else class="share-parts"><a v-for="part in job.part_count" :key="part" :href="base + '/' + job.id + '/parts/' + part" :download="'part-' + String(part).padStart(6, '0') + '.zip'">分包 {{ part }}</a></div>
-      </details>
-    </WebDavMaintenance>
+    <ElDialog v-if="maintenanceMounted" v-model="maintenanceOpen" class="webdav-maintenance-dialog" width="680px"
+      append-to-body align-center :close-on-click-modal="false" @closed="maintenanceClosed">
+      <template #header="{ titleId, titleClass }">
+        <h2 :id="titleId" :class="titleClass">维护与设置</h2>
+        <p class="maintenance-source">{{ source.name }}</p>
+      </template>
+      <WebDavMaintenance :key="source.location" :source="source" :summary="summary" :task="task" :importing="importing || !!summary?.importProcessing" :scan-disabled="scanDisabled || ingestActive" :cancelling="cancelling" :profile-name="profileName" :profile-loading="profileLoading"
+        @scan="emit('scan')" @cancel-scan="emit('cancelScan')" @edit="emit('edit')" @remove="emit('remove')" @recognition="emit('recognition')" @configured="value => emit('configured', value)" @updated="reloaded">
+        <p v-if="scanErrors">{{ scanErrors }}</p>
+        <details v-if="job?.state === 'SUCCEEDED'"><summary>导出选项</summary>
+          <ElButton :disabled="busy || active" @click="start(true)">仅分享新增和变化</ElButton>
+        </details>
+      </WebDavMaintenance>
+    </ElDialog>
   </article>
 </template>
 <style scoped>
@@ -108,7 +126,7 @@ function closeSettings() {
 .webdav-source:focus-visible { outline:2px solid var(--sv-accent-primary); outline-offset:2px; }
 .record { display:grid; grid-template-columns:44px minmax(0,1fr) auto 44px; grid-template-areas:"folder name actions more" "folder location actions more"; align-items:center; gap:3px 16px; }
 .folder { grid-area:folder; width:44px; height:44px; font-size:44px; color:var(--sv-accent-primary); }
-h2 { grid-area:name; margin:0; font-size:20px; line-height:1.4; overflow-wrap:anywhere; }
+.record h2 { grid-area:name; margin:0; font-size:20px; line-height:1.4; overflow-wrap:anywhere; }
 .source-location { grid-area:location; margin:0; font-size:14px; line-height:1.65; color:var(--sv-text-secondary); overflow-wrap:anywhere; }
 .path-segment { color:var(--sv-text-primary); display:inline-block; max-width:100%; vertical-align:bottom; }
 .source-actions { grid-area:actions; display:flex; align-items:center; gap:12px; }
@@ -118,11 +136,14 @@ h2 { grid-area:name; margin:0; font-size:20px; line-height:1.4; overflow-wrap:an
 .song-count { font-weight:400; font-variant-numeric:tabular-nums; color:var(--sv-text-secondary); }
 .record-menu { grid-area:more; }
 .more-button { width:44px; min-height:44px; padding:0; }
-.export-status,.download,.share-parts { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:12px 0 0; font-size:14px; }
+.export-status,.download { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:12px 0 0; font-size:14px; }
 .export-status .el-progress { width:min(160px,100%); }
 .download { width:fit-content; min-height:40px; }
 a { color:var(--sv-accent-primary); } .error { color:var(--sv-semantic-danger); overflow-wrap:anywhere; }
-summary { cursor:pointer; padding:10px 0; }
+.maintenance-source { margin-top:4px; font-size:14px; color:var(--sv-text-secondary); overflow-wrap:anywhere; }
+:global(.webdav-maintenance-dialog.el-dialog) { display:flex; flex-direction:column; max-height:calc(100dvh - 32px); }
+:global(.webdav-maintenance-dialog > .el-dialog__header) { flex-shrink:0; padding-right:64px; }
+:global(.webdav-maintenance-dialog > .el-dialog__body) { min-height:0; overflow-y:auto; overscroll-behavior:contain; }
 @media(max-width:900px) {
  .record { grid-template-columns:40px minmax(0,1fr) 44px; grid-template-areas:"folder name more" "folder location more" "actions actions actions"; }
  .source-actions { padding-top:10px; margin-top:10px; border-top:1px solid var(--sv-border-subtle); justify-content:space-between; }
@@ -130,7 +151,7 @@ summary { cursor:pointer; padding:10px 0; }
 @media(max-width:560px) {
  .webdav-source { padding:12px 15px; }
  .record { grid-template-columns:28px minmax(0,1fr) 44px; grid-template-areas:"folder name more" "location location location" "actions actions actions"; column-gap:9px; }
- .folder { width:28px; height:28px; font-size:28px; } h2 { font-size:18px; }
+ .folder { width:28px; height:28px; font-size:28px; } .record h2 { font-size:18px; }
  .origin { display:block; }
  .source-actions { flex-wrap:wrap; gap:4px; margin-top:6px; }
  .view-songs { padding:0; } .view-songs :deep(> span) { gap:4px; }

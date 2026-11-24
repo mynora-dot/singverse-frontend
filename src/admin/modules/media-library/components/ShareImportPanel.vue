@@ -8,7 +8,7 @@ import { displayWebDavLocation } from '../webdav-location'
 import { acceptedUpload, packageUploads, uploadPackage } from '../package-uploads'
 
 const props = withDefaults(defineProps<{ source: MediaSource; jobId?: string; summary?: EmbeddedSummary; activity?: string; loadJobs?: boolean }>(), { loadJobs: true })
-const emit = defineEmits<{ updated: []; active: [value: boolean]; songs: []; maintenance: [] }>()
+const emit = defineEmits<{ updated: []; active: [value: boolean]; songs: []; maintenance: [event: MouseEvent] }>()
 const job = ref<ShareImportJob>(), error = ref(''), busy = ref(false), detailsOpen = ref(false)
 const selectedFile = ref<File>()
 const picker = ref<HTMLInputElement>(), confirmButton = ref<InstanceType<typeof ElButton>>()
@@ -63,11 +63,11 @@ const statusTarget = computed(() => {
   if (props.summary?.files?.failed || props.activity) return 'maintenance'
   return 'songs'
 })
-function inspect() {
+function inspect(event: MouseEvent) {
   if (statusTarget.value === 'receipt') {
     detailsOpen.value = !detailsOpen.value
     if (detailsOpen.value && jobDifferences.value && !showingDifferences.value) void showDifferences()
-  } else if (statusTarget.value === 'maintenance') emit('maintenance')
+  } else if (statusTarget.value === 'maintenance') emit('maintenance', event)
   else emit('songs')
 }
 function accept(value: ShareImportJob, notify = true) {
@@ -231,7 +231,7 @@ onBeforeUnmount(() => { generation++; clearTimeout(timer); document.removeEventL
       <span>{{ status }}</span>
       <ElButton v-if="uploading" text @click="transfer?.controller?.abort()">取消上传</ElButton>
       <ElButton v-else-if="transfer" link type="primary" @click="uploadPackage(source, transfer.file, transfer.mode)">重试上传资料包</ElButton>
-      <ElButton v-else link type="primary" :aria-expanded="statusTarget === 'receipt' ? detailsOpen : undefined" :aria-controls="statusTarget === 'receipt' && detailsOpen ? 'import-details-' + source.id : undefined" @click="inspect">{{ detailsOpen && statusTarget === 'receipt' ? '收起' : job?.state === 'PREVIEW' ? '核对目录' : '查看' }}</ElButton>
+      <ElButton v-else link type="primary" :aria-expanded="statusTarget === 'receipt' ? detailsOpen : undefined" :aria-controls="statusTarget === 'receipt' && detailsOpen ? 'import-details-' + source.id : undefined" :aria-haspopup="statusTarget === 'maintenance' ? 'dialog' : undefined" @click="inspect">{{ detailsOpen && statusTarget === 'receipt' ? '收起' : job?.state === 'PREVIEW' ? '核对目录' : '查看' }}</ElButton>
     </div>
     <ElButton v-else-if="jobId && job?.id" class="history-toggle" link type="primary" :aria-expanded="detailsOpen" @click="detailsOpen = !detailsOpen">{{ detailsOpen ? '收起详情' : '查看任务详情' }}</ElButton>
     <ElAlert v-if="error" :title="error" type="error" :closable="false" />

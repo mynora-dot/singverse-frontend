@@ -21,7 +21,6 @@ export const router = createRouter({
     { path: '/system/tasks', component: () => import('../../modules/background-tasks/BackgroundTasksView.vue'), meta: { title: '后台任务' } },
     { path: '/system/tasks/:id', component: () => import('../../modules/background-tasks/BackgroundTasksView.vue'), meta: { title: '任务详情', activeMenu: '/system/tasks' } },
     { path: '/library/cache', component: () => import('../../modules/song-cache/SongCacheView.vue'), meta: { title: '存储与缓存' } },
-    { path: '/system/tv-settings', component: () => import('../../modules/tv-settings/TvSettingsView.vue'), meta: { title: '电视设置' } },
     ...mediaLibraryRoutes,
     ...songManagementRoutes,
     ...filenameParserRoutes,
