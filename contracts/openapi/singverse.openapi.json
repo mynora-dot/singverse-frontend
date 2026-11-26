@@ -11353,6 +11353,135 @@
         ]
       }
     },
+    "/api/v1/admin/party/televisions": {
+      "get": {
+        "tags": [
+          "TV and party"
+        ],
+        "summary": "List online televisions with an active party",
+        "operationId": "admin_list_party_televisions",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current, non-revoked television sessions with a heartbeat less than 15 seconds old",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["items"],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["deviceId", "deviceName", "sessionId", "acceptingRequests"],
+                        "properties": {
+                          "deviceId": { "type": "string" },
+                          "deviceName": { "type": "string" },
+                          "sessionId": { "type": "string" },
+                          "acceptingRequests": { "type": "boolean" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Administrator session required"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/party/televisions/{id}/join": {
+      "post": {
+        "tags": [
+          "TV and party"
+        ],
+        "summary": "Join an online television's selected party as a participant",
+        "operationId": "admin_join_party_television",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "X-CSRF-Token",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["sessionId", "name"],
+                "properties": {
+                  "sessionId": { "type": "string", "minLength": 1, "maxLength": 64 },
+                  "name": { "type": "string", "minLength": 1, "maxLength": 30 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ordinary participant bearer for the selected session, valid for twelve hours",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["id", "sessionId", "name", "host", "revoked", "token", "expiresAt", "deviceName"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "sessionId": { "type": "string" },
+                    "name": { "type": "string" },
+                    "host": { "type": "boolean", "const": false },
+                    "revoked": { "type": "boolean", "const": false },
+                    "token": { "type": "string" },
+                    "expiresAt": { "type": "string", "format": "date-time" },
+                    "deviceName": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid session identifier or participant name"
+          },
+          "401": {
+            "description": "Administrator session required"
+          },
+          "403": {
+            "description": "Same-origin or CSRF validation failed"
+          },
+          "404": {
+            "description": "Television was not found"
+          },
+          "409": {
+            "description": "Television went offline or no longer hosts the selected session"
+          },
+          "429": {
+            "description": "Participant limit reached"
+          }
+        }
+      }
+    },
     "/api/v1/party/invitations/preview": {
       "post": {
         "tags": [
@@ -32503,7 +32632,7 @@
           "switchableAudio": {
             "type": "boolean",
             "default": false,
-            "description": "Opt-in for admin browser HLS role switching. When confirmed original and backing source tracks exist, retain alternate audio in one HLS resource. The client selects the role using execution.trackMapping and HLS rendition URIs stream_audioN.m3u8; N is the zero-based audio entry index in trackMapping. Other clients and generated accompaniment keep existing negotiation behavior."
+            "description": "Opt-in for HLS-capable admin browsers and Android TV devices. With distinct, confirmed source tracks for original and backing, the client selects audioRole from the shared playback resource. Android TV can receive DIRECT for compatible media and alternate audio in HLS when conversion is needed. For HLS, execution.trackMapping links source tracks to stream_audioN.m3u8, where N is the zero-based audio entry index. Explicit audio_id selects a single track. Generated accompaniment uses backingUrl."
           }
         }
       },

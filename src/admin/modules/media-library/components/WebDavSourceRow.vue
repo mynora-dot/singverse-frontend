@@ -40,18 +40,27 @@ const directory = computed(() => {
   return { origin, segments: path.match(/[^/]*\/|[^/]+$/g) ?? [] }
 })
 const ingestActive = computed(() => ['QUEUED', 'RUNNING'].includes(props.ingest?.state ?? ''))
+const activeScan = computed(() => ['QUEUED', 'RUNNING'].includes(props.task?.status ?? ''))
 const scanErrors = computed(() => [...new Set([props.ingest?.error, props.task?.error, props.source.lastScanError].filter(Boolean))].join(' · '))
-const activity = computed(() => {
-  if (props.taskError) return '状态读取失败：' + props.taskError + '，正在重试'
+const statusReadError = computed(() => props.taskError ? '状态读取失败：' + props.taskError + '，正在重试' : '')
+const scanOutcomes: Partial<Record<ScanTask['status'], string>> = {
+  SUCCEEDED: '扫描完成', CANCELLED: '扫描已取消', FAILED: '扫描失败', INTERRUPTED: '扫描已中断',
+}
+const scanStatus = computed(() => {
   const task = props.task
-  if (task && ['QUEUED', 'RUNNING'].includes(task.status)) {
+  if (task && activeScan.value) {
     if (task.cancelRequested) return '正在取消扫描'
     if (task.phase === 'COMMITTING') return '正在提交索引'
     return task.status === 'QUEUED' ? '扫描排队中' : '正在扫描目录'
   }
   if (ingestActive.value) return props.ingest?.state === 'QUEUED' ? '等待后台入库' : '正在后台入库'
+  return task ? scanOutcomes[task.status] ?? '' : ''
+})
+const activity = computed(() => {
+  if (statusReadError.value) return statusReadError.value
+  if (activeScan.value || ingestActive.value) return scanStatus.value
   if (scanErrors.value) return scanErrors.value
-  if (task?.status === 'FAILED' || task?.status === 'INTERRUPTED') return task.status === 'FAILED' ? '扫描失败' : '扫描已中断'
+  if (props.task?.status === 'FAILED' || props.task?.status === 'INTERRUPTED') return scanStatus.value
   if (props.summary?.importProcessing) return '正在处理曲库资料'
   if (props.summary?.enabled && !props.summary.paused && (props.summary.counts.RUNNING || props.summary.counts.QUEUED)) return '正在完善歌曲信息'
   return props.summary?.files?.pending ? '正在生成曲库文件' : ''
@@ -101,16 +110,17 @@ function maintenanceClosed() {
     <a v-else-if="download" class="download" :href="download" download="singverse-share-set.zip"><ElIcon aria-hidden="true"><Download /></ElIcon>下载资料包</a>
     <p v-else-if="job?.state === 'FAILED'" class="export-status" role="status">资料包导出失败 <ElButton link type="primary" :disabled="busy" @click="start()">重试导出</ElButton></p>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
-    <ElDialog v-if="maintenanceMounted" v-model="maintenanceOpen" class="webdav-maintenance-dialog" width="680px"
+    <ElDialog v-if="maintenanceMounted" v-model="maintenanceOpen" class="webdav-maintenance-dialog" width="560px"
       append-to-body align-center :close-on-click-modal="false" @closed="maintenanceClosed">
       <template #header="{ titleId, titleClass }">
         <h2 :id="titleId" :class="titleClass">维护与设置</h2>
         <p class="maintenance-source">{{ source.name }}</p>
       </template>
-      <WebDavMaintenance :key="source.location" :source="source" :summary="summary" :task="task" :importing="importing || !!summary?.importProcessing" :scan-disabled="scanDisabled || ingestActive" :cancelling="cancelling" :profile-name="profileName" :profile-loading="profileLoading"
-        @scan="emit('scan')" @cancel-scan="emit('cancelScan')" @edit="emit('edit')" @remove="emit('remove')" @recognition="emit('recognition')" @configured="value => emit('configured', value)" @updated="emit('updated')">
-        <p v-if="scanErrors">{{ scanErrors }}</p>
-      </WebDavMaintenance>
+      <WebDavMaintenance :key="source.location" :source="source" :summary="summary" :task="task"
+        :importing="importing || !!summary?.importProcessing" :active-scan="activeScan" :scan-status="scanStatus" :scan-error="scanErrors || statusReadError"
+        :scan-disabled="scanDisabled || ingestActive" :cancelling="cancelling" :profile-name="profileName" :profile-loading="profileLoading"
+        @scan="emit('scan')" @cancel-scan="emit('cancelScan')" @edit="emit('edit')" @remove="emit('remove')"
+        @recognition="emit('recognition')" @configured="value => emit('configured', value)" @updated="emit('updated')" />
     </ElDialog>
   </article>
 </template>
@@ -133,10 +143,10 @@ function maintenanceClosed() {
 .export-status .el-progress { width:min(160px,100%); }
 .download { width:fit-content; min-height:40px; }
 a { color:var(--sv-accent-primary); } .error { color:var(--sv-semantic-danger); overflow-wrap:anywhere; }
-.maintenance-source { margin-top:4px; font-size:14px; color:var(--sv-text-secondary); overflow-wrap:anywhere; }
+.maintenance-source { margin:4px 0 0; font-size:14px; color:var(--sv-text-secondary); overflow-wrap:anywhere; }
 :global(.webdav-maintenance-dialog.el-dialog) { display:flex; flex-direction:column; max-height:calc(100dvh - 32px); }
-:global(.webdav-maintenance-dialog > .el-dialog__header) { flex-shrink:0; padding-right:64px; }
-:global(.webdav-maintenance-dialog > .el-dialog__body) { min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+:global(.webdav-maintenance-dialog > .el-dialog__header) { flex-shrink:0; margin:0; padding:18px 64px 16px 24px; }
+:global(.webdav-maintenance-dialog > .el-dialog__body) { min-height:0; padding:20px 24px 12px; overflow-y:auto; overscroll-behavior:contain; }
 @media(max-width:900px) {
  .record { grid-template-columns:40px minmax(0,1fr) 44px; grid-template-areas:"folder name more" "folder location more" "actions actions actions"; }
  .source-actions { padding-top:10px; margin-top:10px; border-top:1px solid var(--sv-border-subtle); justify-content:space-between; }

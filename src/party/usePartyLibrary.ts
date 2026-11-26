@@ -6,7 +6,7 @@ export const finders: { id: Finder; label: string; icon: string }[] = [
   { id: 'category', label: '分类', icon: 'grid' }, { id: 'artists', label: '歌手', icon: 'person' }, { id: 'recent', label: '最近', icon: 'clock' }, { id: 'popular', label: '热门', icon: 'fire' }, { id: 'favorites', label: '家庭收藏', icon: 'heart' },
 ]
 export const dimensions = [{ id: 'LANGUAGE', label: '语种' }, { id: 'DECADE', label: '年代' }, { id: 'GENRE', label: '风格' }, { id: 'MOOD', label: '情绪' }, { id: 'SCENE', label: '场景' }]
-export function usePartyLibrary(session: PartySession) {
+export function usePartyLibrary(session: PartySession, scroll: { position: () => number; move: (top: number) => void }) {
   const state = reactive({ entry: 'category' as Finder, query: '', period: '30d', selected: [] as string[], tags: [] as Tag[], songs: [] as Song[], artists: [] as Artist[], artist: null as Artist | null, page: 0, total: 0, loading: false, error: '' })
   let sequence = 0, artistQuery = '', artistScroll = 0
   let suppressFilter = false
@@ -33,14 +33,14 @@ export function usePartyLibrary(session: PartySession) {
   }
   async function tags() { try { state.tags = await session.call<Tag[]>('library/classification-tags') } catch (e) { state.error = e instanceof Error ? e.message : '分类读取失败' } }
   async function openArtist(artist: Artist) {
-    artistScroll = window.scrollY; artistQuery = state.query; cache = { artists: state.artists, total: state.total, page: state.page }
-    suppressFilter = true; state.artist = artist; state.query = ''; await nextTick(); suppressFilter = false; await load(); window.scrollTo(0, 0)
+    artistScroll = scroll.position(); artistQuery = state.query; cache = { artists: state.artists, total: state.total, page: state.page }
+    suppressFilter = true; state.artist = artist; state.query = ''; await nextTick(); suppressFilter = false; await load(); scroll.move(0)
   }
   async function closeArtist() {
     suppressFilter = true; sequence++; state.artist = null; state.query = artistQuery; state.loading = false
     if (cache) { state.artists = cache.artists; state.total = cache.total; state.page = cache.page }
     await nextTick(); suppressFilter = false
-    requestAnimationFrame(() => window.scrollTo(0, artistScroll))
+    requestAnimationFrame(() => scroll.move(artistScroll))
   }
   function toggleTag(id: string) { state.selected = state.selected.includes(id) ? state.selected.filter(t => t !== id) : [...state.selected, id] }
   const stop = watch(() => session.state.credential?.token, async token => {

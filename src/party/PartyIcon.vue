@@ -7,6 +7,7 @@ const paths: Record<string, string> = {
   fire: 'M13 2c1 6-4 7-4 3-5 5-5 11 0 15 7 5 15-4 10-13 0 5-3 4-3 0 0-2-1-4-3-5Z',
   heart: 'm12 21-8-8C-3 6 7-2 12 6c5-8 15 0 8 7Z',
   search: 'M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0 m-2 5 6 6',
+  plus: 'M12 5v14 M5 12h14',
   queue: 'M3 5h16 M3 11h11 M3 17h8 M18 12l4 4-4 4 M15 16h7',
   tv: 'M3 4h18v13H3z M8 21h8 M12 17v4',
   close: 'm6 6 12 12 M6 18 18 6',
